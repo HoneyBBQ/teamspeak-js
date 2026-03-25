@@ -1,0 +1,83 @@
+{
+  "name": "@honeybbq/teamspeak",
+  "version": "0.1.0",
+  "description": "TeamSpeak 3 client SDK for Node.js — a clean-room TypeScript port of the Go reference implementation",
+  "keywords": [
+    "client",
+    "sdk",
+    "teamspeak",
+    "ts3",
+    "voip"
+  ],
+  "license": "MIT",
+  "author": "honeybbq",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    },
+    "./crypto": {
+      "types": "./dist/crypto/index.d.ts",
+      "import": "./dist/crypto/index.mjs",
+      "require": "./dist/crypto/index.cjs"
+    },
+    "./transport": {
+      "types": "./dist/transport/index.d.ts",
+      "import": "./dist/transport/index.mjs",
+      "require": "./dist/transport/index.cjs"
+    },
+    "./discovery": {
+      "types": "./dist/discovery/index.d.ts",
+      "import": "./dist/discovery/index.mjs",
+      "require": "./dist/discovery/index.cjs"
+    },
+    "./command": {
+      "types": "./dist/command/index.d.ts",
+      "import": "./dist/command/index.mjs",
+      "require": "./dist/command/index.cjs"
+    },
+    "./handshake": {
+      "types": "./dist/handshake/index.d.ts",
+      "import": "./dist/handshake/index.mjs",
+      "require": "./dist/handshake/index.cjs"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "vite build && tsc --emitDeclarationOnly --declaration --declarationMap --outDir dist",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "oxlint .",
+    "fmt": "oxfmt .",
+    "fmt:check": "oxfmt --check .",
+    "typecheck": "tsc --noEmit",
+    "check": "pnpm typecheck && pnpm lint && pnpm fmt:check",
+    "prepublishOnly": "pnpm run build",
+    "example": "tsx examples/connect.ts",
+    "test:integration": "TEAMSPEAK_ADDR=chenkr.cn vitest run src/integration.test.ts --reporter=verbose"
+  },
+  "dependencies": {
+    "@noble/curves": "^2.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "oxfmt": "^0.42.0",
+    "oxlint": "^1.57.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.2",
+    "vite-plugin-dts": "^4.5.4",
+    "vitest": "^4.1.1"
+  },
+  "engines": {
+    "node": ">=20.19"
+  },
+  "packageManager": "pnpm@10.32.1"
+}
