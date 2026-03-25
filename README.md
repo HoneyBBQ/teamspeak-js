@@ -1,14 +1,14 @@
 <div align="center">
 
-# @honeybbq/teamspeak
+# @honeybbq/teamspeak-client
 
 **A clean-room TeamSpeak client protocol library written in pure TypeScript.**
 
 Compatible with TeamSpeak 3, 5 & 6. No proprietary SDK. No copy-pasted code.
 
 [![CI](https://github.com/honeybbq/teamspeak-js/actions/workflows/ci.yml/badge.svg)](https://github.com/honeybbq/teamspeak-js/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/@honeybbq/teamspeak)](https://www.npmjs.com/package/@honeybbq/teamspeak)
-[![Node Version](https://img.shields.io/node/v/@honeybbq/teamspeak)](package.json)
+[![npm](https://img.shields.io/npm/v/@honeybbq/teamspeak-client)](https://www.npmjs.com/package/@honeybbq/teamspeak-client)
+[![Node Version](https://img.shields.io/node/v/@honeybbq/teamspeak-client)](package.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 </div>
@@ -30,9 +30,9 @@ Compatible with TeamSpeak 3, 5 & 6. No proprietary SDK. No copy-pasted code.
 ## Installation
 
 ```bash
-npm install @honeybbq/teamspeak
+npm install @honeybbq/teamspeak-client
 # or
-pnpm add @honeybbq/teamspeak
+pnpm add @honeybbq/teamspeak-client
 ```
 
 Requires **Node.js 20.19** or later.
@@ -40,7 +40,7 @@ Requires **Node.js 20.19** or later.
 ## Quick Start
 
 ```typescript
-import { Client, generateIdentity } from "@honeybbq/teamspeak";
+import { Client, generateIdentity } from "@honeybbq/teamspeak-client";
 
 // Generate a new identity (or load an existing one)
 const identity = generateIdentity(8);
@@ -125,7 +125,7 @@ process.on("SIGINT", async () => {
 ### Identity
 
 ```typescript
-import { generateIdentity, identityFromString } from "@honeybbq/teamspeak";
+import { generateIdentity, identityFromString } from "@honeybbq/teamspeak-client";
 
 // Generate a new identity with security level 8
 const identity = generateIdentity(8);
@@ -156,11 +156,11 @@ const client = new Client(identity, "ts.example.com", "Bot", {
 The package provides granular subpath exports for advanced use cases:
 
 ```typescript
-import { Identity } from "@honeybbq/teamspeak/crypto";
-import { Resolver } from "@honeybbq/teamspeak/discovery";
-import { PacketHandler } from "@honeybbq/teamspeak/transport";
-import { buildCommand, parseCommand } from "@honeybbq/teamspeak/command";
-import { processInit1 } from "@honeybbq/teamspeak/handshake";
+import { Identity } from "@honeybbq/teamspeak-client/crypto";
+import { Resolver } from "@honeybbq/teamspeak-client/discovery";
+import { PacketHandler } from "@honeybbq/teamspeak-client/transport";
+import { buildCommand, parseCommand } from "@honeybbq/teamspeak-client/command";
+import { processInit1 } from "@honeybbq/teamspeak-client/handshake";
 ```
 
 ## Architecture

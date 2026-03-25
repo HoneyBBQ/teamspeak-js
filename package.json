@@ -1,5 +1,5 @@
 {
-  "name": "@honeybbq/teamspeak",
+  "name": "@honeybbq/teamspeak-client",
   "version": "0.1.0",
   "description": "TeamSpeak 3 client SDK for Node.js — a clean-room TypeScript port of the Go reference implementation",
   "keywords": [
