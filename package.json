@@ -9,12 +9,12 @@
     "ts3",
     "voip"
   ],
+  "license": "MIT",
+  "author": "honeybbq",
   "repository": {
     "type": "git",
     "url": "https://github.com/HoneyBBQ/teamspeak-js"
   },
-  "license": "MIT",
-  "author": "honeybbq",
   "files": [
     "dist"
   ],
