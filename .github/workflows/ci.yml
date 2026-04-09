@@ -78,22 +78,12 @@ jobs:
           TS3SERVER_LICENSE: accept
         ports:
           - 9987:9987/udp
-        options: >-
-          --health-cmd "nc -z -u localhost 9987 || exit 1"
-          --health-interval 3s
-          --health-timeout 2s
-          --health-retries 15
       ts6:
         image: teamspeaksystems/teamspeak6-server:latest
         env:
           TSSERVER_LICENSE_ACCEPTED: accept
         ports:
           - 9988:9987/udp
-        options: >-
-          --health-cmd "nc -z -u localhost 9987 || exit 1"
-          --health-interval 3s
-          --health-timeout 2s
-          --health-retries 15
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v5
@@ -102,6 +92,8 @@ jobs:
           node-version: "22"
           cache: "pnpm"
       - run: pnpm install --frozen-lockfile
+      - name: Wait for servers to be ready
+        run: sleep 10
       - name: Run integration tests
         env:
           TS3_ADDR: localhost:9987
