@@ -150,7 +150,8 @@ export function hash512(data: Uint8Array): Uint8Array {
  *   }
  */
 function encodeTsPublicKey(x: Uint8Array, y: Uint8Array): string {
-  const bitStringBody = Buffer.from([0x00]);
+  // BIT STRING with 7 unused bits + value byte 0x00 — matches C# DerBitString(0x00, 7)
+  const bitStringBody = Buffer.from([0x07, 0x00]);
   const bitStringDer = encodeDerTlv(0x03, bitStringBody);
 
   const integerSize = encodeDerTlv(0x02, encodePositiveInt(32));

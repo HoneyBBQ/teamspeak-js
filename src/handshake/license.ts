@@ -1,5 +1,5 @@
 import { hash512 } from "../crypto/identity.js";
-import { clampScalar } from "../crypto/primitives.js";
+import { clampScalar, scalarMultFull } from "../crypto/primitives.js";
 import { ed25519 } from "@noble/curves/ed25519.js";
 
 // The root key is a 33-byte Ed25519 point
@@ -175,8 +175,10 @@ function deriveKeyFromBlock(block: LicenseBlock, parent: Uint8Array): Uint8Array
   const scalarBytes = Uint8Array.from(block.hash);
   clampScalar(scalarBytes);
 
-  // Reduce mod curve order — matches Go's scalar.NewFromBits behaviour
-  const scalar = bytesToBigIntLE(scalarBytes) % ed25519.Point.CURVE().n;
+  // Use raw scalar WITHOUT reducing mod n — NaCl's ge_scalarmult_vartime
+  // uses the raw 256-bit scalar. Reducing mod n changes the result when
+  // the point has a small-order component (Ed25519 cofactor = 8).
+  const scalar = bytesToBigIntLE(scalarBytes);
 
   const pub = ed25519.Point.fromBytes(block.key);
   const negPub = pub.negate();
@@ -184,7 +186,7 @@ function deriveKeyFromBlock(block: LicenseBlock, parent: Uint8Array): Uint8Array
   const par = ed25519.Point.fromBytes(parent);
   const negPar = par.negate();
 
-  const res = negPub.multiply(scalar).add(negPar);
+  const res = scalarMultFull(negPub, scalar).add(negPar);
   const raw = res.toBytes();
   const final = new Uint8Array(raw.length) as Uint8Array<ArrayBuffer>;
   final.set(raw);

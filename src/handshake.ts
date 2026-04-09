@@ -78,12 +78,12 @@ function buildClientEkProof(client: Client, publicKey: Uint8Array, beta: string)
 
 export function sendClientInit(client: Client): void {
   const pubKeyBase64 = client.crypt.identity.publicKeyBase64();
-  const hash = createHash("sha256").update(pubKeyBase64).digest();
-  const hwid = hash.slice(0, 16).toString("base64");
+  // HWID should match TS3 client UID format: base64(SHA1(publicKeyBase64))
+  const hwid = createHash("sha1").update(pubKeyBase64).digest().toString("base64");
 
   const cmd = buildCommandOrdered("clientinit", [
     ["client_nickname", client.nickname],
-    ["client_version", "3.5.3 [Build: 1587971024]"],
+    ["client_version", "3.?.? [Build: 5680278000]"],
     ["client_platform", "Windows"],
     ["client_input_hardware", "1"],
     ["client_output_hardware", "1"],
@@ -93,7 +93,7 @@ export function sendClientInit(client: Client): void {
     ["client_meta_data", ""],
     [
       "client_version_sign",
-      "Kvmj7qX6wJCPI5GVT71samfmhz/bvs7M+OTXWB/JWxdQbxDe17xda7dzUWLX7pjvdJTqZmbse1HBmTxThPKvAg==",
+      "DX5NIYLvfJEUjuIbCidnoeozxIDRRkpq3I9vVMBmE9L2qnekOoBzSenkzsg2lC9CMv8K5hkEzhr2TYUYSwUXCg==",
     ],
     ["client_key_offset", String(client.crypt.identity.offset)],
     ["client_nickname_phonetic", ""],

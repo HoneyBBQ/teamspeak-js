@@ -203,7 +203,6 @@ export class PacketHandler {
   ): void {
     flags = applyProtocolFlags(pType, flags);
     const [pID, pGen] = this.#nextPacketIdentity(pType);
-
     const p: Packet = {
       typeFlagged: pType | flags,
       id: pID,
@@ -364,7 +363,6 @@ export class PacketHandler {
         }
       }
 
-      this.#logger.debug("packet decryption failed", { type: pType, id: p.id });
       return null;
     }
   }
