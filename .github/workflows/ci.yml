@@ -69,8 +69,15 @@ jobs:
       - run: pnpm build
 
   integration:
-    name: Integration (TS3 + TS6)
+    name: Integration (${{ matrix.name }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: TS3
+            addr: localhost:9987
+          - name: TS6
+            addr: localhost:9988
     services:
       ts3:
         image: teamspeak:latest
@@ -96,6 +103,5 @@ jobs:
         run: sleep 10
       - name: Run integration tests
         env:
-          TS3_ADDR: localhost:9987
-          TS6_ADDR: localhost:9988
-        run: pnpm tsx examples/test-servers.ts
+          TEAMSPEAK_ADDR: ${{ matrix.addr }}
+        run: pnpm test src/integration.test.ts
