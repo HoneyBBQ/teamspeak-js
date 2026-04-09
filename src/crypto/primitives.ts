@@ -62,9 +62,9 @@ export function verifySign(publicKey: KeyObject, data: Uint8Array, sig: Uint8Arr
  *   3. Flip sign bit of result
  *   4. SHA-512 the resulting point bytes
  *
- * IMPORTANT: Must use multiplyUnsafe with the raw scalar (not reduced mod n)
- * because the derived key may contain a small-order component (cofactor 8).
- * Reducing mod n loses this component and produces a different result.
+ * The scalar must NOT be reduced mod n: Ed25519 has cofactor 8, so the server's
+ * public key may have a small-order component, and P*s ≠ P*(s mod n) in that case.
+ * We use scalarMultFull to handle scalars >= n without losing the cofactor term.
  */
 export function getSharedSecret2(
   publicKeyBytes: Uint8Array,
@@ -106,6 +106,9 @@ export function getSharedSecret2(
  * Decomposes as: P*s = P*(s mod n) + (P*n)*q  where q = floor(s/n).
  * This preserves the small-order component (cofactor 8) that would be
  * lost by reducing mod n first.
+ *
+ * For a clamped 255-bit scalar, q is at most 7 (since maxScalar / n < 8),
+ * so the second term is computed with at most one extra scalar multiplication.
  */
 export function scalarMultFull(
   point: InstanceType<typeof ed25519.Point>,
@@ -116,20 +119,16 @@ export function scalarMultFull(
     return scalar === 0n ? ed25519.Point.ZERO : point.multiply(scalar);
   }
   const remainder = scalar % n;
-  const quotient = scalar / n; // integer division
+  const quotient = scalar / n; // integer division, 1 <= quotient <= 7 for clamped scalars
 
   // P * (s mod n)
-  let result = remainder === 0n ? ed25519.Point.ZERO : point.multiply(remainder);
+  const mainPart = remainder === 0n ? ed25519.Point.ZERO : point.multiply(remainder);
 
-  // P * n = P * (n-1) + P  (since multiply rejects n directly)
-  if (quotient > 0n) {
-    const pointTimesN = point.multiply(n - 1n).add(point);
-    for (let i = 0n; i < quotient; i++) {
-      result = result.add(pointTimesN);
-    }
-  }
+  // (P * n) * q — compute P*n via P*(n-1)+P since multiply() rejects scalar == n
+  const pointTimesN = point.multiply(n - 1n).add(point);
+  const cofactorPart = pointTimesN.multiply(quotient);
 
-  return result;
+  return mainPart.add(cofactorPart);
 }
 
 /** Interpret a little-endian byte array as an unsigned BigInt. */

@@ -143,7 +143,7 @@ export function hash512(data: Uint8Array): Uint8Array {
  *
  * TS3 canonical format (v3+):
  *   SEQUENCE {
- *     BIT STRING { 0x00 }  (1 bit, value 0)
+ *     BIT STRING { unused=7, value=0x00 }  — DER: 03 02 07 00
  *     INTEGER 32
  *     INTEGER x
  *     INTEGER y

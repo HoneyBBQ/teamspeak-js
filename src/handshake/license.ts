@@ -1,5 +1,5 @@
 import { hash512 } from "../crypto/identity.js";
-import { clampScalar, scalarMultFull } from "../crypto/primitives.js";
+import { clampScalar, scalarMultFull, bytesToBigIntLE } from "../crypto/primitives.js";
 import { ed25519 } from "@noble/curves/ed25519.js";
 
 // The root key is a 33-byte Ed25519 point
@@ -193,12 +193,4 @@ function deriveKeyFromBlock(block: LicenseBlock, parent: Uint8Array): Uint8Array
   final[31] = (final[31] !== undefined ? final[31] : 0) ^ 0x80;
 
   return final;
-}
-
-function bytesToBigIntLE(bytes: Uint8Array): bigint {
-  let result = 0n;
-  for (let i = bytes.length - 1; i >= 0; i--) {
-    result = (result << 8n) | BigInt(bytes[i]!);
-  }
-  return result;
 }
