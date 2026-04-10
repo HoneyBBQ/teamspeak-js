@@ -1,10 +1,16 @@
 import { describe, it, expect } from "vitest";
+import { createHash } from "node:crypto";
 import { Client } from "./client.js";
 import { generateIdentity } from "./crypto/identity.js";
 import { sendClientInit } from "./handshake.js";
 import { parseCommand } from "./command/parser.js";
 import { PacketType } from "./transport/packet.js";
 import type { ClientOptions } from "./types.js";
+
+function prepareClientPassword(password: string): string {
+  if (password === "") return "";
+  return createHash("sha1").update(password).digest().toString("base64");
+}
 
 function captureClientInit(options: ClientOptions = {}) {
   const client = new Client(generateIdentity(0), "localhost", "TS Bot", options);
@@ -51,9 +57,9 @@ describe("sendClientInit", () => {
       defaultChannelPassword: "channel secret",
     });
 
-    expect(params["client_server_password"]).toBe("server secret");
+    expect(params["client_server_password"]).toBe(prepareClientPassword("server secret"));
     expect(params["client_default_channel"]).toBe("Lobby Alpha");
-    expect(params["client_default_channel_password"]).toBe("channel secret");
+    expect(params["client_default_channel_password"]).toBe(prepareClientPassword("channel secret"));
   });
 
   it("preserves the clientinit parameter order", () => {
@@ -67,13 +73,13 @@ describe("sendClientInit", () => {
       raw.indexOf("client_default_channel=Lobby\\sAlpha"),
     );
     expect(raw.indexOf("client_default_channel=Lobby\\sAlpha")).toBeLessThan(
-      raw.indexOf("client_default_channel_password=channel\\ssecret"),
+      raw.indexOf(`client_default_channel_password=${prepareClientPassword("channel secret")}`),
     );
-    expect(raw.indexOf("client_default_channel_password=channel\\ssecret")).toBeLessThan(
-      raw.indexOf("client_server_password=server\\ssecret"),
-    );
-    expect(raw.indexOf("client_server_password=server\\ssecret")).toBeLessThan(
-      raw.indexOf("client_meta_data="),
-    );
+    expect(
+      raw.indexOf(`client_default_channel_password=${prepareClientPassword("channel secret")}`),
+    ).toBeLessThan(raw.indexOf(`client_server_password=${prepareClientPassword("server secret")}`));
+    expect(
+      raw.indexOf(`client_server_password=${prepareClientPassword("server secret")}`),
+    ).toBeLessThan(raw.indexOf("client_meta_data="));
   });
 });

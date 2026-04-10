@@ -76,6 +76,12 @@ function buildClientEkProof(client: Client, publicKey: Uint8Array, beta: string)
   return Buffer.from(sig).toString("base64");
 }
 
+function prepareClientPassword(password: string): string {
+  if (password === "") return "";
+  // TeamSpeak expects password fields as base64(sha1(password)).
+  return createHash("sha1").update(password).digest().toString("base64");
+}
+
 export function sendClientInit(client: Client): void {
   const cmd = buildClientInitCommand(client);
   client.handler.sendPacket(PacketType.Command, Buffer.from(cmd), 0);
@@ -84,6 +90,8 @@ export function sendClientInit(client: Client): void {
 function buildClientInitCommand(client: Client): string {
   const pubKeyBase64 = client.crypt.identity.publicKeyBase64();
   const initOptions = client.getClientInitOptions();
+  const defaultChannelPassword = prepareClientPassword(initOptions.defaultChannelPassword);
+  const serverPassword = prepareClientPassword(initOptions.serverPassword);
   // HWID should match TS3 client UID format: base64(SHA1(publicKeyBase64))
   const hwid = createHash("sha1").update(pubKeyBase64).digest().toString("base64");
 
@@ -94,8 +102,8 @@ function buildClientInitCommand(client: Client): string {
     ["client_input_hardware", "1"],
     ["client_output_hardware", "1"],
     ["client_default_channel", initOptions.defaultChannel],
-    ["client_default_channel_password", initOptions.defaultChannelPassword],
-    ["client_server_password", initOptions.serverPassword],
+    ["client_default_channel_password", defaultChannelPassword],
+    ["client_server_password", serverPassword],
     ["client_meta_data", ""],
     [
       "client_version_sign",

@@ -160,9 +160,9 @@ const client = new Client(identity, "ts.example.com", "Bot", {
 
 Connection auth options:
 
-- `serverPassword`: server password submitted during `clientinit`
+- `serverPassword`: plain-text server password; sent as the TeamSpeak protocol hash during `clientinit`
 - `defaultChannel`: default channel name requested during `clientinit`
-- `defaultChannelPassword`: password for `defaultChannel`
+- `defaultChannelPassword`: plain-text password for `defaultChannel`; sent as the TeamSpeak protocol hash
 
 ## Subpath Exports
 
