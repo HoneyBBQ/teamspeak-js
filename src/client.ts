@@ -42,6 +42,20 @@ export interface ClientState {
   clid: number;
 }
 
+interface ClientInitOptions {
+  readonly serverPassword: string;
+  readonly defaultChannel: string;
+  readonly defaultChannelPassword: string;
+}
+
+function normalizeClientInitOptions(options: ClientOptions): ClientInitOptions {
+  return {
+    serverPassword: options.serverPassword ?? "",
+    defaultChannel: options.defaultChannel ?? "",
+    defaultChannelPassword: options.defaultChannelPassword ?? "",
+  };
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyHandler = (arg: any) => void;
 
@@ -56,6 +70,7 @@ export class Client {
   #identity: Identity;
   #addr: string;
   #resolver: AddrResolver;
+  #clientInitOptions: ClientInitOptions;
   #status: ClientStatus = ClientStatus.Disconnected;
   #throttle = new CommandThrottle();
   #cmdTrack = new CommandTracker();
@@ -86,6 +101,7 @@ export class Client {
     this.nickname = nickname;
     this.logger = options.logger ?? consoleLogger;
     this.#resolver = options.resolver ?? new Resolver(this.logger);
+    this.#clientInitOptions = normalizeClientInitOptions(options);
 
     this.crypt = new Crypt(identity);
     this.handler = new PacketHandler(this.crypt, this.logger);
@@ -105,6 +121,15 @@ export class Client {
 
   get status(): ClientStatus {
     return this.#status;
+  }
+
+  /** @internal */
+  getClientInitOptions(): Readonly<{
+    serverPassword: string;
+    defaultChannel: string;
+    defaultChannelPassword: string;
+  }> {
+    return this.#clientInitOptions;
   }
 
   // ---- Connection -----------------------------------------------------------

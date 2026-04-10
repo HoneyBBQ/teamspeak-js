@@ -77,19 +77,25 @@ function buildClientEkProof(client: Client, publicKey: Uint8Array, beta: string)
 }
 
 export function sendClientInit(client: Client): void {
+  const cmd = buildClientInitCommand(client);
+  client.handler.sendPacket(PacketType.Command, Buffer.from(cmd), 0);
+}
+
+function buildClientInitCommand(client: Client): string {
   const pubKeyBase64 = client.crypt.identity.publicKeyBase64();
+  const initOptions = client.getClientInitOptions();
   // HWID should match TS3 client UID format: base64(SHA1(publicKeyBase64))
   const hwid = createHash("sha1").update(pubKeyBase64).digest().toString("base64");
 
-  const cmd = buildCommandOrdered("clientinit", [
+  return buildCommandOrdered("clientinit", [
     ["client_nickname", client.nickname],
     ["client_version", "3.?.? [Build: 5680278000]"],
     ["client_platform", "Windows"],
     ["client_input_hardware", "1"],
     ["client_output_hardware", "1"],
-    ["client_default_channel", ""],
-    ["client_default_channel_password", ""],
-    ["client_server_password", ""],
+    ["client_default_channel", initOptions.defaultChannel],
+    ["client_default_channel_password", initOptions.defaultChannelPassword],
+    ["client_server_password", initOptions.serverPassword],
     ["client_meta_data", ""],
     [
       "client_version_sign",
@@ -100,6 +106,4 @@ export function sendClientInit(client: Client): void {
     ["client_default_token", ""],
     ["hwid", hwid],
   ]);
-
-  client.handler.sendPacket(PacketType.Command, Buffer.from(cmd), 0);
 }

@@ -160,4 +160,10 @@ export interface ClientOptions {
   resolver?: AddrResolver;
   commandMiddleware?: CommandMiddleware[];
   eventMiddleware?: EventMiddleware[];
+  /** Server password sent during the initial `clientinit` handshake. */
+  serverPassword?: string;
+  /** Default channel name to join during the initial `clientinit` handshake. */
+  defaultChannel?: string;
+  /** Password for `defaultChannel`, sent during the initial `clientinit` handshake. */
+  defaultChannelPassword?: string;
 }

@@ -46,7 +46,11 @@ import { Client, generateIdentity } from "@honeybbq/teamspeak-client";
 const identity = generateIdentity(8);
 
 // Create the client
-const client = new Client(identity, "localhost", "TSBot");
+const client = new Client(identity, "localhost", "TSBot", {
+  serverPassword: process.env.TEAMSPEAK_SERVER_PASSWORD,
+  defaultChannel: "Lobby",
+  defaultChannelPassword: process.env.TEAMSPEAK_DEFAULT_CHANNEL_PASSWORD,
+});
 
 // Register event handlers
 client.on("connected", () => {
@@ -148,8 +152,17 @@ const client = new Client(identity, "ts.example.com", "Bot", {
   resolver: customResolver,
   commandMiddleware: [loggingMiddleware],
   eventMiddleware: [filterMiddleware],
+  serverPassword: process.env.TEAMSPEAK_SERVER_PASSWORD,
+  defaultChannel: "Lobby",
+  defaultChannelPassword: process.env.TEAMSPEAK_DEFAULT_CHANNEL_PASSWORD,
 });
 ```
+
+Connection auth options:
+
+- `serverPassword`: server password submitted during `clientinit`
+- `defaultChannel`: default channel name requested during `clientinit`
+- `defaultChannelPassword`: password for `defaultChannel`
 
 ## Subpath Exports
 

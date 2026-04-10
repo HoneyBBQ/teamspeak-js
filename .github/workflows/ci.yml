@@ -104,4 +104,7 @@ jobs:
       - name: Run integration tests
         env:
           TEAMSPEAK_ADDR: ${{ matrix.addr }}
+          TEAMSPEAK_SERVER_PASSWORD: ${{ secrets.TEAMSPEAK_SERVER_PASSWORD }}
+          TEAMSPEAK_DEFAULT_CHANNEL: ${{ secrets.TEAMSPEAK_DEFAULT_CHANNEL }}
+          TEAMSPEAK_DEFAULT_CHANNEL_PASSWORD: ${{ secrets.TEAMSPEAK_DEFAULT_CHANNEL_PASSWORD }}
         run: pnpm test src/integration.test.ts

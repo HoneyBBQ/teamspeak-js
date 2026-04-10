@@ -15,7 +15,12 @@ import { Client } from "./client.js";
 import { listChannels, listClients, getClientInfo } from "./api.js";
 
 const ADDR = process.env["TEAMSPEAK_ADDR"];
+const SERVER_PASSWORD = process.env["TEAMSPEAK_SERVER_PASSWORD"] ?? "";
+const DEFAULT_CHANNEL = process.env["TEAMSPEAK_DEFAULT_CHANNEL"] ?? "";
+const DEFAULT_CHANNEL_PASSWORD = process.env["TEAMSPEAK_DEFAULT_CHANNEL_PASSWORD"] ?? "";
 const SKIP = !ADDR;
+const USES_CONNECT_AUTH =
+  SERVER_PASSWORD !== "" || DEFAULT_CHANNEL !== "" || DEFAULT_CHANNEL_PASSWORD !== "";
 
 // Shared connection — established once for the entire suite
 let sharedClient: Client;
@@ -25,6 +30,9 @@ beforeAll(async () => {
 
   const identity = generateIdentity(8);
   const client = new Client(identity, ADDR!, "ts-js-integ", {
+    serverPassword: SERVER_PASSWORD,
+    defaultChannel: DEFAULT_CHANNEL,
+    defaultChannelPassword: DEFAULT_CHANNEL_PASSWORD,
     logger: {
       debug: () => {},
       info: (msg, ...args) => console.log("[INFO]", msg, ...args),
@@ -59,6 +67,15 @@ function skipOnPermError(err: unknown): void {
 }
 
 describe.skipIf(SKIP)("Integration — chenkr.cn", () => {
+  it("connects with optional handshake auth configuration", () => {
+    if (USES_CONNECT_AUTH) {
+      console.log(
+        `connect auth enabled: serverPassword=${SERVER_PASSWORD !== ""} defaultChannel=${DEFAULT_CHANNEL !== ""} defaultChannelPassword=${DEFAULT_CHANNEL_PASSWORD !== ""}`,
+      );
+    }
+    expect(sharedClient.clientID()).toBeGreaterThan(0);
+  });
+
   it("receives a non-zero server-assigned client ID", () => {
     const clid = sharedClient.clientID();
     console.log(`connected: clid=${clid}`);
@@ -93,6 +110,28 @@ describe.skipIf(SKIP)("Integration — chenkr.cn", () => {
 
     expect(channels.length).toBeGreaterThan(0);
     console.log(`channels: ${channels.length} found, first="${channels[0]?.name}"`);
+  }, 15_000);
+
+  it("joins the configured default channel when provided", async () => {
+    if (DEFAULT_CHANNEL === "") return;
+
+    let channels;
+    let clients;
+    try {
+      [channels, clients] = await Promise.all([
+        listChannels(sharedClient),
+        listClients(sharedClient),
+      ]);
+    } catch (err) {
+      skipOnPermError(err);
+      return;
+    }
+
+    const self = clients.find((client) => client.id === sharedClient.clientID());
+    const currentChannel = channels.find((channel) => channel.id === self?.channelID);
+
+    expect(self).toBeDefined();
+    expect(currentChannel?.name).toBe(DEFAULT_CHANNEL);
   }, 15_000);
 
   it("getClientInfo — returns our own nickname", async () => {
