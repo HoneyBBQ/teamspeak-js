@@ -71,14 +71,14 @@
     "@noble/curves": "^2.0.1"
   },
   "devDependencies": {
-    "@types/node": "^25.5.0",
+    "@types/node": "^25.6.0",
     "oxfmt": "^0.44.0",
-    "oxlint": "^1.57.0",
+    "oxlint": "^1.59.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",
-    "vite": "^8.0.2",
+    "vite": "^8.0.8",
     "vite-plugin-dts": "^4.5.4",
-    "vitest": "^4.1.1"
+    "vitest": "^4.1.4"
   },
   "engines": {
     "node": ">=20.19"
