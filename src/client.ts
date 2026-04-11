@@ -20,7 +20,6 @@ import {
   FileTransferTracker,
   buildFtInitUpload,
   buildFtInitDownload,
-  dialFileTransfer,
   uploadFileData,
   downloadFileData,
 } from "./transfer.js";
@@ -436,7 +435,7 @@ export class Client {
 
   #handleCommandLines(s: string): void {
     if (!s) return;
-    const lines = s.split(/[\n\0]/);
+    const lines = s.split("\0").join("\n").split("\n");
     for (const line of lines) {
       const trimmed = line.replace(/\r$/, "");
       if (!trimmed) continue;

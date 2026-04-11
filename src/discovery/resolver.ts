@@ -9,12 +9,9 @@ const NICKNAME_LOOKUP_URL = "https://named.myteamspeak.com/lookup";
 const CACHE_TTL_MS = 10 * 60 * 1000;
 
 export class Resolver {
-  readonly #log: Logger;
   readonly #cache = new Map<string, ResolvedAddr[]>();
 
-  constructor(log: Logger = noopLogger) {
-    this.#log = log;
-  }
+  constructor(_log: Logger = noopLogger) {}
 
   async resolve(inputAddr: string, signal?: AbortSignal): Promise<ResolvedAddr[]> {
     if (!inputAddr) throw new Error("empty address");

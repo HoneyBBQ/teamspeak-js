@@ -4,21 +4,6 @@ import type { FileUploadInfo, FileDownloadInfo } from "./types.js";
 import { FileTransferError, FileTransferTimeoutError } from "./errors.js";
 import { buildCommand } from "./command/command.js";
 
-export interface FileTransferTracker {
-  register(): [
-    cftid: number,
-    promise: Promise<
-      FileUploadInfo | FileDownloadInfo | import("./types.js").FileTransferStatusInfo
-    >,
-  ];
-  unregister(cftid: number): void;
-  notify(
-    cftid: number,
-    value: FileUploadInfo | FileDownloadInfo | import("./types.js").FileTransferStatusInfo,
-  ): void;
-  reset(): void;
-}
-
 type FtNotification =
   | FileUploadInfo
   | FileDownloadInfo

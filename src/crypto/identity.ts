@@ -1,6 +1,4 @@
 import {
-  createSign,
-  createVerify,
   createHash,
   createECDH,
   generateKeyPairSync,

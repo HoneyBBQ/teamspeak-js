@@ -54,7 +54,7 @@ export function handleNotification(
 function handleClientEnterView(
   cmd: Command,
   clients: Map<number, ClientInfo>,
-  nickname: string,
+  _nickname: string,
 ): NotificationResult {
   const clid = parseUint16(cmd.params["clid"] ?? "");
   const cid = parseUint64(cmd.params["cid"] ?? "");
