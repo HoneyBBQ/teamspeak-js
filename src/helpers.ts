@@ -44,8 +44,37 @@ export function splitCommandRows(line: string): string[] {
 
   const parts = rest.split("|");
   const rows: string[] = [];
+  let inheritedFields = new Map<string, string>();
+
   for (const part of parts) {
-    if (part !== "") rows.push(`${name} ${part}`);
+    if (part === "") continue;
+
+    // TeamSpeak compresses pipe-separated rows by omitting fields whose
+    // values are unchanged from the previous row. This is especially
+    // important for notifycliententerview, where ctid is commonly present
+    // only on the first row of a batch. Keep the raw escaped tokens so the
+    // command parser can still perform the single unescape pass later.
+    const tokens = part.split(" ").filter(Boolean);
+    const currentFields = new Set<string>();
+    for (const token of tokens) currentFields.add(fieldName(token));
+
+    const inheritedTokens: string[] = [];
+    for (const [field, token] of inheritedFields) {
+      if (!currentFields.has(field)) inheritedTokens.push(token);
+    }
+
+    const resolvedTokens = [...inheritedTokens, ...tokens];
+    rows.push(`${name} ${resolvedTokens.join(" ")}`);
+
+    inheritedFields = new Map<string, string>();
+    for (const token of resolvedTokens) {
+      inheritedFields.set(fieldName(token), token);
+    }
   }
   return rows.length === 0 ? [line] : rows;
+}
+
+function fieldName(token: string): string {
+  const equalIndex = token.indexOf("=");
+  return equalIndex > 0 ? token.slice(0, equalIndex) : token;
 }

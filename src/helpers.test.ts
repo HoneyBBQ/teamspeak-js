@@ -35,6 +35,28 @@ describe("splitCommandRows", () => {
     expect(rows[1]).toBe("clientlist clid=2 cid=6");
   });
 
+  it("inherits omitted fields from the previous row", () => {
+    const rows = splitCommandRows(
+      "notifycliententerview cfid=0 ctid=1 reasonid=2 clid=7 client_nickname=Alice|clid=8 client_nickname=Bob",
+    );
+
+    expect(rows).toEqual([
+      "notifycliententerview cfid=0 ctid=1 reasonid=2 clid=7 client_nickname=Alice",
+      "notifycliententerview cfid=0 ctid=1 reasonid=2 clid=8 client_nickname=Bob",
+    ]);
+  });
+
+  it("preserves explicitly changed fields and escaped values", () => {
+    const rows = splitCommandRows(
+      "clientlist cid=1 client_nickname=Alice\\sspeaker|cid=2 client_nickname=Bob\\pAdmin",
+    );
+
+    expect(rows).toEqual([
+      "clientlist cid=1 client_nickname=Alice\\sspeaker",
+      "clientlist cid=2 client_nickname=Bob\\pAdmin",
+    ]);
+  });
+
   it("returns original for command with no space", () => {
     expect(splitCommandRows("ping")).toEqual(["ping"]);
   });
