@@ -242,9 +242,19 @@ export class PacketHandler {
   }
 
   #write(data: Uint8Array): void {
-    this.#conn?.send(Buffer.from(data), (err) => {
-      if (err) this.#logger.warn("udp send error", err);
-    });
+    if (!this.#conn) return;
+    try {
+      this.#conn.send(Buffer.from(data), (err) => {
+        if (err) this.#logger.warn("udp send error", err);
+      });
+    } catch (error: unknown) {
+      const normalized = error instanceof Error ? error : new Error(String(error));
+      // dgram can throw synchronously for an invalid family/address pair. A
+      // malformed remote target must close this session, never escape from an
+      // async socket callback and terminate the gateway process.
+      this.#logger.error("udp send failed", normalized);
+      this.#triggerClose(normalized);
+    }
   }
 
   #handleRawPacket(raw: Uint8Array): void {
