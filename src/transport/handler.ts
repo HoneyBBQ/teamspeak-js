@@ -1,4 +1,6 @@
 import { createSocket, type Socket as UdpSocket } from "node:dgram";
+import { isIP } from "node:net";
+import { splitHostPort } from "../address.js";
 import type { Crypt } from "../crypto/crypt.js";
 import type { Logger } from "../types.js";
 import { noopLogger } from "../types.js";
@@ -72,16 +74,16 @@ export class PacketHandler {
 
   connect(addr: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      const [host, portStr] =
-        addr.lastIndexOf(":") > 0
-          ? [addr.slice(0, addr.lastIndexOf(":")), addr.slice(addr.lastIndexOf(":") + 1)]
-          : [addr, "9987"];
-      const port = parseInt(portStr, 10);
+      const { host, port } = splitHostPort(addr);
 
-      const socket = createSocket("udp4");
-      socket.once("error", reject);
-      socket.connect(port, host, () => {
-        socket.off("error", reject);
+      const socket = createSocket(isIP(host) === 6 ? "udp6" : "udp4");
+      const onError = (error: Error) => {
+        socket.close();
+        reject(error);
+      };
+      socket.once("error", onError);
+      socket.connect(parseInt(port, 10), host, () => {
+        socket.off("error", onError);
         this.start(socket);
         resolve();
       });

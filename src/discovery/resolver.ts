@@ -3,6 +3,7 @@ import { createConnection } from "node:net";
 import type { Logger } from "../types.js";
 import type { ResolvedAddr } from "../types.js";
 import { noopLogger } from "../types.js";
+import { isIpAddress, joinHostPort, splitHostPort } from "../address.js";
 
 const TS_DNS_DEFAULT_PORT = 41144;
 const NICKNAME_LOOKUP_URL = "https://named.myteamspeak.com/lookup";
@@ -193,29 +194,9 @@ function queryTSDNS(
   });
 }
 
-function isIpAddress(host: string): boolean {
-  // Simple IPv4 check; IPv6 would be inside brackets
-  return /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.startsWith("[");
-}
-
-function splitHostPort(addr: string): { host: string; port: string } {
-  const lastColon = addr.lastIndexOf(":");
-  if (lastColon < 0) return { host: addr, port: "9987" };
-  const afterColon = addr.slice(lastColon + 1);
-  if (/^\d+$/.test(afterColon)) {
-    return { host: addr.slice(0, lastColon), port: afterColon };
-  }
-  return { host: addr, port: "9987" };
-}
-
 function splitHostPortParts(addr: string): [string, string] {
   const { host, port } = splitHostPort(addr);
   return [host, port];
-}
-
-function joinHostPort(host: string, port: string): string {
-  if (host.includes(":")) return `[${host}]:${port}`;
-  return `${host}:${port}`;
 }
 
 function getDomainList(host: string): string[] {
