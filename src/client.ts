@@ -277,6 +277,11 @@ export class Client {
     return info?.channelID ?? 0n;
   }
 
+  /** Send Opus voice directly to specific clients, bypassing channel routing. */
+  sendWhisper(data: Uint8Array, targetClientIds: number[], codec: number): void {
+    this.handler.sendWhisperPacket(data, targetClientIds, codec);
+  }
+
   sendVoice(data: Uint8Array, codec: number): void {
     this.handler.sendVoicePacket(data, codec);
   }

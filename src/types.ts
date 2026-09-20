@@ -45,6 +45,8 @@ export interface ChannelInfo {
   description: string;
   id: bigint;
   parentID: bigint;
+  /** ID of the sibling channel this one is sorted after; 0 means first. */
+  order: bigint;
 }
 
 export interface FileUploadInfo {

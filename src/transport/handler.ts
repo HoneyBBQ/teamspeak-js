@@ -25,6 +25,7 @@ const MAX_RETRY_INTERVAL_MS = 1_000;
 const HEADER_SIZE = 5;
 const TAG_SIZE = 8;
 const VOICE_HEADER_SIZE = 3;
+const WHISPER_HEADER_SIZE = 5;
 const RESEND_BASE_INTERVAL_MS = 500;
 const RESEND_LOOP_INTERVAL_MS = 100;
 
@@ -165,6 +166,49 @@ export class PacketHandler {
     final.set(this.#crypt.fakeSignature, 0);
     final.set(header, TAG_SIZE);
     final.set(voicePayload, TAG_SIZE + HEADER_SIZE);
+    this.#write(final);
+  }
+
+  /** Send an unencrypted TeamSpeak voice whisper packet to up to 32 clients. */
+  sendWhisperPacket(data: Uint8Array, targetClientIds: number[], codec: number): void {
+    if (targetClientIds.length === 0) throw new Error("whisper requires at least one target");
+    if (targetClientIds.length > 32) throw new Error("too many whisper targets");
+    if (targetClientIds.some((id) => !Number.isInteger(id) || id < 0 || id > 0xffff)) {
+      throw new RangeError("invalid whisper target");
+    }
+
+    const pID = this.#packetCounter[PacketType.VoiceWhisper]!;
+    const pGen = this.#generationCounter[PacketType.VoiceWhisper]!;
+    this.#packetCounter[PacketType.VoiceWhisper] = (pID + 1) & 0xffff;
+    if (this.#packetCounter[PacketType.VoiceWhisper] === 0) {
+      this.#generationCounter[PacketType.VoiceWhisper] = (pGen + 1) >>> 0;
+    }
+
+    const payloadLen = WHISPER_HEADER_SIZE + targetClientIds.length * 2 + data.length;
+    const whisperPayload = new Uint8Array(payloadLen);
+    const view = new DataView(whisperPayload.buffer);
+    view.setUint16(0, pID, false);
+    whisperPayload[2] = codec;
+    whisperPayload[3] = 0;
+    whisperPayload[4] = targetClientIds.length;
+    for (let index = 0; index < targetClientIds.length; index++) {
+      view.setUint16(WHISPER_HEADER_SIZE + index * 2, targetClientIds[index]!, false);
+    }
+    whisperPayload.set(data, WHISPER_HEADER_SIZE + targetClientIds.length * 2);
+
+    const packet: Packet = {
+      typeFlagged: PacketType.VoiceWhisper | PacketFlags.Unencrypted,
+      id: pID,
+      clientID: this.#clientID,
+      generationID: pGen,
+      data: whisperPayload,
+      receivedAt: 0,
+    };
+    const header = buildC2SHeader(packet);
+    const final = new Uint8Array(TAG_SIZE + HEADER_SIZE + payloadLen);
+    final.set(this.#crypt.fakeSignature, 0);
+    final.set(header, TAG_SIZE);
+    final.set(whisperPayload, TAG_SIZE + HEADER_SIZE);
     this.#write(final);
   }
 

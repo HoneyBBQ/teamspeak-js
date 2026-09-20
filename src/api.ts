@@ -64,7 +64,9 @@ export async function listChannels(client: Client): Promise<ChannelInfo[]> {
   const data = await client.execCommandWithResponse("channellist", 5_000);
   return data.map((item) => ({
     id: BigInt(item["cid"] ?? "0"),
-    parentID: BigInt(item["pid"] ?? "0"),
+    // The command response uses `pid`; unsolicited server pushes use `cpid`.
+    parentID: BigInt(item["pid"] ?? item["cpid"] ?? "0"),
+    order: BigInt(item["channel_order"] ?? "0"),
     name: unescape(item["channel_name"] ?? ""),
     description: "",
   }));
