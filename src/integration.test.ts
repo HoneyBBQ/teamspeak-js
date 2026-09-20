@@ -19,6 +19,8 @@ const ADDR = process.env["TEAMSPEAK_ADDR"];
 const SERVER_PASSWORD = process.env["TEAMSPEAK_SERVER_PASSWORD"] ?? "";
 const DEFAULT_CHANNEL = process.env["TEAMSPEAK_DEFAULT_CHANNEL"] ?? "";
 const DEFAULT_CHANNEL_PASSWORD = process.env["TEAMSPEAK_DEFAULT_CHANNEL_PASSWORD"] ?? "";
+const PASSWORD_CHANNEL = process.env["TEAMSPEAK_PASSWORD_CHANNEL"] ?? "";
+const PASSWORD_CHANNEL_PASSWORD = process.env["TEAMSPEAK_PASSWORD_CHANNEL_PASSWORD"] ?? "";
 const SKIP = !ADDR;
 const USES_CONNECT_AUTH =
   SERVER_PASSWORD !== "" || DEFAULT_CHANNEL !== "" || DEFAULT_CHANNEL_PASSWORD !== "";
@@ -73,7 +75,7 @@ function skipOnPermError(err: unknown): void {
   throw err;
 }
 
-describe.skipIf(SKIP)("Integration — chenkr.cn", () => {
+describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
   it("connects with optional handshake auth configuration", () => {
     if (USES_CONNECT_AUTH) {
       console.log(
@@ -153,6 +155,73 @@ describe.skipIf(SKIP)("Integration — chenkr.cn", () => {
     expect(currentChannel?.name).toBe(DEFAULT_CHANNEL);
   }, 15_000);
 
+  it("listChannels — exposes channel_order", async () => {
+    let channels;
+    try {
+      channels = await listChannels(sharedClient);
+    } catch (err) {
+      skipOnPermError(err);
+      return;
+    }
+
+    // Every row must carry an order, and a server with more than one channel
+    // must not report the same order for all of them — that was the symptom
+    // when channel_order was parsed and discarded.
+    expect(channels.every((c) => typeof c.order === "bigint")).toBe(true);
+    if (channels.length > 1) {
+      expect(new Set(channels.map((c) => String(c.order))).size).toBeGreaterThan(1);
+    }
+  }, 15_000);
+
+  it("clientEnter — batched rows inherit fields omitted by the server", async () => {
+    // TeamSpeak compresses pipe-separated notifycliententerview batches by
+    // dropping fields that repeat the previous row, so a second client in the
+    // same channel arrives with no ctid at all. Two extra clients in one
+    // channel reliably produce that batch for a third, subscribing client.
+    const extras: Client[] = [];
+    const observed = new Map<string, bigint>();
+    try {
+      for (const nick of ["ts-js-batch-1", "ts-js-batch-2"]) {
+        const extra = new Client(generateIdentity(8), ADDR!, nick, {
+          serverPassword: SERVER_PASSWORD,
+          defaultChannel: DEFAULT_CHANNEL,
+          defaultChannelPassword: DEFAULT_CHANNEL_PASSWORD,
+          logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+        });
+        await extra.connect();
+        await extra.waitConnected(AbortSignal.timeout(30_000));
+        extras.push(extra);
+      }
+
+      const observer = new Client(generateIdentity(8), ADDR!, "ts-js-batch-obs", {
+        serverPassword: SERVER_PASSWORD,
+        defaultChannel: DEFAULT_CHANNEL,
+        defaultChannelPassword: DEFAULT_CHANNEL_PASSWORD,
+        logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+      });
+      extras.push(observer);
+      observer.on("clientEnter", (info) => observed.set(info.nickname, info.channelID));
+      await observer.connect();
+      await observer.waitConnected(AbortSignal.timeout(30_000));
+      await observer.execCommand("channelsubscribeall", 10_000).catch(() => {});
+      await new Promise((r) => setTimeout(r, 2_500));
+    } catch (err) {
+      for (const extra of extras) await extra.disconnect().catch(() => {});
+      skipOnPermError(err);
+      return;
+    }
+
+    const first = observed.get("ts-js-batch-1");
+    const second = observed.get("ts-js-batch-2");
+    for (const extra of extras) await extra.disconnect().catch(() => {});
+
+    console.log(`batched enter: batch-1 cid=${first} batch-2 cid=${second}`);
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    expect(second).not.toBe(0n);
+    expect(second).toBe(first);
+  }, 60_000);
+
   it("getClientInfo — returns our own nickname", async () => {
     let info;
     try {
@@ -166,6 +235,58 @@ describe.skipIf(SKIP)("Integration — chenkr.cn", () => {
     console.log("clientinfo keys:", Object.keys(info).sort().join(", "));
     expect(info["client_nickname"]).toBeDefined();
   }, 15_000);
+
+  it("clientMove — joins a password-protected channel", async () => {
+    // Opt-in: needs a channel whose password the bot does not have permission
+    // to bypass. Without the base64(sha1(pw)) encoding the server answers 781.
+    if (PASSWORD_CHANNEL === "" || PASSWORD_CHANNEL_PASSWORD === "") return;
+
+    let channels;
+    try {
+      channels = await listChannels(sharedClient);
+    } catch (err) {
+      skipOnPermError(err);
+      return;
+    }
+
+    const target = channels.find((c) => c.name === PASSWORD_CHANNEL);
+    expect(target).toBeDefined();
+
+    const { clientMove } = await import("./api.js");
+    await clientMove(sharedClient, sharedClient.clientID(), target!.id, PASSWORD_CHANNEL_PASSWORD);
+  }, 20_000);
+
+  it("sendWhisper — reaches a client in a different channel", async () => {
+    // Whisper bypasses channel routing entirely, so a listener that is not in
+    // our channel proves the packet framing is right — normal voice would not
+    // reach it. Needs i_client_whisper_power on the bot's server group.
+    const listener = new Client(generateIdentity(8), ADDR!, "ts-js-whisper-rx", {
+      serverPassword: SERVER_PASSWORD,
+      defaultChannel: DEFAULT_CHANNEL,
+      defaultChannelPassword: DEFAULT_CHANNEL_PASSWORD,
+      logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+    });
+
+    try {
+      await listener.connect();
+      await listener.waitConnected(AbortSignal.timeout(30_000));
+
+      const received = new Promise<boolean>((resolve) => {
+        listener.on("voiceData", () => resolve(true));
+        setTimeout(() => resolve(false), 5_000);
+      });
+
+      const frame = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
+      for (let i = 0; i < 12; i++) {
+        sharedClient.sendWhisper(frame, [listener.clientID()], 5);
+        await new Promise((r) => setTimeout(r, 20));
+      }
+
+      expect(await received).toBe(true);
+    } finally {
+      await listener.disconnect().catch(() => {});
+    }
+  }, 45_000);
 
   it("onTextMessage — receives message sent to self", async () => {
     const received = new Promise<string>((resolve) => {

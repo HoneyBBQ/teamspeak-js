@@ -11,7 +11,10 @@ describe("clientMove", () => {
     await clientMove(client, 7, 42n, "7274");
 
     const digest = createHash("sha1").update("7274").digest("base64");
-    expect(execCommand).toHaveBeenCalledWith(`clientmove clid=7 cid=42 cpw=${digest.replaceAll("/", "\\/")}`, 10_000);
+    expect(execCommand).toHaveBeenCalledWith(
+      `clientmove clid=7 cid=42 cpw=${digest.replaceAll("/", "\\/")}`,
+      10_000,
+    );
   });
 
   it("does not send a password field for an open channel", async () => {
