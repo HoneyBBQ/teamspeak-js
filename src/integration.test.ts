@@ -58,9 +58,30 @@ beforeAll(async () => {
 }, 40_000);
 
 afterAll(async () => {
+  for (const peer of peers.values()) await peer.disconnect().catch(() => {});
   if (!sharedClient) return;
   await sharedClient.disconnect();
-}, 10_000);
+}, 20_000);
+
+// Extra connections opened by individual tests. With default settings TS3's
+// antiflood only tolerates about three rapid connects from one IP before it
+// silently drops new handshakes, so tests share these instead of each opening
+// their own. Together with the shared client this keeps the suite at three.
+const peers = new Map<string, Client>();
+
+async function connectPeer(nickname: string, setup?: (client: Client) => void): Promise<Client> {
+  const peer = new Client(generateIdentity(8), ADDR!, nickname, {
+    serverPassword: SERVER_PASSWORD,
+    defaultChannel: DEFAULT_CHANNEL,
+    defaultChannelPassword: DEFAULT_CHANNEL_PASSWORD,
+    logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+  });
+  setup?.(peer);
+  peers.set(nickname, peer);
+  await peer.connect();
+  await peer.waitConnected(AbortSignal.timeout(30_000));
+  return peer;
+}
 
 // Helper: skip a test if the server returns a permission error
 function skipOnPermError(err: unknown): void {
@@ -176,51 +197,23 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
   it("clientEnter — batched rows inherit fields omitted by the server", async () => {
     // TeamSpeak compresses pipe-separated notifycliententerview batches by
     // dropping fields that repeat the previous row, so a second client in the
-    // same channel arrives with no ctid at all. Two extra clients in one
-    // channel reliably produce that batch for a third, subscribing client.
-    const extras: Client[] = [];
+    // same channel arrives with no ctid at all. The shared client plus one peer
+    // in the same channel reliably produce that batch for a joining observer.
     const observed = new Map<string, bigint>();
-    try {
-      for (const nick of ["ts-js-batch-1", "ts-js-batch-2"]) {
-        const extra = new Client(generateIdentity(8), ADDR!, nick, {
-          serverPassword: SERVER_PASSWORD,
-          defaultChannel: DEFAULT_CHANNEL,
-          defaultChannelPassword: DEFAULT_CHANNEL_PASSWORD,
-          logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
-        });
-        await extra.connect();
-        await extra.waitConnected(AbortSignal.timeout(30_000));
-        extras.push(extra);
-      }
+    await connectPeer("ts-js-peer");
+    await connectPeer("ts-js-observer", (observer) =>
+      observer.on("clientEnter", (info) => observed.set(info.nickname, info.channelID)),
+    );
+    await new Promise((r) => setTimeout(r, 1_000));
 
-      const observer = new Client(generateIdentity(8), ADDR!, "ts-js-batch-obs", {
-        serverPassword: SERVER_PASSWORD,
-        defaultChannel: DEFAULT_CHANNEL,
-        defaultChannelPassword: DEFAULT_CHANNEL_PASSWORD,
-        logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
-      });
-      extras.push(observer);
-      observer.on("clientEnter", (info) => observed.set(info.nickname, info.channelID));
-      await observer.connect();
-      await observer.waitConnected(AbortSignal.timeout(30_000));
-      await observer.execCommand("channelsubscribeall", 10_000).catch(() => {});
-      await new Promise((r) => setTimeout(r, 2_500));
-    } catch (err) {
-      for (const extra of extras) await extra.disconnect().catch(() => {});
-      skipOnPermError(err);
-      return;
-    }
-
-    const first = observed.get("ts-js-batch-1");
-    const second = observed.get("ts-js-batch-2");
-    for (const extra of extras) await extra.disconnect().catch(() => {});
-
-    console.log(`batched enter: batch-1 cid=${first} batch-2 cid=${second}`);
-    expect(first).toBeDefined();
-    expect(second).toBeDefined();
-    expect(second).not.toBe(0n);
-    expect(second).toBe(first);
-  }, 60_000);
+    const shared = observed.get("ts-js-integ");
+    const peer = observed.get("ts-js-peer");
+    console.log(`batched enter: shared cid=${shared} peer cid=${peer}`);
+    expect(shared).toBeDefined();
+    expect(peer).toBeDefined();
+    expect(shared).not.toBe(0n);
+    expect(peer).toBe(shared);
+  }, 70_000);
 
   it("getClientInfo — returns our own nickname", async () => {
     let info;
@@ -256,36 +249,23 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     await clientMove(sharedClient, sharedClient.clientID(), target!.id, PASSWORD_CHANNEL_PASSWORD);
   }, 20_000);
 
-  it("sendWhisper — reaches a client in a different channel", async () => {
-    // Whisper bypasses channel routing entirely, so a listener that is not in
-    // our channel proves the packet framing is right — normal voice would not
-    // reach it. Needs i_client_whisper_power on the bot's server group.
-    const listener = new Client(generateIdentity(8), ADDR!, "ts-js-whisper-rx", {
-      serverPassword: SERVER_PASSWORD,
-      defaultChannel: DEFAULT_CHANNEL,
-      defaultChannelPassword: DEFAULT_CHANNEL_PASSWORD,
-      logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+  it("sendWhisper — delivers a VoiceWhisper frame to the target", async () => {
+    // Reuses the observer from the batch test to stay within the antiflood
+    // budget. Needs i_client_whisper_power on the bot's server group.
+    const listener = peers.get("ts-js-observer") ?? (await connectPeer("ts-js-observer"));
+
+    const received = new Promise<boolean>((resolve) => {
+      listener.on("voiceData", () => resolve(true));
+      setTimeout(() => resolve(false), 5_000);
     });
 
-    try {
-      await listener.connect();
-      await listener.waitConnected(AbortSignal.timeout(30_000));
-
-      const received = new Promise<boolean>((resolve) => {
-        listener.on("voiceData", () => resolve(true));
-        setTimeout(() => resolve(false), 5_000);
-      });
-
-      const frame = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
-      for (let i = 0; i < 12; i++) {
-        sharedClient.sendWhisper(frame, [listener.clientID()], 5);
-        await new Promise((r) => setTimeout(r, 20));
-      }
-
-      expect(await received).toBe(true);
-    } finally {
-      await listener.disconnect().catch(() => {});
+    const frame = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
+    for (let i = 0; i < 12; i++) {
+      sharedClient.sendWhisper(frame, [listener.clientID()], 5);
+      await new Promise((r) => setTimeout(r, 20));
     }
+
+    expect(await received).toBe(true);
   }, 45_000);
 
   it("onTextMessage — receives message sent to self", async () => {
