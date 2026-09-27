@@ -55,7 +55,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "vite build && tsc --emitDeclarationOnly --declaration --declarationMap --outDir dist",
+    "build": "vite build && tsc -p tsconfig.build.json --emitDeclarationOnly",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "oxlint .",
