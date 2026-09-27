@@ -110,6 +110,7 @@ process.on("SIGINT", async () => {
 | `clientMove(client, clid, channelID, password?)`     | Move a client to a channel                 |
 | `poke(client, clid, message)`                        | Poke a client                              |
 | `client.sendVoice(data, codec)`                      | Send Opus voice data                       |
+| `client.sendWhisper(data, clientIds, codec)`         | Send Opus voice to specific clients        |
 | `listChannels(client)`                               | List all channels                          |
 | `listClients(client)`                                | List all connected clients                 |
 | `getClientInfo(client, clid)`                        | Get detailed client information            |
