@@ -76,9 +76,16 @@ function buildClientEkProof(client: Client, publicKey: Uint8Array, beta: string)
   return Buffer.from(sig).toString("base64");
 }
 
-function prepareClientPassword(password: string): string {
+/**
+ * Encode a password field for the command protocol.
+ *
+ * TeamSpeak expects password fields as base64(sha1(password)) — server and
+ * channel passwords during the handshake, the `clientmove` channel password,
+ * and the `cpw` field of the file transfer commands. Sending the plain text
+ * instead makes the server reject correct passwords with error 781.
+ */
+export function prepareClientPassword(password: string): string {
   if (password === "") return "";
-  // TeamSpeak expects password fields as base64(sha1(password)).
   return createHash("sha1").update(password).digest().toString("base64");
 }
 

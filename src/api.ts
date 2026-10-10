@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
 import { buildCommandOrdered, buildCommand, unescape } from "./command/command.js";
+import { prepareClientPassword } from "./handshake.js";
 import type { ChannelInfo, ClientInfo } from "./types.js";
 import type { Client } from "./client.js";
 
@@ -33,13 +33,9 @@ export async function clientMove(
   // SHA-1 Base64 digest, just like client_default_channel_password during
   // clientinit. Sending the plain password makes valid passwords fail with
   // error 781 (invalid channel password).
-  if (password) params.push(["cpw", hashChannelPassword(password)]);
+  if (password) params.push(["cpw", prepareClientPassword(password)]);
   const cmd = buildCommandOrdered("clientmove", params);
   await client.execCommand(cmd, 10_000);
-}
-
-function hashChannelPassword(password: string): string {
-  return createHash("sha1").update(password).digest("base64");
 }
 
 /** Send a poke message to a client. */

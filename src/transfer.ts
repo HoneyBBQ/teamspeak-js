@@ -3,6 +3,7 @@ import type { Readable, Writable } from "node:stream";
 import type { FileUploadInfo, FileDownloadInfo } from "./types.js";
 import { FileTransferError, FileTransferTimeoutError } from "./errors.js";
 import { buildCommand } from "./command/command.js";
+import { prepareClientPassword } from "./handshake.js";
 
 type FtNotification =
   | FileUploadInfo
@@ -111,7 +112,7 @@ export function buildFtInitUpload(
   return buildCommand("ftinitupload", {
     cid: String(channelID),
     name: targetPath,
-    cpw: password,
+    cpw: prepareClientPassword(password),
     size: String(size),
     clientftfid: String(cftid),
     overwrite: overwrite ? "1" : "0",
@@ -132,7 +133,7 @@ export function buildFtInitDownload(
   return buildCommand("ftinitdownload", {
     cid: String(channelID),
     name: targetPath,
-    cpw: password,
+    cpw: prepareClientPassword(password),
     clientftfid: String(cftid),
     seekpos: "0",
   });
