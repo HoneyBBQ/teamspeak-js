@@ -11,7 +11,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { generateIdentity } from "./crypto/identity.js";
-import { Client } from "./client.js";
+import { Client, ClientStatus } from "./client.js";
 import { listChannels, listClients, getClientInfo } from "./api.js";
 import type { ClientInfo } from "./types.js";
 
@@ -21,6 +21,7 @@ const DEFAULT_CHANNEL = process.env["TEAMSPEAK_DEFAULT_CHANNEL"] ?? "";
 const DEFAULT_CHANNEL_PASSWORD = process.env["TEAMSPEAK_DEFAULT_CHANNEL_PASSWORD"] ?? "";
 const PASSWORD_CHANNEL = process.env["TEAMSPEAK_PASSWORD_CHANNEL"] ?? "";
 const PASSWORD_CHANNEL_PASSWORD = process.env["TEAMSPEAK_PASSWORD_CHANNEL_PASSWORD"] ?? "";
+const SERVER_HAS_PASSWORD = process.env["TEAMSPEAK_SERVER_HAS_PASSWORD"] === "1";
 const SKIP = !ADDR;
 const USES_CONNECT_AUTH =
   SERVER_PASSWORD !== "" || DEFAULT_CHANNEL !== "" || DEFAULT_CHANNEL_PASSWORD !== "";
@@ -105,6 +106,31 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     }
     expect(sharedClient.clientID()).toBeGreaterThan(0);
   });
+
+  it("reports the handshake failure and disconnects when the password is rejected", async () => {
+    // Opt-in: needs a server that actually has a password set. The rejected
+    // handshake still counts toward TS3's antiflood budget (about three rapid
+    // connects per IP), so with it enabled the suite needs four: raise
+    // virtualserver_antiflood_points_needed_ip_block on the test server or
+    // later tests are banned with id=3329.
+    if (!SERVER_HAS_PASSWORD) return;
+
+    const rejected = new Client(generateIdentity(8), ADDR!, "ts-js-bad-password", {
+      serverPassword: "definitely-not-the-password",
+      logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+    });
+    const disconnected = new Promise<Error | undefined>((resolve) =>
+      rejected.on("disconnected", (err) => resolve(err)),
+    );
+
+    await rejected.connect();
+    // The cause must be the server's rejection, not the caller's own timeout.
+    await expect(rejected.waitConnected(AbortSignal.timeout(8_000))).rejects.toThrow(
+      /invalid server password/,
+    );
+    expect(rejected.status).toBe(ClientStatus.Disconnected);
+    await expect(disconnected).resolves.toBeInstanceOf(Error);
+  }, 20_000);
 
   it("receives a non-zero server-assigned client ID", () => {
     const clid = sharedClient.clientID();

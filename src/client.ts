@@ -75,7 +75,8 @@ export class Client {
   #cmdTrack = new CommandTracker();
   #ftTrack = new FileTransferTracker();
   #clients = new Map<number, ClientInfo>();
-  #connectedResolvers: Array<() => void> = [];
+  #connectedResolvers: Array<{ resolve: () => void; reject: (error: Error) => void }> = [];
+  #connectionError: Error | null = null;
 
   // Event handler lists
   #textMsgHandlers: Array<(msg: import("./types.js").TextMessage) => void> = [];
@@ -169,11 +170,29 @@ export class Client {
 
   waitConnected(signal?: AbortSignal): Promise<void> {
     if (this.#status === ClientStatus.Connected) return Promise.resolve();
+    if (this.#connectionError) return Promise.reject(this.#connectionError);
     return new Promise<void>((resolve, reject) => {
-      this.#connectedResolvers.push(resolve);
-      if (signal) {
-        signal.addEventListener("abort", () => reject(signal.reason as Error), { once: true });
-      }
+      const waiter = {
+        resolve: () => {
+          signal?.removeEventListener("abort", onAbort);
+          resolve();
+        },
+        reject: (error: Error) => {
+          signal?.removeEventListener("abort", onAbort);
+          reject(error);
+        },
+      };
+      const onAbort = (): void => {
+        const index = this.#connectedResolvers.indexOf(waiter);
+        if (index >= 0) this.#connectedResolvers.splice(index, 1);
+        const reason: unknown = signal?.reason;
+        waiter.reject(
+          reason instanceof Error ? reason : new Error(String(reason ?? "Connection wait aborted")),
+        );
+      };
+      this.#connectedResolvers.push(waiter);
+      if (signal?.aborted) onAbort();
+      else signal?.addEventListener("abort", onAbort, { once: true });
     });
   }
 
@@ -365,7 +384,8 @@ export class Client {
   /** @internal */
   _markConnected(): void {
     this.#status = ClientStatus.Connected;
-    for (const resolve of this.#connectedResolvers) resolve();
+    this.#connectionError = null;
+    for (const waiter of this.#connectedResolvers) waiter.resolve();
     this.#connectedResolvers = [];
     const handlers = this.#connectedHandlers.slice();
     for (const h of handlers) setImmediate(() => h());
@@ -374,6 +394,11 @@ export class Client {
   // ---- Private -------------------------------------------------------------
 
   #resetForConnect(): void {
+    // Waiters are deliberately left in place: connect() resets first, so a
+    // caller that registered waitConnected() before calling connect() must
+    // still be resolved by the handshake that follows. Clear only the error
+    // carried over from a previous attempt.
+    this.#connectionError = null;
     this.handler.close();
     this.crypt = new Crypt(this.#identity);
     this.handler = new PacketHandler(this.crypt, this.logger);
@@ -501,6 +526,14 @@ export class Client {
       this.#cmdTrack.discardBuffer();
     }
 
+    // A server error before the welcome sequence finished is the connection
+    // failure itself — a rejected password, or an invalid clientinit parameter.
+    // Report it as the cause instead of leaving the caller with a bare timeout.
+    if (err && this.#status !== ClientStatus.Connected) {
+      this.#failConnection(err);
+      return;
+    }
+
     const id = params["id"] ?? "0";
     if (id === "3329") {
       setImmediate(() => this.disconnect().catch(() => {}));
@@ -514,11 +547,28 @@ export class Client {
     switch (result.kind) {
       case "clientEnter": {
         const info = result.info;
-        if (info.id !== 0 && isAutoNicknameMatch(this.nickname, info.nickname)) {
+        // Our own notifycliententerview is the last event in the TS3/TS5
+        // welcome sequence. Identify self by the clid initserver already
+        // assigned rather than by nickname: any other client whose nickname
+        // happens to be "<our nick><digits>" — which is how the server renames
+        // a client whose nickname was taken — would otherwise be mistaken for
+        // us, poisoning every outgoing packet header with a foreign clientID
+        // until the server drops the connection for command-resend timeout.
+        if (info.id !== 0 && info.id === this.clid) {
+          // Carries the rename the server applied if our nickname was taken.
+          this.nickname = info.nickname;
+          this.#cmdTrack.signalWelcomeComplete();
+        } else if (
+          info.id !== 0 &&
+          this.clid === 0 &&
+          isAutoNicknameMatch(this.nickname, info.nickname)
+        ) {
+          // initserver carried no aclid, so the welcome enter is the only way
+          // to learn our clid. Gated on clid still being unknown so a later
+          // lookalike can never hijack an established session.
           this.clid = info.id;
           this.handler.setClientID(info.id);
-          // Our own notifycliententerview is the last event in the TS3/TS5
-          // welcome sequence. Signal that it's safe to buffer command responses.
+          this.nickname = info.nickname;
           this.#cmdTrack.signalWelcomeComplete();
         }
         this.#dispatchEvent("clientEnter", info);
@@ -583,9 +633,38 @@ export class Client {
 
   #handleConnectionClosed(err: Error | null): void {
     if (this.#status === ClientStatus.Disconnected) return;
+    if (this.#status !== ClientStatus.Connected) {
+      // The socket closed before the handshake finished, so this is a failed
+      // connection attempt rather than a disconnect of a live session.
+      this.#failConnection(
+        err ?? new Error("Connection closed before the TeamSpeak handshake completed"),
+      );
+      return;
+    }
     this.#status = ClientStatus.Disconnected;
     const handlers = this.#disconnectedHandlers.slice();
     for (const h of handlers) setImmediate(() => h(err ?? undefined));
+  }
+
+  /**
+   * A connection attempt has failed for good. Record why, release anyone
+   * waiting on `waitConnected`, and tear the connection down.
+   *
+   * Without this, a handshake the server rejects (a wrong password, say, which
+   * the server answers with an error instead of closing the socket) surfaces
+   * only as the caller's own timeout, and the client stays in `Connecting`
+   * forever without ever emitting `disconnected`.
+   */
+  #failConnection(error: Error): void {
+    this.#connectionError = error;
+    const waiters = this.#connectedResolvers.splice(0);
+    for (const waiter of waiters) waiter.reject(error);
+
+    if (this.#status === ClientStatus.Disconnected) return;
+    this.#status = ClientStatus.Disconnected;
+    this.handler.close();
+    const handlers = this.#disconnectedHandlers.slice();
+    for (const h of handlers) setImmediate(() => h(error));
   }
 
   #buildCmdHandler(): (cmd: string) => Promise<void> {
