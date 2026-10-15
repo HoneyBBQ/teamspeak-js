@@ -1,9 +1,9 @@
 name: CI
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "release/*"]
   pull_request:
-    branches: ["main"]
+    branches: ["main", "release/*"]
   workflow_call:
 
 permissions:
@@ -68,29 +68,43 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
+  # Both supported server generations, because they differ in ways that only
+  # show up live: TS6 hashes client uids with SHA-256 where TS3 uses SHA-1.
   integration:
-    name: Integration (${{ matrix.name }})
+    name: Integration (${{ matrix.server.name }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
+      fail-fast: false
       matrix:
-        include:
+        server:
           - name: TS3
-            addr: localhost:9987
+            image: teamspeak:latest
+            # TS3 still serves raw ServerQuery on 10011.
+            query_host: 127.0.0.1
+            query_http: ""
+            query_port: 10011
           - name: TS6
-            addr: localhost:9988
+            image: teamspeaksystems/teamspeak6-server:latest
+            # TS6 dropped raw ServerQuery for HTTP, so the fixture talks
+            # WebQuery here, the same commands over a different transport.
+            query_host: ""
+            query_http: 127.0.0.1:10080
+            query_port: 10080
     services:
-      ts3:
-        image: teamspeak:latest
+      teamspeak:
+        image: ${{ matrix.server.image }}
         env:
           TS3SERVER_LICENSE: accept
+          TSSERVER_LICENSE_ACCEPTED: accept
+          TSSERVER_QUERY_HTTP_ENABLED: "1"
         ports:
           - 9987:9987/udp
-      ts6:
-        image: teamspeaksystems/teamspeak6-server:latest
-        env:
-          TSSERVER_LICENSE_ACCEPTED: accept
-        ports:
-          - 9988:9987/udp
+          - 10011:10011
+          - 10080:10080
+          # File transfer: the server hands out this port with each transfer
+          # key, so it must be reachable at the same number from the runner.
+          - 30033:30033
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -99,12 +113,36 @@ jobs:
           node-version: "22"
           cache: "pnpm"
       - run: pnpm install --frozen-lockfile
-      - name: Wait for servers to be ready
-        run: sleep 10
+      # Wait for the ServerQuery port to answer rather than for a fixed time:
+      # TS3 and TS6 take different times to start, and a slow runner longer.
+      - name: Wait for server to be ready
+        run: |
+          for i in $(seq 1 60); do
+            if (exec 3<>"/dev/tcp/127.0.0.1/${{ matrix.server.query_port }}") 2>/dev/null; then
+              echo "ServerQuery answered after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "ServerQuery did not answer within 60s" >&2
+          exit 1
+      # The suite needs channels and permissions on the server.
+      - name: Provision the fixture
+        env:
+          # Outside the checkout, so the fixture leaves the working tree clean.
+          TS3_FIXTURE_ENV: ${{ runner.temp }}/ts3-fixture.env
+        run: |
+          sudo apt-get install -y netcat-openbsd >/dev/null
+          TS3_QUERY_HOST='${{ matrix.server.query_host }}' \
+          TS3_QUERY_HTTP='${{ matrix.server.query_http }}' \
+          TS3_QUERY_PORT='${{ matrix.server.query_port }}' \
+          ./scripts/ts3-fixture.sh
       - name: Run integration tests
         env:
-          TEAMSPEAK_ADDR: ${{ matrix.addr }}
-          TEAMSPEAK_SERVER_PASSWORD: ${{ secrets.TEAMSPEAK_SERVER_PASSWORD }}
-          TEAMSPEAK_DEFAULT_CHANNEL: ${{ secrets.TEAMSPEAK_DEFAULT_CHANNEL }}
-          TEAMSPEAK_DEFAULT_CHANNEL_PASSWORD: ${{ secrets.TEAMSPEAK_DEFAULT_CHANNEL_PASSWORD }}
-        run: pnpm test src/integration.test.ts
+          # Where the fixture wrote its environment file.
+          TS3_FIXTURE_ENV: ${{ runner.temp }}/ts3-fixture.env
+        run: |
+          set -a
+          . "$TS3_FIXTURE_ENV"
+          set +a
+          pnpm test src/integration.test.ts
