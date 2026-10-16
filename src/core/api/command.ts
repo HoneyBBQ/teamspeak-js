@@ -373,6 +373,14 @@ export { str, big, num, uint, U16, U32, bool, icon, date, durationMs };
  * so taking the first row returned the first group on the server rather than
  * the new one. The new group is the one with the requested name — the newest,
  * should the name repeat across group types.
+ *
+ * The two commands differ here because of their answers, not by choice:
+ * `notifychannelcreated` names the client that invoked it, so `channelcreate`
+ * keeps only its own row, while `notifyservergrouplist` names no invoker and
+ * leaves nothing but the name to match on. A group of the same name created
+ * concurrently by another party is therefore indistinguishable from ours, and
+ * the id returned may be theirs rather than the one we just made. That is a
+ * limit of what the notification reports, not of this function.
  */
 export function createdGroupID(
   rows: ReadonlyArray<Record<string, string>>,
