@@ -136,6 +136,17 @@ client.on("textMessage", (message) => console.log(message.message)); // the same
 | `on("clientServerGroupAdded", handler)`    | Fires when a client joins a server group                       |
 | `on("clientServerGroupRemoved", handler)`  | Fires when a client leaves a server group                      |
 | `on("clientChannelGroupChanged", handler)` | Fires when a client's channel group changes                    |
+| `on("channelCreated", handler)`            | Fires when a channel is created                                |
+| `on("channelEdited", handler)`             | Fires when a channel's properties are edited                   |
+| `on("channelMoved", handler)`              | Fires when a channel is moved or reordered                     |
+| `on("channelDeleted", handler)`            | Fires when a channel is deleted                                |
+| `on("channelDescriptionChanged", handler)` | Fires when a channel's description changes                     |
+| `on("channelPasswordChanged", handler)`    | Fires when a channel's password changes                        |
+| `on("serverEdited", handler)`              | Fires when the server's settings are edited                    |
+| `on("channelSubscribed", handler)`         | Fires when the bot is subscribed to a channel                  |
+| `on("channelUnsubscribed", handler)`       | Fires when the bot is unsubscribed from a channel              |
+| `on("pluginCommand", handler)`             | Fires on a plugin command (`sendPluginCommand`)                |
+| `on("clientChatComposing", handler)`       | Fires when a client is typing a private message                |
 | `on("kicked", handler)`                    | Fires when the bot is kicked                                   |
 | `on("poked", handler)`                     | Fires when poked by a client                                   |
 | `on("voiceData", handler)`                 | Fires on incoming voice data                                   |
@@ -569,6 +580,14 @@ application behind a TLS terminator or a SOCKS proxy, or one that already
 holds an SSH client, can supply it. `ssh2` is an optional peer dependency:
 without it the other two transports still work, and an `ssh` transport throws
 a `MissingDependencyError` naming the package.
+
+A query client delivers the events its categories carry: `serverEdited` comes
+under `server`; the channel events, `clientEnter`, `clientLeave` and
+`clientMoved` under `channel`; and `textMessage` under the three text
+categories. `QueryEventsOption` has the table. The voice client's events about
+clients' updates, group changes, subscriptions, plugin commands and typing are
+not sent to a ServerQuery connection by TeamSpeak 3 or by TeamSpeak 6 over SSH,
+so the query client does not offer them.
 
 `serverFamily` reports which generation the server is, read from its own
 `version` answer, and `transport` reads back the live connection for metrics.
