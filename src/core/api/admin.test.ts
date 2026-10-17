@@ -1,4 +1,3 @@
-import { inspect } from "node:util";
 import { describe, expect, it } from "vitest";
 import {
   addAPIKey,
@@ -48,10 +47,6 @@ const recording = (...answers: Array<Array<Record<string, string>>>) => {
 
 const cldbid = asClientDBID(8n);
 
-/** What `JSON.stringify` prints, with the bigints it cannot print as text. */
-const json = (value: unknown): string =>
-  JSON.stringify(value, (_, v: unknown) => (typeof v === "bigint" ? String(v) : v));
-
 describe("API keys", () => {
   // Rows are as TS6 answered over WebQuery; TS3's are the same without custom_id.
   const created = {
@@ -81,7 +76,7 @@ describe("API keys", () => {
     expect(sent).toEqual([]);
   });
 
-  it("reads the record, and keeps the key out of logs", async () => {
+  it("reads the record and the key", async () => {
     const { client } = recording([created]);
     const key = await addAPIKey(client, "read");
 
@@ -94,12 +89,11 @@ describe("API keys", () => {
       expiresAt: new Date(1_792_311_113_000),
       remainingMs: 86_399_000,
       customID: "",
+      key: created.apikey,
     });
-    expect(key.key).toBe(created.apikey);
-    for (const text of [json(key), inspect(key), String(Object.keys(key))]) {
-      expect(text).not.toContain(created.apikey);
-    }
-    expect(inspect(key, { showHidden: false })).not.toContain("AQDEKaVY");
+    // An ordinary field: it survives a spread and a clone, which is how a caller stores it.
+    expect({ ...key, note: "x" }.key).toBe(created.apikey);
+    expect(structuredClone(key).key).toBe(created.apikey);
   });
 
   it("reads a key that never expires as having no end", async () => {
@@ -150,16 +144,18 @@ describe("ServerQuery logins", () => {
     ]);
   });
 
-  it("returns the generated password without printing it", async () => {
+  it("returns the generated password", async () => {
     const { client } = recording(
       [{ cldbid: "8", sid: "1", client_login_name: "zzq", client_login_password: "RD8cJLBS" }],
       [{ client_login_password: "+3ESzOM3" }],
     );
     const login = await addQueryLogin(client, "zzq", { databaseID: cldbid });
-    expect(login).toEqual({ databaseID: cldbid, serverID: asServerID(1n), name: "zzq" });
-    expect(login.password).toBe("RD8cJLBS");
-    expect(json(login)).not.toContain("RD8cJLBS");
-    expect(inspect(login)).not.toContain("RD8cJLBS");
+    expect(login).toEqual({
+      databaseID: cldbid,
+      serverID: asServerID(1n),
+      name: "zzq",
+      password: "RD8cJLBS",
+    });
     expect(await setQueryLogin(client, "x")).toBe("+3ESzOM3");
   });
 

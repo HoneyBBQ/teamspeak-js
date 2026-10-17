@@ -21,6 +21,9 @@ export interface ActiveTransfer {
 }
 
 // @public
+export function addAPIKey(client: CommandExecutor, scope: APIKeyScope, options?: APIKeyOptions): Promise<APIKeyCreated>;
+
+// @public
 export function addBan(client: CommandExecutor, ban: BanOptions, options?: CommandOptions): Promise<BanID | undefined>;
 
 // @public
@@ -48,7 +51,13 @@ export function addLog(client: CommandExecutor, level: LogLevel, message: string
 export function addPrivilegeKey(client: CommandExecutor, key: PrivilegeKeyOptions, options?: CommandOptions): Promise<string>;
 
 // @public
+export function addQueryLogin(client: CommandExecutor, name: string, options?: QueryLoginAddOptions): Promise<QueryLoginCreated>;
+
+// @public
 export function addServerGroupPermission(client: CommandExecutor, sgid: ServerGroupID, permission: Permission, value: number, options?: ServerGroupPermissionOptions): Promise<void>;
+
+// @public
+export function addServerGroupPermissionByType(client: CommandExecutor, type: GroupAutoUpdateType, permission: Permission, value: number, options?: ServerGroupPermissionOptions): Promise<void>;
 
 // @public
 export function addTempPassword(client: CommandExecutor, temp: TempPasswordOptions, options?: CommandOptions): Promise<void>;
@@ -60,10 +69,63 @@ export class AlreadyConnectedError extends TeamspeakError {
 }
 
 // @public
+export interface APIKey {
+    readonly createdAt: Date | undefined;
+    readonly customID: string;
+    readonly expiresAt: Date | undefined;
+    readonly id: APIKeyID;
+    readonly ownerDatabaseID: ClientDBID;
+    readonly remainingMs: number | undefined;
+    readonly scope: string;
+    readonly serverID: ServerID;
+}
+
+// @public
+export interface APIKeyCreated extends APIKey {
+    readonly key: string;
+}
+
+// @public
+export type APIKeyID = bigint & {
+    readonly __brand: "APIKeyID";
+};
+
+// @public
+export interface APIKeyListOptions extends CommandOptions {
+    readonly limit?: number | undefined;
+    readonly owner?: ClientDBID | "all" | undefined;
+    readonly start?: number | undefined;
+}
+
+// @public
+export interface APIKeyOptions extends CommandOptions {
+    readonly lifetimeDays?: number | undefined;
+    readonly ownerDatabaseID?: ClientDBID | undefined;
+}
+
+// Warning: (ae-forgotten-export) The symbol "apiKeyScopeValues" needs to be exported by the entry point index.d.ts
+//
+// @public
+export const APIKeyScope: typeof apiKeyScopeValues;
+
+// @public
+export type APIKeyScope = (typeof APIKeyScope)[keyof typeof APIKeyScope];
+
+// @public
+const apiKeyScopeValues: {
+    readonly Read: "read";
+    readonly Write: "write";
+    readonly Manage: "manage";
+};
+
+// @public
 export function applyChannelChanges(channel: Channel, changes: ChannelChanges): Channel;
 
 // @public
 export function applyClientChanges(entry: ClientEntry, changes: ClientChanges): ClientEntry;
+
+// @public
+export const asAPIKeyID: (v: bigint | number) => APIKeyID;
 
 // @public
 export const asBanID: (v: bigint | number) => BanID;
@@ -127,6 +189,14 @@ export interface BanClientOptions extends Pick<BanFields, "durationMs" | "reason
 }
 
 // @public
+export interface BanCriteria {
+    readonly ip?: string | undefined;
+    readonly mytsid?: string | undefined;
+    readonly name?: string | undefined;
+    readonly uid?: UID | undefined;
+}
+
+// @public
 export interface BanEntry {
     readonly createdAt: Date | undefined;
     readonly durationMs: number;
@@ -137,6 +207,7 @@ export interface BanEntry {
     readonly invokerUID: UID;
     readonly ip: string;
     readonly lastNickname: string;
+    readonly mytsid: string;
     readonly name: string;
     readonly reason: string;
     readonly uid: UID;
@@ -146,6 +217,8 @@ export interface BanEntry {
 export interface BanFields {
     readonly durationMs?: number | undefined;
     readonly ip?: string | undefined;
+    readonly lastNickname?: string | undefined;
+    readonly mytsid?: string | undefined;
     readonly name?: string | undefined;
     readonly reason?: string | undefined;
     readonly uid?: UID | undefined;
@@ -155,6 +228,12 @@ export interface BanFields {
 export type BanID = bigint & {
     readonly __brand: "BanID";
 };
+
+// @public
+export interface BanListOptions extends CommandOptions {
+    readonly limit?: number | undefined;
+    readonly start?: number | undefined;
+}
 
 // @public
 export type BanOptions = BanFields;
@@ -263,6 +342,12 @@ export interface ChannelGroupMembership {
 export type ChannelID = bigint & {
     readonly __brand: "ChannelID";
 };
+
+// @public
+export interface ChannelMapping {
+    readonly newID: ChannelID;
+    readonly oldID: ChannelID;
+}
 
 // @public
 export interface ChannelMatch {
@@ -414,6 +499,12 @@ export type ClientFileTransferID = number & {
 };
 
 // @public
+export interface ClientFindOptions extends CommandOptions {
+    readonly channelID?: boolean | undefined;
+    readonly channelUID?: boolean | undefined;
+}
+
+// @public
 export type ClientID = number & {
     readonly __brand: "ClientID";
 };
@@ -448,6 +539,8 @@ export interface ClientListOptions extends CommandOptions {
 
 // @public
 export interface ClientMatch {
+    readonly channelID?: ChannelID | undefined;
+    readonly channelUID?: ChannelUID | undefined;
     readonly id: ClientID;
     readonly nickname: string;
 }
@@ -641,6 +734,7 @@ const commandNameValues: {
     readonly ClientGetNameFromDBID: "clientgetnamefromdbid";
     readonly ClientGetNameFromUID: "clientgetnamefromuid";
     readonly ClientGetUIDFromCLID: "clientgetuidfromclid";
+    readonly ClientGetVariables: "clientgetvariables";
     readonly ClientInfo: "clientinfo";
     readonly ClientKick: "clientkick";
     readonly ClientList: "clientlist";
@@ -657,6 +751,7 @@ const commandNameValues: {
     readonly CustomInfo: "custominfo";
     readonly CustomSearch: "customsearch";
     readonly CustomSet: "customset";
+    readonly GetConnectionInfo: "getconnectioninfo";
     readonly FTCreateDir: "ftcreatedir";
     readonly FTDeleteFile: "ftdeletefile";
     readonly FTGetChannelFileHTTPToken: "ftgetchannelfilehttptoken";
@@ -719,6 +814,7 @@ const commandNameValues: {
     readonly ServerGroupRename: "servergrouprename";
     readonly ServerGroupsByClientID: "servergroupsbyclientid";
     readonly ServerIDGetByPort: "serveridgetbyport";
+    readonly ServerGetVariables: "servergetvariables";
     readonly ServerInfo: "serverinfo";
     readonly ServerList: "serverlist";
     readonly ServerNotifyRegister: "servernotifyregister";
@@ -802,7 +898,24 @@ export function createChannelGroup(client: CommandExecutor, name: string, type: 
 export function createDirectory(client: CommandExecutor, cid: ChannelID, dirname: string, options?: FileOptions): Promise<void>;
 
 // @public
+export function createServer(client: CommandExecutor, name: string, settings?: Readonly<Record<string, string>>, options?: CommandOptions): Promise<ServerCreated>;
+
+// @public
 export function createServerGroup(client: CommandExecutor, name: string, type: GroupType, options?: CommandOptions): Promise<ServerGroupID>;
+
+// @public
+export function createServerSnapshot(client: CommandExecutor, options?: ServerSnapshotOptions): Promise<ServerSnapshot>;
+
+// @public
+export interface CustomProperty {
+    readonly ident: string;
+    readonly value: string;
+}
+
+// @public
+export interface CustomPropertyMatch extends CustomProperty {
+    readonly databaseID: ClientDBID;
+}
 
 // @public
 export const defaultBackoffPolicy: Readonly<BackoffPolicy>;
@@ -812,6 +925,9 @@ export function deleteAllBans(client: CommandExecutor, options?: CommandOptions)
 
 // @public
 export function deleteAllComplaints(client: CommandExecutor, targetDatabaseID: ClientDBID, options?: CommandOptions): Promise<void>;
+
+// @public
+export function deleteAPIKey(client: CommandExecutor, id: APIKeyID, options?: CommandOptions): Promise<void>;
 
 // @public
 export function deleteBan(client: CommandExecutor, banID: BanID, options?: CommandOptions): Promise<void>;
@@ -841,6 +957,9 @@ export function deleteClientPermission(client: CommandExecutor, cldbid: ClientDB
 export function deleteComplaint(client: CommandExecutor, targetDatabaseID: ClientDBID, fromDatabaseID: ClientDBID, options?: CommandOptions): Promise<void>;
 
 // @public
+export function deleteCustomProperty(client: CommandExecutor, cldbid: ClientDBID, ident: string, options?: CommandOptions): Promise<void>;
+
+// @public
 export function deleteFile(client: CommandExecutor, cid: ChannelID, paths: string | readonly string[], options?: FileOptions): Promise<void>;
 
 // @public
@@ -850,13 +969,25 @@ export function deleteMessage(client: CommandExecutor, messageID: MessageID, opt
 export function deletePrivilegeKey(client: CommandExecutor, token: string, options?: CommandOptions): Promise<void>;
 
 // @public
+export function deleteQueryLogin(client: CommandExecutor, databaseID: ClientDBID, options?: CommandOptions): Promise<void>;
+
+// @public
+export function deleteServer(client: CommandExecutor, sid: ServerID, options?: ServerDeleteOptions): Promise<void>;
+
+// @public
 export function deleteServerGroup(client: CommandExecutor, sgid: ServerGroupID, options?: GroupDeleteOptions): Promise<void>;
 
 // @public
 export function deleteServerGroupPermission(client: CommandExecutor, sgid: ServerGroupID, permission: Permission, options?: CommandOptions): Promise<void>;
 
 // @public
+export function deleteServerGroupPermissionByType(client: CommandExecutor, type: GroupAutoUpdateType, permission: Permission, options?: CommandOptions): Promise<void>;
+
+// @public
 export function deleteTempPassword(client: CommandExecutor, password: string, options?: CommandOptions): Promise<void>;
+
+// @public
+export function deployServerSnapshot(client: CommandExecutor, snapshot: ServerSnapshot, options?: ServerSnapshotDeployOptions): Promise<ChannelMapping[]>;
 
 // @public
 export interface DisconnectedEvent {
@@ -1095,6 +1226,7 @@ export { escape_2 as escape }
 export interface FileDownloadInfo {
     readonly clientFileTransferID: ClientFileTransferID;
     readonly fileTransferKey: string;
+    readonly ip?: string | undefined;
     readonly port: number;
     readonly serverFileTransferID: ServerFileTransferID;
     readonly size: bigint;
@@ -1135,6 +1267,7 @@ export interface FileTransferStopOptions extends CommandOptions {
 export interface FileUploadInfo {
     readonly clientFileTransferID: ClientFileTransferID;
     readonly fileTransferKey: string;
+    readonly ip?: string | undefined;
     readonly port: number;
     readonly seekPosition: bigint;
     readonly serverFileTransferID: ServerFileTransferID;
@@ -1148,13 +1281,19 @@ export interface FileUploadOptions extends CommandOptions {
 }
 
 // @public
+export function findBans(client: CommandExecutor, criteria: BanCriteria, options?: CommandOptions): Promise<BanEntry[]>;
+
+// @public
 export function findChannels(client: CommandExecutor, pattern: string, options?: CommandOptions): Promise<ChannelMatch[]>;
 
 // @public
 export function findClientDatabase(client: CommandExecutor, pattern: string, options?: CommandOptions): Promise<ClientDBID[]>;
 
 // @public
-export function findClients(client: CommandExecutor, pattern: string, options?: CommandOptions): Promise<ClientMatch[]>;
+export function findClients(client: CommandExecutor, pattern: string, options?: ClientFindOptions): Promise<ClientMatch[]>;
+
+// @public
+export function findCustomProperty(client: CommandExecutor, ident: string, pattern: string, options?: CommandOptions): Promise<CustomPropertyMatch[]>;
 
 // @public
 export function findPermission(client: CommandExecutor, permission: Permission, options?: CommandOptions): Promise<PermissionLocation[]>;
@@ -1199,6 +1338,9 @@ export function getInstanceInfo(client: CommandExecutor, options?: CommandOption
 export function getMessage(client: CommandExecutor, messageID: MessageID, options?: CommandOptions): Promise<OfflineMessage>;
 
 // @public
+export function getOwnPermission(client: CommandExecutor, permission: Permission, options?: CommandOptions): Promise<OwnPermission>;
+
+// @public
 export function getPermissionIDByName(client: CommandExecutor, name: string, options?: CommandOptions): Promise<PermissionID | undefined>;
 
 // @public
@@ -1215,6 +1357,27 @@ export function getServerInfo(client: CommandExecutor, options?: CommandOptions)
 
 // @public
 export function getVersion(client: CommandExecutor, options?: CommandOptions): Promise<ServerVersion>;
+
+// Warning: (ae-forgotten-export) The symbol "groupAutoUpdateTypeValues" needs to be exported by the entry point index.d.ts
+//
+// @public
+export const GroupAutoUpdateType: typeof groupAutoUpdateTypeValues;
+
+// @public
+export type GroupAutoUpdateType = (typeof GroupAutoUpdateType)[keyof typeof GroupAutoUpdateType];
+
+// @public
+const groupAutoUpdateTypeValues: {
+    readonly ChannelGuest: 10;
+    readonly ServerGuest: 15;
+    readonly QueryGuest: 20;
+    readonly ChannelVoice: 25;
+    readonly ServerNormal: 30;
+    readonly ChannelOperator: 35;
+    readonly ChannelAdmin: 40;
+    readonly ServerAdmin: 45;
+    readonly QueryAdmin: 50;
+};
 
 // @public
 export interface GroupDeleteOptions extends CommandOptions {
@@ -1307,7 +1470,10 @@ export type KickReason = typeof Reason.KickChannel | typeof Reason.KickServer;
 export function listActiveTransfers(client: CommandExecutor, options?: CommandOptions): Promise<ActiveTransfer[]>;
 
 // @public
-export function listBans(client: CommandExecutor, options?: CommandOptions): Promise<BanEntry[]>;
+export function listAPIKeys(client: CommandExecutor, options?: APIKeyListOptions): Promise<APIKey[]>;
+
+// @public
+export function listBans(client: CommandExecutor, options?: BanListOptions): Promise<BanEntry[]>;
 
 // @public
 export function listBindings(client: CommandExecutor, options?: BindingListOptions): Promise<Binding[]>;
@@ -1343,6 +1509,9 @@ export function listClients(client: CommandExecutor, options?: ClientListOptions
 export function listComplaints(client: CommandExecutor, options?: ComplaintListOptions): Promise<Complaint[]>;
 
 // @public
+export function listCustomProperties(client: CommandExecutor, cldbid: ClientDBID, options?: CommandOptions): Promise<CustomProperty[]>;
+
+// @public
 export type Listener<M, K extends keyof M> = M[K] extends void ? () => void : (payload: M[K]) => void;
 
 // @public
@@ -1358,6 +1527,9 @@ export function listPermissions(client: CommandExecutor, options?: CommandOption
 export function listPrivilegeKeys(client: CommandExecutor, options?: CommandOptions): Promise<PrivilegeKey[]>;
 
 // @public
+export function listQueryLogins(client: CommandExecutor, options?: QueryLoginListOptions): Promise<QueryLogin[]>;
+
+// @public
 export function listServerGroupClients(client: CommandExecutor, sgid: ServerGroupID, options?: ServerGroupClientListOptions): Promise<ServerGroupMember[]>;
 
 // @public
@@ -1365,6 +1537,9 @@ export function listServerGroupPermissions(client: CommandExecutor, sgid: Server
 
 // @public
 export function listServerGroups(client: CommandExecutor, options?: CommandOptions): Promise<ServerGroup[]>;
+
+// @public
+export function listServers(client: CommandExecutor, options?: ServerListOptions): Promise<VirtualServer[]>;
 
 // @public
 export function listTempPasswords(client: CommandExecutor, options?: CommandOptions): Promise<TempPassword[]>;
@@ -1456,6 +1631,8 @@ export type NotificationName = (typeof NotificationName)[keyof typeof Notificati
 
 // @public
 const notificationNameValues: {
+    readonly APIKeyAdd: "notifyapikeyadd";
+    readonly APIKeyList: "notifyapikeylist";
     readonly BanList: "notifybanlist";
     readonly ChannelChanged: "notifychannelchanged";
     readonly ChannelClientPermList: "notifychannelclientpermlist";
@@ -1503,6 +1680,7 @@ const notificationNameValues: {
     readonly PermFind: "notifypermfind";
     readonly PermissionList: "notifypermissionlist";
     readonly PermOverview: "notifypermoverview";
+    readonly PermGet: "notifypermget";
     readonly PluginCmd: "notifyplugincmd";
     readonly ServerConnectionInfo: "notifyserverconnectioninfo";
     readonly ServerEdited: "notifyserveredited";
@@ -1532,6 +1710,13 @@ export interface OfflineMessage {
     readonly sentAt: Date | undefined;
     readonly subject: string;
     readonly uid: UID;
+}
+
+// @public
+export interface OwnPermission {
+    readonly id: PermissionID;
+    readonly name: string;
+    readonly value: number;
 }
 
 // @public
@@ -1910,6 +2095,7 @@ export interface PrivilegeKey {
     readonly channelGroupID: ChannelGroupID | undefined;
     readonly channelID: ChannelID | undefined;
     readonly createdAt: Date | undefined;
+    readonly customSet: readonly CustomProperty[];
     readonly description: string;
     readonly serverGroupID: ServerGroupID | undefined;
     readonly token: string;
@@ -1922,11 +2108,13 @@ export type PrivilegeKeyOptions = {
     readonly channelGroupID?: never;
     readonly channelID?: never;
     readonly description?: string | undefined;
+    readonly customSet?: readonly CustomProperty[] | undefined;
 } | {
     readonly serverGroupID?: never;
     readonly channelGroupID: ChannelGroupID;
     readonly channelID: ChannelID;
     readonly description?: string | undefined;
+    readonly customSet?: readonly CustomProperty[] | undefined;
 };
 
 // Warning: (ae-forgotten-export) The symbol "privilegeKeyTypeValues" needs to be exported by the entry point index.d.ts
@@ -2145,6 +2333,30 @@ const propertyNameValues: {
     readonly ConnectionClientIP: "connection_client_ip";
 };
 
+// @public
+export interface QueryLogin {
+    readonly databaseID: ClientDBID;
+    readonly name: string;
+    readonly serverID: ServerID;
+}
+
+// @public
+export interface QueryLoginAddOptions extends CommandOptions {
+    readonly databaseID?: ClientDBID | undefined;
+}
+
+// @public
+export interface QueryLoginCreated extends QueryLogin {
+    readonly password: string;
+}
+
+// @public
+export interface QueryLoginListOptions extends CommandOptions {
+    readonly limit?: number | undefined;
+    readonly pattern?: string | undefined;
+    readonly start?: number | undefined;
+}
+
 // Warning: (ae-forgotten-export) The symbol "reasonValues" needs to be exported by the entry point index.d.ts
 //
 // @public
@@ -2196,6 +2408,12 @@ export function resetPermissions(client: CommandExecutor, options?: CommandOptio
 export function sendChannelMessage(client: CommandExecutor, message: string, options?: CommandOptions): Promise<void>;
 
 // @public
+export function sendGlobalMessage(client: CommandExecutor, message: string, options?: CommandOptions): Promise<void>;
+
+// @public
+export function sendOfflineMessage(client: CommandExecutor, uid: UID, subject: string, message: string, options?: CommandOptions): Promise<void>;
+
+// @public
 export function sendPrivateMessage(client: CommandExecutor, clid: ClientID, message: string, options?: CommandOptions): Promise<void>;
 
 // @public
@@ -2218,6 +2436,18 @@ export interface ServerConnectionInfo {
     readonly packetsReceived: number;
     readonly packetsSent: number;
     readonly pingMs: number;
+}
+
+// @public
+export interface ServerCreated {
+    readonly id: ServerID;
+    readonly port: number;
+    readonly token: string;
+}
+
+// @public
+export interface ServerDeleteOptions extends CommandOptions {
+    readonly noEvent?: boolean | undefined;
 }
 
 // @public
@@ -2299,6 +2529,38 @@ export type ServerID = bigint & {
 };
 
 // @public
+export interface ServerListOptions extends CommandOptions {
+    readonly all?: boolean | undefined;
+    readonly onlyOffline?: boolean | undefined;
+    readonly short?: boolean | undefined;
+    readonly uid?: boolean | undefined;
+}
+
+// @public
+export interface ServerSnapshot {
+    readonly data: string;
+    readonly salt: string;
+    readonly version: number;
+}
+
+// @public
+export interface ServerSnapshotDeployOptions extends CommandOptions {
+    readonly keepFiles?: boolean | undefined;
+    readonly mapping?: boolean | undefined;
+    readonly password?: string | undefined;
+}
+
+// @public
+export interface ServerSnapshotOptions extends CommandOptions {
+    readonly password?: string | undefined;
+}
+
+// @public
+export interface ServerStopOptions extends CommandOptions {
+    readonly reason?: string | undefined;
+}
+
+// @public
 export interface ServerVersion {
     readonly build: number;
     readonly platform: string;
@@ -2316,7 +2578,22 @@ export interface SessionEventMap {
 export function setClientChannelGroup(client: CommandExecutor, cgid: ChannelGroupID, cid: ChannelID, cldbid: ClientDBID, options?: CommandOptions): Promise<void>;
 
 // @public
+export function setCustomProperty(client: CommandExecutor, cldbid: ClientDBID, ident: string, value: string, options?: CommandOptions): Promise<void>;
+
+// @public
+export function setQueryLogin(client: CommandExecutor, name: string, options?: CommandOptions): Promise<string>;
+
+// @public
+export function startServer(client: CommandExecutor, sid: ServerID, options?: CommandOptions): Promise<void>;
+
+// @public
 export function stopFileTransfer(client: CommandExecutor, serverFileTransferID: ServerFileTransferID, options?: FileTransferStopOptions): Promise<void>;
+
+// @public
+export function stopInstance(client: CommandExecutor, options?: ServerStopOptions): Promise<void>;
+
+// @public
+export function stopServer(client: CommandExecutor, sid: ServerID, options?: ServerStopOptions): Promise<void>;
 
 // @public
 export class TeamspeakError extends Error {
@@ -2394,6 +2671,21 @@ export function usePrivilegeKey(client: CommandExecutor, token: string, options?
 
 // @public
 export function viewLog(client: CommandExecutor, options?: LogViewOptions): Promise<LogPage>;
+
+// @public
+export interface VirtualServer {
+    readonly autoStart: boolean | undefined;
+    readonly clientsOnline: number | undefined;
+    readonly id: ServerID;
+    readonly machineID: string | undefined;
+    readonly maxClients: number | undefined;
+    readonly name: string;
+    readonly port: number;
+    readonly queryClientsOnline: number | undefined;
+    readonly status: string;
+    readonly uid: string;
+    readonly uptimeMs: number | undefined;
+}
 
 // @public
 export interface VoiceDataEvent {

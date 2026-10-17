@@ -1,4 +1,3 @@
-import { inspect } from "node:util";
 import { describe, expect, it } from "vitest";
 import {
   createServer,
@@ -17,10 +16,6 @@ import { encodeRequest } from "../command/request.js";
 import type { CommandExecutor, CommandRequest } from "../command/request.js";
 import { GroupAutoUpdateType } from "../enums.js";
 import { permissionByName } from "../permission.js";
-
-/** What `JSON.stringify` prints, with the bigints it cannot print as text. */
-const json = (value: unknown): string =>
-  JSON.stringify(value, (_, v: unknown) => (typeof v === "bigint" ? String(v) : v));
 
 /** An executor that records each request as the wire line it encodes to, answering from a queue. */
 const recording = (...answers: Array<Array<Record<string, string>>>) => {
@@ -90,10 +85,11 @@ describe("virtual servers", () => {
     expect(sent).toEqual([
       "servercreate virtualserver_name=Second\\sOne virtualserver_port=9988 virtualserver_maxclients=5",
     ]);
-    expect(created).toEqual({ id: asServerID(6n), port: 9987 });
-    expect(created.token).toBe("KU5HLgrv6lJLSxKc0DECLsFERXuY0RwJmYF1HthX");
-    expect(json(created)).not.toContain("KU5HLgrv");
-    expect(inspect(created)).not.toContain("KU5HLgrv");
+    expect(created).toEqual({
+      id: asServerID(6n),
+      port: 9987,
+      token: "KU5HLgrv6lJLSxKc0DECLsFERXuY0RwJmYF1HthX",
+    });
   });
 
   it("lists servers with the flags given", async () => {

@@ -367,28 +367,6 @@ const date = (row: Record<string, string>, key: string): Date | undefined => {
 const durationMs = (row: Record<string, string>, key: string, unitMs: number): number =>
   num(row, key) * unitMs;
 
-/**
- * `fields` with a secret property that is there to read but not to enumerate.
- *
- * A key or password the server generates once must not reach a log line by
- * way of `console.log(result)`, `util.inspect` or `JSON.stringify(result)`, as
- * `Identity` keeps its key out of them: the property is defined, not
- * enumerable, so none of those print it. Read it by name. A spread of the
- * result does not copy it.
- */
-export function withSecret<T extends object, K extends string>(
-  fields: T,
-  key: K,
-  value: string,
-): T & { readonly [P in K]: string } {
-  return Object.defineProperty(fields, key, {
-    value,
-    enumerable: false,
-    writable: false,
-    configurable: false,
-  }) as T & { readonly [P in K]: string };
-}
-
 export { str, big, num, uint, U16, U32, bool, icon, date, durationMs };
 
 // ---- Read tables ------------------------------------------------------------

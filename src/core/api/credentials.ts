@@ -19,7 +19,6 @@ import {
   big,
   date,
   durationMs,
-  withSecret,
   SECOND,
 } from "./command.js";
 import type { WireNames } from "./command.js";
@@ -60,17 +59,15 @@ export interface APIKey {
   readonly customID: string;
 }
 
-/**
- * A key as {@link addAPIKey} creates it: the record, and the key itself.
- *
- * `key` is a secret. It is defined but not enumerable, so `console.log`,
- * `util.inspect` and `JSON.stringify` of the result leave it out; read it by
- * name, and note that spreading the result does not copy it.
- */
-export type APIKeyCreated = APIKey & {
-  /** The key, to send as the `x-api-key` of a WebQuery request (`apikey`). */
+/** A key as {@link addAPIKey} creates it: the record, and the key itself. */
+export interface APIKeyCreated extends APIKey {
+  /**
+   * The key, to send as the `x-api-key` of a WebQuery request (`apikey`). A
+   * secret the server shows only this once: store it where it is needed, and do
+   * not log it.
+   */
   readonly key: string;
-};
+}
 
 const parseAPIKey = (row: Record<string, string>): APIKey => {
   const unlimited = str(row, "time_left") === "unlimited";
@@ -113,8 +110,8 @@ const apiKeyNames: WireNames<APIKeyOptions> = {
  * the answer arrives as a notification, which the client pairs with this
  * command. TS6 also reports a `custom_id`.
  *
- * Returns the key with its record; keep it out of logs, as it grants access to
- * the server.
+ * Returns the key with its record. The key grants access to the server and is
+ * shown only this once: store it, and do not log it.
  */
 export async function addAPIKey(
   client: CommandExecutor,
@@ -132,7 +129,7 @@ export async function addAPIKey(
     options,
   );
   const row = firstRow(rows, "apikeyadd", "apikey");
-  return withSecret(parseAPIKey(row), "key", str(row, "apikey"));
+  return { ...parseAPIKey(row), key: str(row, "apikey") };
 }
 
 /** Which keys {@link listAPIKeys} reports, and how many. */
@@ -198,16 +195,14 @@ export interface QueryLogin {
   readonly name: string;
 }
 
-/**
- * A login as {@link addQueryLogin} creates it: the record, and its password.
- *
- * `password` is a secret, kept out of `console.log`, `util.inspect` and
- * `JSON.stringify` the way {@link APIKeyCreated} is.
- */
-export type QueryLoginCreated = QueryLogin & {
-  /** The generated password (`client_login_password`). */
+/** A login as {@link addQueryLogin} creates it: the record, and its password. */
+export interface QueryLoginCreated extends QueryLogin {
+  /**
+   * The generated password (`client_login_password`). A secret the server shows
+   * only this once: store it where it is needed, and do not log it.
+   */
   readonly password: string;
-};
+}
 
 const parseQueryLogin = (row: Record<string, string>): QueryLogin => ({
   databaseID: asClientDBID(big(row, "cldbid")),
@@ -272,7 +267,7 @@ const queryLoginAddNames: WireNames<QueryLoginAddOptions> = {
  *
  * ServerQuery only: a voice client gets error 2 (not implemented). Needs
  * `b_serverquery_login_create`. Returns the login with its generated
- * password, which the server shows once.
+ * password, a secret the server shows once: store it, and do not log it.
  */
 export async function addQueryLogin(
   client: CommandExecutor,
@@ -286,7 +281,7 @@ export async function addQueryLogin(
     options,
   );
   const row = firstRow(rows, "queryloginadd", "client_login_password");
-  return withSecret(parseQueryLogin(row), "password", str(row, "client_login_password"));
+  return { ...parseQueryLogin(row), password: str(row, "client_login_password") };
 }
 
 /**
@@ -312,7 +307,8 @@ export async function deleteQueryLogin(
  * client pairs with this command. A ServerQuery connection gets error 512 on
  * TS3 and TS6 alike: its own client has no database record to attach the login
  * to; use {@link addQueryLogin} there. Needs
- * `b_client_create_modify_serverquery_login`. The password is a secret.
+ * `b_client_create_modify_serverquery_login`. The password is a secret the
+ * server shows only this once: store it, and do not log it.
  */
 export async function setQueryLogin(
   client: CommandExecutor,

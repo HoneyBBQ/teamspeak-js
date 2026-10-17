@@ -24,7 +24,6 @@ import {
   num,
   bool,
   durationMs,
-  withSecret,
   SECOND,
 } from "./command.js";
 import type { WireNames } from "./command.js";
@@ -121,24 +120,19 @@ export async function listServers(
   return rows.map(parseVirtualServer);
 }
 
-/**
- * A server as {@link createServer} made it: its id and port, and the
- * administrator's privilege key.
- *
- * `token` is a secret — whoever has it can make themselves the new server's
- * administrator — and is defined but not enumerable, so `console.log`,
- * `util.inspect` and `JSON.stringify` of the result leave it out. Read it by
- * name; spreading the result does not copy it.
- */
-export type ServerCreated = {
+/** A server as {@link createServer} made it: its id and port, and the administrator's privilege key. */
+export interface ServerCreated {
   /** The new server's id (`sid`). */
   readonly id: ServerID;
   /** The voice port it was given (`virtualserver_port`). */
   readonly port: number;
-} & {
-  /** The privilege key that makes its holder the server's administrator (`token`). */
+  /**
+   * The privilege key that makes its holder the server's administrator
+   * (`token`). A secret the server shows only this once: store it, and do not
+   * log it.
+   */
   readonly token: string;
-};
+}
 
 /**
  * Create a virtual server and start it.
@@ -147,7 +141,8 @@ export type ServerCreated = {
  * the reasons {@link editServer} gives; `virtualserver_port` picks the port,
  * and the server takes the first free one from 9987 up when it is unset. Needs
  * `b_virtualserver_create`. An instance without a license that already runs a
- * server refuses with error 2816.
+ * server refuses with error 2816. The result's `token` is a secret shown only
+ * once: store it, and do not log it.
  */
 export async function createServer(
   client: CommandExecutor,
@@ -162,11 +157,11 @@ export async function createServer(
     options,
   );
   const row = firstRow(rows, "servercreate", "sid");
-  return withSecret(
-    { id: asServerID(big(row, "sid")), port: num(row, "virtualserver_port") },
-    "token",
-    str(row, "token"),
-  );
+  return {
+    id: asServerID(big(row, "sid")),
+    port: num(row, "virtualserver_port"),
+    token: str(row, "token"),
+  };
 }
 
 /**
