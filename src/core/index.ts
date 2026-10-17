@@ -134,5 +134,6 @@ export * from "./api/groups.js";
 export * from "./api/moderation.js";
 export * from "./api/files.js";
 export * from "./api/credentials.js";
+export * from "./api/instance.js";
 export { applyChannelChanges } from "./api/command.js";
 export type { Channel, ChannelChanges, PagingOptions, PermissionEntry } from "./api/command.js";

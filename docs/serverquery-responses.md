@@ -193,6 +193,52 @@ on the server was the probe's own. `resetPermissions` was skipped, as it resets
 the whole server. `editServer` and `editInstance` were called with a value
 equal to the current one.
 
+### Commands added after the table
+
+Measured the same way, against TS3 3.13.8 over raw TCP and TS6 6.0.0-beta13.1
+over WebQuery and SSH, on a TS3 and a TS6 of their own for the instance-level
+ones. The rows are the same across transports apart from key order, and `count`
+(from `-count`, which the SDK does not send) on the first row only.
+
+| Function                                                              | Command                                                          | Answer                                                                                                                                                                                                                                                                                                                                          |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `addAPIKey`, `listAPIKeys`, `deleteAPIKey`                            | `apikeyadd`, `apikeylist`, `apikeydel`                           | `apikey`, `id`, `sid`, `cldbid`, `scope`, `time_left`, `created_at`, `expires_at`; TS6 adds `custom_id`; 1281 when empty                                                                                                                                                                                                                        |
+| `sendOfflineMessage`                                                  | `messageadd`                                                     | ok; 512 for an unknown uid; needs `b_client_offline_textmessage_send`, which the command reference does not list                                                                                                                                                                                                                                |
+| `setCustomProperty`, `deleteCustomProperty`                           | `customset`, `customdelete`                                      | ok, also for a `cldbid` that does not exist                                                                                                                                                                                                                                                                                                     |
+| `listCustomProperties`, `findCustomProperty`                          | `custominfo`, `customsearch`                                     | `ident`, `value`, and `cldbid` on every row of a search but only the first row of `custominfo`; see below                                                                                                                                                                                                                                       |
+| `addQueryLogin`, `deleteQueryLogin`, `listQueryLogins`                | `queryloginadd`, `querylogindel`, `queryloginlist`               | `cldbid`, `sid`, `client_login_name`, and `client_login_password` for an add; 1281 when empty                                                                                                                                                                                                                                                   |
+| `setQueryLogin`                                                       | `clientsetserverquerylogin`                                      | 512 over every query transport; over voice `client_login_password`                                                                                                                                                                                                                                                                              |
+| `getOwnPermission`                                                    | `permget`                                                        | `permsid`, `permid`, `permvalue`; 2562 for an unknown permission                                                                                                                                                                                                                                                                                |
+| `addServerGroupPermissionByType`, `deleteServerGroupPermissionByType` | `servergroupautoaddperm`, `servergroupautodelperm`               | ok                                                                                                                                                                                                                                                                                                                                              |
+| `listServers`                                                         | `serverlist`                                                     | `virtualserver_id`, `_port`, `_status`, and unless `-short` `_clientsonline`, `_queryclientsonline`, `_maxclients`, `_uptime`, `_name`, `_autostart`, `_machine_id`; `_unique_identifier` with `-uid`; TS6 adds `guest_can_create_channels`, `guest_can_create_homebase`, `virtualserver_weblist_enabled`, and `virtualserver_uuid` with `-uid` |
+| `createServer`                                                        | `servercreate`                                                   | `sid`, `virtualserver_port`, `token`                                                                                                                                                                                                                                                                                                            |
+| `startServer`, `stopServer`, `deleteServer`, `stopInstance`           | `serverstart`, `serverstop`, `serverdelete`, `serverprocessstop` | ok; 1033 stopping a stopped server; 1035 deleting one a query client has selected; 1024 for an unknown id                                                                                                                                                                                                                                       |
+| `sendGlobalMessage`                                                   | `gm`                                                             | ok                                                                                                                                                                                                                                                                                                                                              |
+| `createServerSnapshot`, `deployServerSnapshot`                        | `serversnapshotcreate`, `serversnapshotdeploy`                   | `version`, `data`, and `salt` with a password; a deploy with `-mapping` answers `ocid`, `ncid` per channel                                                                                                                                                                                                                                      |
+| `findBans`                                                            | `banfind`                                                        | the `banlist` row; TS6 only, and unknown (1538) over WebQuery                                                                                                                                                                                                                                                                                   |
+
+What the table does not say:
+
+- **A new server of an unlicensed instance.** Both TS3 and TS6 refuse a second
+  running virtual server with 2816 (virtualserver limit reached): in `servercreate`
+  and in `serverstart`, and in `serversnapshotdeploy` with no server selected, which
+  creates a new one from the snapshot and leaves it stopped. A test of the lifecycle
+  therefore stops and deletes server 1 and creates its replacement.
+- **A deploy ends the selection.** Over raw TCP and SSH the next command after
+  `serversnapshotdeploy` answers 1024 (invalid serverID) until `use` runs again. The
+  channels get new ids.
+- **SSH has no instance level on TS6.** Connecting with no server selected fails with
+  1024 (invalid serverID). A connection selects server 1 and runs the
+  instance-level commands from there; WebQuery addresses the instance directly.
+- **`custominfo` for a client with no properties** answers 512, as for a client that
+  does not exist.
+- **`tokencustomset`** is escaped twice: the documentation's example, escaped once,
+  gives a value cut at its first space.
+- **Logging out** (`logout`) leaves the connection open with no server selected and no
+  login; over WebQuery the server refuses it, and `servernotifyunregister`, with 5120.
+- **A deleted API key** can be the one a WebQuery connection uses: deleting the key a
+  server printed at its first start ends that access.
+
 ### Counts
 
 | Class        | TS3 | TS6 |

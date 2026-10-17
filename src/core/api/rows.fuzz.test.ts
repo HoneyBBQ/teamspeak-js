@@ -24,7 +24,17 @@ import {
   listChannels,
 } from "./channels.js";
 import {
+  addAPIKey,
+  addQueryLogin,
+  listAPIKeys,
+  listQueryLogins,
+  setQueryLogin,
+} from "./credentials.js";
+import { createServer, createServerSnapshot, listServers } from "./instance.js";
+import {
   findClientDatabase,
+  findCustomProperty,
+  listCustomProperties,
   findClients,
   getClientDBIDByUID,
   getClientDatabaseInfo,
@@ -49,6 +59,7 @@ import {
   copyChannelGroup,
   createChannelGroup,
   findPermission,
+  getOwnPermission,
   getPermissionOverview,
   listChannelGroupClients,
   listChannelGroupPermissions,
@@ -58,6 +69,7 @@ import {
 } from "./groups.js";
 import {
   addBan,
+  findBans,
   getMessage,
   listBans,
   listComplaints,
@@ -314,6 +326,18 @@ const commands: Record<string, (c: CommandExecutor) => Promise<unknown>> = {
   whoAmI: (c) => whoAmI(c),
   getConnectionInfo: (c) => getConnectionInfo(c),
   getServerIDByPort: (c) => getServerIDByPort(c, 9987),
+  listAPIKeys: (c) => listAPIKeys(c),
+  addAPIKey: (c) => addAPIKey(c, "read"),
+  listQueryLogins: (c) => listQueryLogins(c),
+  addQueryLogin: (c) => addQueryLogin(c, "x"),
+  setQueryLogin: (c) => setQueryLogin(c, "x"),
+  getOwnPermission: (c) => getOwnPermission(c, permission),
+  listCustomProperties: (c) => listCustomProperties(c, cldbid),
+  findCustomProperty: (c) => findCustomProperty(c, "x", "%"),
+  findBans: (c) => findBans(c, { ip: "1.2.3.4" }),
+  listServers: (c) => listServers(c),
+  createServer: (c) => createServer(c, "x"),
+  createServerSnapshot: (c) => createServerSnapshot(c),
 };
 
 const UINT64_MAX = (1n << 64n) - 1n;

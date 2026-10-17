@@ -19,6 +19,7 @@ import {
   inSeconds,
   parsePermission,
   permissionParam,
+  rawProperties,
   createdGroupID,
   str,
   big,
@@ -29,7 +30,7 @@ import {
   durationMs,
   SECOND,
 } from "./command.js";
-import type { Params, PermissionEntry, WireNames } from "./command.js";
+import type { PermissionEntry, WireNames } from "./command.js";
 import type { CommandExecutor, CommandOptions } from "../command/request.js";
 import type {
   ChannelID,
@@ -48,7 +49,7 @@ import {
   asServerID,
   asUID,
 } from "../command/ids.js";
-import type { GroupType } from "../enums.js";
+import type { GroupAutoUpdateType, GroupType } from "../enums.js";
 import type { GroupDeleteOptions } from "./groups.js";
 import type { Permission } from "../permission.js";
 
@@ -111,12 +112,6 @@ export async function getServerInfo(
 ): Promise<Readonly<Record<string, string>>> {
   return firstRow(await query(client, "serverinfo", [], options), "serverinfo");
 }
-
-/** Raw wire properties, sent as given. */
-const rawProperties = (settings: Readonly<Record<string, string>>): Params =>
-  Object.entries(settings).filter(
-    (entry): entry is [string, string] => typeof entry[1] === "string",
-  );
 
 /**
  * Change the virtual server's settings. Only the properties you pass are sent.
@@ -606,6 +601,54 @@ export async function deleteServerGroupPermission(
   options?: CommandOptions,
 ): Promise<void> {
   await exec(client, "servergroupdelperm", [["sgid", sgid], permissionParam(permission)], options);
+}
+
+/**
+ * Set a permission on every regular server group of a type, on every virtual
+ * server of the instance: the groups whose `i_group_auto_update_type` is
+ * `type`.
+ *
+ * Instance-wide, so it needs `b_permission_modify_power_ignore`, which a
+ * virtual server's Server Admin does not hold: a voice client gets error 2568.
+ */
+export async function addServerGroupPermissionByType(
+  client: CommandExecutor,
+  type: GroupAutoUpdateType,
+  permission: Permission,
+  value: number,
+  options: ServerGroupPermissionOptions = {},
+): Promise<void> {
+  await exec(
+    client,
+    "servergroupautoaddperm",
+    [
+      ["sgtype", type],
+      permissionParam(permission),
+      ["permvalue", value],
+      ["permnegated", options.negated ?? false],
+      ["permskip", options.skip ?? false],
+    ],
+    options,
+  );
+}
+
+/**
+ * Remove a permission from every regular server group of a type, on every
+ * virtual server of the instance; see {@link addServerGroupPermissionByType}.
+ * Needs `b_permission_modify_power_ignore`: a voice client gets error 2568.
+ */
+export async function deleteServerGroupPermissionByType(
+  client: CommandExecutor,
+  type: GroupAutoUpdateType,
+  permission: Permission,
+  options?: CommandOptions,
+): Promise<void> {
+  await exec(
+    client,
+    "servergroupautodelperm",
+    [["sgtype", type], permissionParam(permission)],
+    options,
+  );
 }
 
 // ---- Temporary passwords ----------------------------------------------------

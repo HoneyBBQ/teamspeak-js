@@ -8,7 +8,17 @@ import {
   listChannels,
 } from "./channels.js";
 import {
+  addAPIKey,
+  addQueryLogin,
+  listAPIKeys,
+  listQueryLogins,
+  setQueryLogin,
+} from "./credentials.js";
+import { createServer, createServerSnapshot, listServers } from "./instance.js";
+import {
   findClientDatabase,
+  findCustomProperty,
+  listCustomProperties,
   findClients,
   getClientDatabaseInfo,
   getClientDBIDByUID,
@@ -33,6 +43,7 @@ import {
   copyChannelGroup,
   createChannelGroup,
   findPermission,
+  getOwnPermission,
   getPermissionOverview,
   listChannelGroupClients,
   listChannelGroupPermissions,
@@ -40,7 +51,14 @@ import {
   listPermissions,
   listPrivilegeKeys,
 } from "./groups.js";
-import { getMessage, listBans, listComplaints, listMessages, viewLog } from "./moderation.js";
+import {
+  findBans,
+  getMessage,
+  listBans,
+  listComplaints,
+  listMessages,
+  viewLog,
+} from "./moderation.js";
 import {
   copyServerGroup,
   createServerGroup,
@@ -114,6 +132,12 @@ const lists: Record<string, (client: CommandExecutor) => Promise<readonly unknow
   getServerGroupsByClient: (c) => getServerGroupsByClient(c, cldbid),
   listServerGroupPermissions: (c) => listServerGroupPermissions(c, asServerGroupID(1n)),
   listTempPasswords: (c) => listTempPasswords(c),
+  listAPIKeys: (c) => listAPIKeys(c),
+  listQueryLogins: (c) => listQueryLogins(c),
+  listCustomProperties: (c) => listCustomProperties(c, cldbid),
+  findCustomProperty: (c) => findCustomProperty(c, "x", "%"),
+  findBans: (c) => findBans(c, { ip: "1.2.3.4" }),
+  listServers: (c) => listServers(c),
 };
 
 describe("empty results", () => {
@@ -137,6 +161,14 @@ describe("empty results", () => {
     await expect(listClients(refusing(ErrorCode.ClientInvalidID))).rejects.toBeInstanceOf(
       ServerError,
     );
+  });
+
+  // Measured on TS3 and TS6: custominfo for a client with no properties answers
+  // 512, as it does for a client that does not exist.
+  it("answers custominfo's 512 with []", async () => {
+    await expect(
+      listCustomProperties(refusing(ErrorCode.ClientInvalidID), cldbid),
+    ).resolves.toEqual([]);
   });
 });
 
@@ -174,6 +206,12 @@ const required: Record<string, (client: CommandExecutor) => Promise<unknown>> = 
   whoAmI: (c) => whoAmI(c),
   getConnectionInfo: (c) => getConnectionInfo(c),
   getServerIDByPort: (c) => getServerIDByPort(c, 9987),
+  addAPIKey: (c) => addAPIKey(c, "read"),
+  addQueryLogin: (c) => addQueryLogin(c, "x"),
+  setQueryLogin: (c) => setQueryLogin(c, "x"),
+  getOwnPermission: (c) => getOwnPermission(c, permission),
+  createServer: (c) => createServer(c, "x"),
+  createServerSnapshot: (c) => createServerSnapshot(c),
 };
 
 /** Those whose row must also carry the value they exist for. */
@@ -188,6 +226,12 @@ const keyed = [
   "createServerGroup",
   "addPrivilegeKey",
   "getServerIDByPort",
+  "addAPIKey",
+  "addQueryLogin",
+  "setQueryLogin",
+  "getOwnPermission",
+  "createServer",
+  "createServerSnapshot",
 ];
 
 describe("required data", () => {
