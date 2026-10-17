@@ -917,11 +917,29 @@ describe.skipIf(SKIP)("Integration — ServerQuery client", () => {
 });
 
 describe.skipIf(SKIP)("Integration — group creates whose answer carries no data", () => {
+  // Its own known_hosts file: the suite above removes its scratch directory,
+  // and `sshKnownHosts` with it, once it is done.
+  const scratch = mkdtempSync(join(tmpdir(), "query-recover-"));
+
+  beforeAll(async () => {
+    if (!KINDS.includes("ssh")) return;
+    if (SSH_KNOWN_HOSTS !== "") {
+      sshKnownHosts = SSH_KNOWN_HOSTS;
+      return;
+    }
+    const path = join(scratch, "recorded");
+    writeFileSync(path, knownHostsLine(await presentedSshKey()));
+    sshKnownHosts = path;
+  }, 30_000);
+
+  afterAll(() => {
+    rmSync(scratch, { recursive: true, force: true });
+  });
+
   it.each(KINDS)(
     "finds the new group by name and type over %s",
     async (kind) => {
       const client = new QueryClient(optionsFor(kind));
-      if (kind === "ssh") sshKnownHosts ||= knownHostsLine(await presentedSshKey());
       await connectWithRetries(client);
       // The server's quirk cannot be forced, so the answer's rows are dropped
       // for the create commands alone.
