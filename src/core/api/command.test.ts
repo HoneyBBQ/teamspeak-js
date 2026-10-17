@@ -8,6 +8,7 @@ import {
   listChannels,
 } from "./channels.js";
 import {
+  getClientConnectionInfo,
   getClientIDs,
   getClientNameByDBID,
   iterateClientDatabase,
@@ -68,7 +69,7 @@ import { encodeRequest } from "../command/request.js";
 import type { CommandExecutor, CommandOptions, CommandRequest } from "../command/request.js";
 import { Codec, PrivilegeKeyType } from "../enums.js";
 import { ErrorCode } from "../errorcode.js";
-import { ServerError } from "../errors.js";
+import { NoDataError, ServerError } from "../errors.js";
 import { permissionByID, permissionByName } from "../permission.js";
 import { Reason } from "../reason.js";
 
@@ -970,5 +971,89 @@ describe("updateMessageFlag", () => {
     await updateMessageFlag(client, asMessageID(3), { read: false });
 
     expect(sent).toEqual(["messageupdateflag msgid=3 flag=1", "messageupdateflag msgid=3 flag=0"]);
+  });
+});
+
+describe("createChannel without a cid in the answer", () => {
+  /** An executor whose channelcreate returns no rows, and whose channellist lists `channels`. */
+  const answering = (channels: Array<Record<string, string>>) => {
+    const sent: string[] = [];
+    const client: CommandExecutor = {
+      send: (request) => {
+        sent.push(encodeRequest(request, voicePassword));
+        return Promise.resolve(request.command === "channellist" ? channels : []);
+      },
+    };
+    return { client, sent };
+  };
+
+  it("finds the new channel by its exact name and parent", async () => {
+    const { client, sent } = answering([
+      { cid: "1", pid: "0", channel_name: "Room" },
+      { cid: "2", pid: "1", channel_name: "Room" },
+      { cid: "3", pid: "1", channel_name: "Room 2" },
+    ]);
+    expect(await createChannel(client, { name: "Room", parentID: asChannelID(1n) })).toBe(2n);
+    expect(await createChannel(client, { name: "Room" })).toBe(1n);
+    expect(sent.filter((l) => l.startsWith("channellist"))).toHaveLength(2);
+  });
+
+  it("throws NoDataError when no channel matches", async () => {
+    const { client } = answering([{ cid: "1", pid: "0", channel_name: "Other" }]);
+    await expect(createChannel(client, { name: "Room" })).rejects.toBeInstanceOf(NoDataError);
+    await expect(
+      createChannel(client, { name: "Other", parentID: asChannelID(5n) }),
+    ).rejects.toBeInstanceOf(NoDataError);
+  });
+
+  it("does not look anything up when the answer has a cid", async () => {
+    const { client, sent } = recordingClient([{ cid: "9" }]);
+    expect(await createChannel(client, { name: "Room" })).toBe(9n);
+    expect(sent).toHaveLength(1);
+  });
+});
+
+describe("getClientConnectionInfo", () => {
+  it("asks getconnectioninfo and reads the figures", async () => {
+    const { client, sent } = recordingClient([
+      {
+        clid: "5",
+        connection_ping: "12.5000",
+        connection_ping_deviation: "1.2500",
+        connection_connected_time: "4000",
+        connection_idle_time: "3000",
+        connection_client_ip: "10.0.0.1",
+        connection_client_port: "9000",
+        connection_packets_sent_speech: "7",
+        connection_bytes_received_control: "800",
+        connection_bandwidth_sent_last_minute_keepalive: "3",
+        connection_server2client_packetloss_total: "0.0500",
+        connection_client2server_packetloss_control: "0.1000",
+      },
+    ]);
+    const info = await getClientConnectionInfo(client, asClientID(5));
+    expect(sent).toEqual(["getconnectioninfo clid=5"]);
+    expect(info).toMatchObject({
+      id: 5,
+      pingMs: 12.5,
+      pingDeviationMs: 1.25,
+      connectedTimeMs: 4000,
+      idleTimeMs: 3000,
+      ip: "10.0.0.1",
+      port: 9000,
+    });
+    expect(info.sent.speech.packets).toBe(7);
+    expect(info.received.control.bytes).toBe(800);
+    expect(info.sent.keepalive.bandwidthLastMinute).toBe(3);
+    expect(info.serverToClientLoss.total).toBe(0.05);
+    expect(info.clientToServerLoss.control).toBe(0.1);
+  });
+
+  it("leaves ip and port out when the server does not send them", async () => {
+    const { client } = recordingClient([{ clid: "5" }]);
+    const info = await getClientConnectionInfo(client, asClientID(5));
+    expect(info.ip).toBeUndefined();
+    expect(info.port).toBeUndefined();
+    expect(info.pingMs).toBe(0);
   });
 });

@@ -76,6 +76,7 @@ const updateSamples: Required<ClientUpdateOptions> = {
   talkRequestMessage: "t",
   avatar: "a",
   badges: "b",
+  metaData: "m",
 };
 const editSamples: Required<ClientEditOptions> = { description: "d", isTalker: true };
 const settingSamples: Required<Omit<ChannelSettings, "password">> = {

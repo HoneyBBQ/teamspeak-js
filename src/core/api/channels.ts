@@ -26,6 +26,7 @@ import type { Channel, PermissionEntry, WireNames } from "./command.js";
 import type { CommandExecutor, CommandOptions } from "../command/request.js";
 import type { ChannelID, ClientDBID } from "../command/ids.js";
 import { asChannelID } from "../command/ids.js";
+import { NoDataError } from "../errors.js";
 import { ErrorCode } from "../errorcode.js";
 import type { Codec } from "../enums.js";
 import type { Permission } from "../permission.js";
@@ -148,6 +149,14 @@ const createNames: WireNames<ChannelCreateOptions> = {
  * Over the voice protocol the server also moves the creator into the new
  * channel.
  *
+ * TeamSpeak 6's WebQuery has been seen, once in about a thousand runs,
+ * answering a `channelcreate` that had succeeded with no data at all: no
+ * `cid`. The channel existed, and a retry would fail with a duplicate name. So
+ * when the answer carries no `cid`, the new channel is looked up by its exact
+ * name under the same parent (`channellist`), which is safe because a server
+ * refuses duplicate names under one parent. A NoDataError is thrown only when
+ * no channel matches.
+ *
  * `channel` is what to send; the command's `signal` and `timeoutMs` go in
  * `options`, a separate last argument — set among the fields, they are not
  * read.
@@ -160,7 +169,19 @@ export async function createChannel(
   const rows = await query(client, "channelcreate", encodeFields(channel, createNames), options, [
     "channel_password",
   ]);
-  return asChannelID(big(firstRow(rows, "channelcreate", "cid"), "cid"));
+  if (rows[0]?.["cid"] !== undefined) return asChannelID(big(rows[0], "cid"));
+
+  const parent = channel.parentID ?? asChannelID(0n);
+  const found = (await listChannels(client, options)).find(
+    (c) => c.name === channel.name && c.parentID === parent,
+  );
+  if (found === undefined) {
+    throw new NoDataError(
+      "channelcreate",
+      `the server did not report the new channel "${channel.name}"`,
+    );
+  }
+  return found.id;
 }
 
 /** A channel's changed settings; see {@link ChannelSettings}. */

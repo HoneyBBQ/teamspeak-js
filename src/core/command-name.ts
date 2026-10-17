@@ -316,6 +316,8 @@ const commandNameValues = {
   ServerTempPasswordList: "servertemppasswordlist",
   /** `setclientchannelgroup`: Sets the channel group of a client to the ID specified with cgid. */
   SetClientChannelGroup: "setclientchannelgroup",
+  /** `setconnectioninfo`: A client reporting its own connection statistics, in answer to notifyconnectioninforequest. Voice protocol only. */
+  SetConnectionInfo: "setconnectioninfo",
   /** `tokenadd`: Alias for privilegekeyadd. */
   TokenAdd: "tokenadd",
   /** `tokendelete`: Alias for privilegekeydelete. */
@@ -328,6 +330,10 @@ const commandNameValues = {
   Use: "use",
   /** `version`: Displays the server's version information including platform and build number. */
   Version: "version",
+  /** `verifychannelpassword`: Checks a channel's password, given hashed as the voice protocol sends it. Voice protocol only. */
+  VerifyChannelPassword: "verifychannelpassword",
+  /** `verifyserverpassword`: Checks the server's password, given hashed as the voice protocol sends it. Voice protocol only. */
+  VerifyServerPassword: "verifyserverpassword",
   /** `whoami`: Displays information about your current ServerQuery connection including your loginname, etc. */
   WhoAmI: "whoami",
 } as const;

@@ -246,6 +246,132 @@ export async function getClientProperties(
   return firstRow(rows, "clientinfo");
 }
 
+/** The three classes of traffic the server counts. */
+export type ConnectionTrafficClass = "speech" | "keepalive" | "control";
+
+/** One direction of one class of a client's traffic, as the client reported it. */
+export interface ClientTraffic {
+  /** Packets (`connection_packets_{sent,received}_<class>`). */
+  readonly packets: number;
+  /** Bytes (`connection_bytes_{sent,received}_<class>`). */
+  readonly bytes: number;
+  /** Bandwidth over the last second (`connection_bandwidth_{sent,received}_last_second_<class>`). */
+  readonly bandwidthLastSecond: number;
+  /** Bandwidth over the last minute (`connection_bandwidth_{sent,received}_last_minute_<class>`). */
+  readonly bandwidthLastMinute: number;
+}
+
+/** Packet loss per class and in total, as a fraction. */
+export interface PacketLoss {
+  /** Loss of voice packets. */
+  readonly speech: number;
+  /** Loss of ping and pong packets. */
+  readonly keepalive: number;
+  /** Loss of command and acknowledgement packets. */
+  readonly control: number;
+  /** Loss over all packets. */
+  readonly total: number;
+}
+
+/**
+ * Another client's connection statistics, as `getconnectioninfo` reports
+ * them. Most figures are what the client itself reported with
+ * `setconnectioninfo`; a client that has not reported yet shows zeros.
+ * `connectedTimeMs` and `idleTimeMs` come from the server, as do the
+ * `clientToServerLoss` figures (a client's own report of them is ignored).
+ */
+export interface ClientConnectionInfo {
+  /** The client the figures are about (`clid`). */
+  readonly id: ClientID;
+  /** Round-trip time in milliseconds (`connection_ping`). */
+  readonly pingMs: number;
+  /** Deviation of the round-trip time in milliseconds (`connection_ping_deviation`). */
+  readonly pingDeviationMs: number;
+  /** How long the client has been connected, in milliseconds (`connection_connected_time`). */
+  readonly connectedTimeMs: number;
+  /** How long the client has been idle, in milliseconds (`connection_idle_time`). */
+  readonly idleTimeMs: number;
+  /** The client's address (`connection_client_ip`); absent when the server does not send it. */
+  readonly ip?: string | undefined;
+  /** The client's port (`connection_client_port`); absent when the server does not send it. */
+  readonly port?: number | undefined;
+  /** What the client sent, by class. */
+  readonly sent: Readonly<Record<ConnectionTrafficClass, ClientTraffic>>;
+  /** What the client received, by class. */
+  readonly received: Readonly<Record<ConnectionTrafficClass, ClientTraffic>>;
+  /** Loss on the way from the server to the client (`connection_server2client_packetloss_<class>`). */
+  readonly serverToClientLoss: PacketLoss;
+  /** Loss on the way from the client to the server (`connection_client2server_packetloss_<class>`). */
+  readonly clientToServerLoss: PacketLoss;
+  /** File transfer bandwidth out (`connection_filetransfer_bandwidth_sent`). */
+  readonly fileTransferBandwidthSent: number;
+  /** File transfer bandwidth in (`connection_filetransfer_bandwidth_received`). */
+  readonly fileTransferBandwidthReceived: number;
+}
+
+const trafficClasses = ["speech", "keepalive", "control"] as const;
+
+function readTraffic(
+  row: Record<string, string>,
+  direction: "sent" | "received",
+): Record<ConnectionTrafficClass, ClientTraffic> {
+  const out = {} as Record<ConnectionTrafficClass, ClientTraffic>;
+  for (const c of trafficClasses) {
+    out[c] = {
+      packets: num(row, `connection_packets_${direction}_${c}`),
+      bytes: num(row, `connection_bytes_${direction}_${c}`),
+      bandwidthLastSecond: num(row, `connection_bandwidth_${direction}_last_second_${c}`),
+      bandwidthLastMinute: num(row, `connection_bandwidth_${direction}_last_minute_${c}`),
+    };
+  }
+  return out;
+}
+
+function readLoss(row: Record<string, string>, way: "server2client" | "client2server"): PacketLoss {
+  return {
+    speech: num(row, `connection_${way}_packetloss_speech`),
+    keepalive: num(row, `connection_${way}_packetloss_keepalive`),
+    control: num(row, `connection_${way}_packetloss_control`),
+    total: num(row, `connection_${way}_packetloss_total`),
+  };
+}
+
+/**
+ * Another client's connection statistics (`getconnectioninfo clid=`). The
+ * server answers with `notifyconnectioninfo`, and asks that client to report
+ * its figures meanwhile; what is returned is what the server holds, so a
+ * client that never reported shows zeros. Not the same as
+ * {@link getConnectionInfo}, which is about the virtual server. `ip` and `port` are
+ * present on both servers for the account measured; whether a permission
+ * governs them is unmeasured.
+ */
+export async function getClientConnectionInfo(
+  client: CommandExecutor,
+  clid: ClientID,
+  options?: CommandOptions,
+): Promise<ClientConnectionInfo> {
+  const row = firstRow(
+    await query(client, "getconnectioninfo", [["clid", clid]], options),
+    "getconnectioninfo",
+  );
+  return {
+    id: asClientID(uint(row, "clid", U16)),
+    pingMs: num(row, "connection_ping"),
+    pingDeviationMs: num(row, "connection_ping_deviation"),
+    connectedTimeMs: num(row, "connection_connected_time"),
+    idleTimeMs: num(row, "connection_idle_time"),
+    ip: row["connection_client_ip"],
+    port:
+      row["connection_client_port"] === undefined ? undefined : num(row, "connection_client_port"),
+    sent: readTraffic(row, "sent"),
+    received: readTraffic(row, "received"),
+    serverToClientLoss: readLoss(row, "server2client"),
+    clientToServerLoss: readLoss(row, "client2server"),
+    fileTransferBandwidthSent: num(row, "connection_filetransfer_bandwidth_sent"),
+    fileTransferBandwidthReceived: num(row, "connection_filetransfer_bandwidth_received"),
+  };
+}
+
 /** How {@link moveClient} enters the channel. */
 export interface ClientMoveOptions extends CommandOptions {
   /**
@@ -366,6 +492,8 @@ export interface ClientUpdateOptions {
   readonly avatar?: string | undefined;
   /** Our badges, in the client's own format (`client_badges`). */
   readonly badges?: string | undefined;
+  /** Opaque data other clients see in their record of us (`client_meta_data`). */
+  readonly metaData?: string | undefined;
 }
 
 const updateNames: WireNames<ClientUpdateOptions> = {
@@ -383,6 +511,7 @@ const updateNames: WireNames<ClientUpdateOptions> = {
   talkRequestMessage: "client_talk_request_msg",
   avatar: "client_flag_avatar",
   badges: "client_badges",
+  metaData: "client_meta_data",
 };
 
 /**
