@@ -1,13 +1,16 @@
 import { randomBytes } from "node:crypto";
 import { buildCommandOrdered } from "../../core/internal.js";
-import type { Crypt } from "../crypto/crypt.js";
-import { HandshakeError } from "../errors.js";
+import { MAX_RSA_CHALLENGE_LEVEL, type Crypt } from "../crypto/crypt.js";
+import { HandshakeError, PuzzleTooHardError } from "../errors.js";
 
 export const INIT_VERSION = 1566914096; // 3.5.0 [Stable]
 
 const INIT_VERSION_LEN = 4;
 const INIT_TYPE_LEN = 1;
 const INIT_STEP_LEN = 21;
+
+/** The RSA challenge each connection attempt, by its Crypt, is solving now. */
+const solvingChallenges = new WeakMap<Crypt, Uint8Array>();
 
 /** The RSA challenge each connection attempt, by its Crypt, has answered. */
 const answeredChallenges = new WeakMap<
@@ -33,8 +36,23 @@ export function puzzleOf(crypt: Crypt): { readonly level: number; readonly durat
  * Handle the TS3INIT1 handshake steps.
  * Returns the response bytes to send, or null if nothing should be sent.
  * Throws a HandshakeError for a step that cannot be answered.
+ *
+ * The puzzle step is the only one that takes time, so a challenge not answered
+ * before returns a promise of the response, which gives the event loop back
+ * while it solves and rejects with `signal`'s reason once that aborts. Nothing
+ * else the server sends is answered until it settles.
  */
-export function processInit1(crypt: Crypt, data: Uint8Array | null): Uint8Array | null {
+export function processInit1(crypt: Crypt, data: null): Uint8Array;
+export function processInit1(
+  crypt: Crypt,
+  data: Uint8Array | null,
+  signal?: AbortSignal,
+): Uint8Array | null | Promise<Uint8Array | null>;
+export function processInit1(
+  crypt: Crypt,
+  data: Uint8Array | null,
+  signal?: AbortSignal,
+): Uint8Array | null | Promise<Uint8Array | null> {
   if (data === null || (data.length >= 1 && data[0] === 0x7f)) {
     return buildInit1StartPacket();
   }
@@ -48,7 +66,7 @@ export function processInit1(crypt: Crypt, data: Uint8Array | null): Uint8Array 
     case 2:
       return buildInit1Step3Packet(data);
     case 3:
-      return buildInit1Step4Packet(crypt, data);
+      return buildInit1Step4Packet(crypt, data, signal);
     case undefined:
     default:
       return null;
@@ -111,21 +129,43 @@ function buildInit1Step3Packet(data: Uint8Array): Uint8Array | null {
   return sendData;
 }
 
-function buildInit1Step4Packet(crypt: Crypt, data: Uint8Array): Uint8Array | null {
+function buildInit1Step4Packet(
+  crypt: Crypt,
+  data: Uint8Array,
+  signal: AbortSignal | undefined,
+): Uint8Array | null | Promise<Uint8Array | null> {
   if (data.length !== INIT_TYPE_LEN + 64 + 64 + 4 + 100) return null;
   // One challenge per connection attempt, whose Crypt is its own. Each answer
-  // costs up to a second of synchronous squarings, and a second would choose a
-  // new alpha behind the clientinitiv already sent. The same challenge again
-  // means the server did not get our answer, so it gets the same answer,
-  // without solving anything; a different one gets none.
+  // can cost seconds of squarings, and a second would choose a new alpha
+  // behind the clientinitiv already sent. The same challenge again means the
+  // server did not get our answer, so it gets the same answer, without solving
+  // anything; a different one gets none. While one is being solved, all of
+  // them wait for it.
   const answered = answeredChallenges.get(crypt);
   if (answered !== undefined) {
     return Buffer.from(answered.challenge).equals(Buffer.from(data)) ? answered.answer : null;
   }
+  if (solvingChallenges.has(crypt)) return null;
 
   const level = new DataView(data.buffer, data.byteOffset).getUint32(1 + 128, false);
+  // A level too high is refused here, at once, before anything is solved.
+  if (level > MAX_RSA_CHALLENGE_LEVEL) throw new PuzzleTooHardError(level, MAX_RSA_CHALLENGE_LEVEL);
+
+  const challenge = Uint8Array.from(data);
+  solvingChallenges.set(crypt, challenge);
+  return solveInit1Challenge(crypt, challenge, level, signal).finally(() => {
+    solvingChallenges.delete(crypt);
+  });
+}
+
+async function solveInit1Challenge(
+  crypt: Crypt,
+  data: Uint8Array,
+  level: number,
+  signal: AbortSignal | undefined,
+): Promise<Uint8Array> {
   const solveStarted = performance.now();
-  const y = crypt.solveRsaChallenge(data, 1, level);
+  const y = await crypt.solveRsaChallenge(data, 1, level, signal);
   const durationMs = performance.now() - solveStarted;
 
   const alphaB64 = Buffer.from(crypt.newAlpha()).toString("base64");
@@ -147,11 +187,6 @@ function buildInit1Step4Packet(crypt: Crypt, data: Uint8Array): Uint8Array | nul
   sendData.set(y.slice(0, 64), 5 + 232);
   sendData.set(cmdBytes, 5 + 232 + 64);
 
-  answeredChallenges.set(crypt, {
-    challenge: Uint8Array.from(data),
-    answer: sendData,
-    level,
-    durationMs,
-  });
+  answeredChallenges.set(crypt, { challenge: data, answer: sendData, level, durationMs });
   return sendData;
 }

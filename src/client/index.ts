@@ -33,6 +33,7 @@ export type {
 export {
   FileTransferError,
   HandshakeError,
+  PuzzleTooHardError,
   InvalidAddressError,
   InvalidIdentityError,
   RemovedError,

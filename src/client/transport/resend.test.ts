@@ -22,7 +22,8 @@ function startedHandler(): { handler: PacketHandler; socket: FakeSocket; step0: 
     if (packetType(p) !== PacketType.Init1) return;
     // From inside delivery, as the client does: the next step goes out while the
     // Init1 it answers is still being handled.
-    const response = processInit1(crypt, p.data);
+    // Steps 0 to 2 only: none of them is the puzzle, which would be a promise.
+    const response = processInit1(crypt, p.data) as Uint8Array | null;
     if (response) handler.sendPacket(PacketType.Init1, response, 0);
   };
   const socket = new FakeSocket();

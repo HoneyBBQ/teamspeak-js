@@ -1374,9 +1374,23 @@ export class Client implements CommandExecutor, AsyncDisposable {
     const pType = p.typeFlagged & 0x0f;
     if (pType === 8 /* Init1 */) {
       if (this.#crypt.cryptoInitComplete) return;
-      const response = processInit1(this.#crypt, p.data);
-      if (response) {
-        this.#handler.sendPacket(PacketType.Init1, response, 0);
+      const signal = this.#attempt.signal;
+      const handler = this.#handler;
+      const response = processInit1(this.#crypt, p.data, signal);
+      if (response instanceof Promise) {
+        // The puzzle: solved in slices, so the loop keeps running meanwhile.
+        response.then(
+          (answer) => {
+            if (answer && !signal.aborted) handler.sendPacket(PacketType.Init1, answer, 0);
+          },
+          (error: unknown) => {
+            // An attempt that ended did so for its own reason; the abandoned
+            // solve has nothing more to report.
+            if (!signal.aborted) this.#handleReceiveError(error);
+          },
+        );
+      } else if (response) {
+        handler.sendPacket(PacketType.Init1, response, 0);
       }
       return;
     }

@@ -473,6 +473,15 @@ export function muteClients(client: Client, clientIDs: readonly ClientID[], opti
 export function parseIdentity(s: string): Identity;
 
 // @public
+export class PuzzleTooHardError extends HandshakeError {
+    constructor(level: number, maxLevel: number);
+    // (undocumented)
+    static readonly kind: string;
+    readonly level: number;
+    readonly maxLevel: number;
+}
+
+// @public
 export interface ReconnectScheduledInfo {
     readonly attempt: number;
     readonly cause: unknown;

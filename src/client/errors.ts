@@ -121,6 +121,37 @@ export class HandshakeError extends TeamspeakError {
   }
 }
 
+/**
+ * The server's Init1 puzzle asks for more squarings than this client will do:
+ * a server that is flooded raises the level, but not this far. `connect()`
+ * rejects with it, as with any {@link HandshakeError}, and nothing was solved.
+ */
+export class PuzzleTooHardError extends HandshakeError {
+  /** {@inheritDoc @honeybbq/teamspeak!TeamspeakError.kind} */
+  static override readonly kind: string = "PuzzleTooHardError";
+  static {
+    // On the prototype, not the instance, as built-in errors do: an own `name`
+    // would be enumerable and show up in JSON.stringify and object spread.
+    Object.defineProperty(this.prototype, "name", {
+      value: "PuzzleTooHardError",
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
+
+  /** The number of squarings the server asked for. */
+  readonly level: number;
+  /** The most this client does. */
+  readonly maxLevel: number;
+
+  constructor(level: number, maxLevel: number) {
+    super(`the server's RSA puzzle asks for ${level} squarings, more than the ${maxLevel} allowed`);
+    this.level = level;
+    this.maxLevel = maxLevel;
+  }
+}
+
 /** An identity string `parseIdentity()` cannot read. */
 export class InvalidIdentityError extends TeamspeakError {
   /** {@inheritDoc @honeybbq/teamspeak!TeamspeakError.kind} */

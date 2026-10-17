@@ -304,6 +304,7 @@ describe("the receive path", () => {
 
     const before = socket.sent.length;
     socket.deliver(init1Packet(step3));
+    await settle();
     expect(socket.sent.length - before).toBe(1);
     const answer = socket.sent.at(-1)!;
     const alpha = Uint8Array.from(clientInternals(client).crypt.alpha);
