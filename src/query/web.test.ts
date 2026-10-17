@@ -33,15 +33,23 @@ interface Call {
 /** A fetch that records requests and answers each with the next reply. */
 function fakeFetch(replies: Array<{ status?: number; json?: unknown; text?: string }>) {
   const calls: Call[] = [];
+  let answeredWhoami = false;
   const fetchFn = (async (url: string, init: RequestInit) => {
     calls.push({
       url,
       headers: init.headers as Record<string, string>,
       body: JSON.parse(init.body as string),
     });
-    // `version` is asked for on every connection, so it is answered from here
-    // rather than from the queue each test fills.
-    const reply = url.endsWith("/version") ? versionOK : (replies.shift() ?? {});
+    // `version` and `whoami` are asked for on every connection, so the setup's
+    // are answered from here rather than from the queue each test fills. A
+    // later `whoami` is the test's own.
+    const setupWhoami = url.endsWith("/whoami") && !answeredWhoami;
+    if (setupWhoami) answeredWhoami = true;
+    const reply = url.endsWith("/version")
+      ? versionOK
+      : setupWhoami
+        ? whoamiOK
+        : (replies.shift() ?? {});
     const status = reply.status ?? 200;
     return new Response(reply.text ?? JSON.stringify(reply.json), { status });
   }) as unknown as typeof fetch;
@@ -56,6 +64,11 @@ const versionOK: { status?: number; json?: unknown; text?: string } = {
     body: [{ version: "3.13.8", build: "1", platform: "Linux" }],
     status: { code: 0, message: "ok" },
   },
+};
+
+/** The answer to `whoami`, which the setup asks for on every connection. */
+const whoamiOK: { status?: number; json?: unknown; text?: string } = {
+  json: { body: [{ client_id: "1" }], status: { code: 0, message: "ok" } },
 };
 
 describe("WebQueryTransport", () => {
@@ -195,20 +208,25 @@ describe("WebQueryTransport", () => {
   });
 
   it("honours the timeout while the request is in flight", async () => {
-    // `version` answered, so the connection is made; everything after it hangs.
+    // `version` and `whoami` answered, so the connection is made; everything
+    // after them hangs.
     const hang = ((url: string) =>
-      url.endsWith("/version")
+      url.endsWith("/version") || url.endsWith("/whoami")
         ? Promise.resolve(
-            new Response(JSON.stringify({ body: [{ version: "3.13.8" }], status: { code: 0 } }), {
-              status: 200,
-            }),
+            new Response(
+              JSON.stringify({
+                body: [{ version: "3.13.8", client_id: "1" }],
+                status: { code: 0 },
+              }),
+              { status: 200 },
+            ),
           )
         : new Promise<Response>(() => {})) as unknown as typeof fetch;
     const client = await webClient(
       new WebQueryTransport({ url: "http://h", apiKey: "K", fetch: hang }),
       [],
     );
-    await expect(client.exec("whoami", { timeoutMs: 10 })).rejects.toMatchObject({
+    await expect(client.exec("serverinfo", { timeoutMs: 10 })).rejects.toMatchObject({
       name: "CommandTimeoutError",
     });
   });

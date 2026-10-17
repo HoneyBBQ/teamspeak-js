@@ -1,7 +1,6 @@
 import {
   AlreadyConnectedError,
   ClientStatus,
-  ClientType,
   CommandTimeoutError,
   NotConnectedError,
   Reason,
@@ -134,11 +133,11 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
   #generation = 0;
 
   /**
-   * This connection's own client id, learned from the client list after
-   * registering, so that a kick of this client is told from a move of another.
-   * 0 until it is known — which is the case when no `nickname` option was
-   * given: the server names an unnamed query client itself, and matching that
-   * guess against the list could name a different client.
+   * This connection's own client id, which the server names in `whoami`, so
+   * that a kick of this client is told from a move of another. Asked, never
+   * guessed from the nickname: the server renames a client whose nickname is
+   * taken, and an older session may still hold the one this client asked for.
+   * 0 until it is known.
    */
   #clid = 0;
   #clients = new Map<number, ClientEnterEvent>();
@@ -343,6 +342,9 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     if (server !== undefined) await this.use(server, { nickname, signal });
     this.#version = await this.#getVersion(signal);
     this.#serverFamily = serverFamilyOf(this.#version);
+    // Like the version, a failure here fails the connect: a client that cannot
+    // tell which one it is would miss its own kick without saying so.
+    await this.#learnSelf(signal);
     if (this.#notifications) {
       for (const category of eventCategories) {
         // The channel category takes the channel to watch, or 0 for all of them;
@@ -680,6 +682,17 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
   }
 
   /**
+   * Ask the server which client this connection is. A self-move names no
+   * invoker, so without the id the client could not tell a move of its own
+   * from any other.
+   */
+  async #learnSelf(signal: AbortSignal | undefined): Promise<void> {
+    const rows = await this.exec("whoami", { signal });
+    const id = Number(rows[0]?.["client_id"]);
+    this.#clid = Number.isInteger(id) && id > 0 ? id : 0;
+  }
+
+  /**
    * List the clients once, so that `invokerGroups` and the invoker fields of a
    * self-move can be filled: an enter notification is only seen for clients
    * that arrive after registering, and the ones already there arrive as none.
@@ -692,24 +705,8 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
       this.#logger.warn("listing clients after registering failed", { error: String(error) });
       return [] as Array<Record<string, string>>;
     });
-    this.#clid = 0;
     for (const row of rows) {
-      const result = handleNotification(
-        { name: "notifycliententerview", params: row },
-        0,
-        this.#clients,
-      );
-      if (result.kind !== "clientEnter") continue;
-      // Ours is the one query client with our nickname. Without a nickname
-      // option there is no name to match, and the id stays unknown.
-      if (
-        this.#clid === 0 &&
-        result.info.type === ClientType.Query &&
-        this.#options.nickname !== undefined &&
-        result.info.nickname === this.#options.nickname
-      ) {
-        this.#clid = result.info.id;
-      }
+      handleNotification({ name: "notifycliententerview", params: row }, 0, this.#clients);
     }
   }
 

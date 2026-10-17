@@ -228,7 +228,7 @@ describe("QueryClient options", () => {
 });
 
 describe("QueryClient lifecycle", () => {
-  it("runs login, use, version and the registrations, in that order", async () => {
+  it("runs login, use, version, whoami and the registrations, in that order", async () => {
     const transport = new FakeTransport();
     autoOk(transport);
     const client = clientOn(transport, {
@@ -243,6 +243,7 @@ describe("QueryClient lifecycle", () => {
       "login client_login_name=serveradmin client_login_password=pw",
       "use sid=1 client_nickname=bot",
       "version",
+      "whoami",
       "servernotifyregister event=server",
       "servernotifyregister event=channel id=0",
       "servernotifyregister event=textserver",
@@ -529,6 +530,10 @@ describe("QueryClient commands", () => {
           this.receive("version=3.13.8 build=1 platform=Linux", "error id=0 msg=ok");
           return;
         }
+        if (line.startsWith("whoami")) {
+          this.receive("client_id=1", "error id=0 msg=ok");
+          return;
+        }
         if (line === "slow") {
           await new Promise((r) => setTimeout(r, 30));
           this.receive("late=1", "error id=0 msg=ok");
@@ -554,6 +559,10 @@ describe("QueryClient commands", () => {
         this.sent.push(line);
         if (line.startsWith("version")) {
           this.receive("version=3.13.8 build=1 platform=Linux", "error id=0 msg=ok");
+          return;
+        }
+        if (line.startsWith("whoami")) {
+          this.receive("client_id=1", "error id=0 msg=ok");
           return;
         }
         if (this.fail) {
@@ -615,10 +624,14 @@ describe("QueryClient transport seams", () => {
     expect(client.transport).toBeUndefined();
     const connecting = client.connect();
     await waitFor(() => dialled.length === 1);
-    // The server's two-line banner, then the version the setup asks for.
+    // The server's two-line banner, then the version and whoami the setup asks for.
     stream.feed("TS3\n\rWelcome to the TeamSpeak 3 ServerQuery interface.\n\r");
     await waitFor(() => client.transport !== undefined);
     liveTransport(client).onLine?.("version=3.13.8 build=1 platform=Linux");
+    liveTransport(client).onLine?.("error id=0 msg=ok");
+    // The next command is sent once that answer is read.
+    await new Promise((r) => setTimeout(r, 0));
+    liveTransport(client).onLine?.("client_id=1");
     liveTransport(client).onLine?.("error id=0 msg=ok");
     await connecting;
 
@@ -647,6 +660,10 @@ describe("QueryClient transport seams", () => {
     channel.feed("TS3\n\rWelcome to the TeamSpeak 3 ServerQuery interface.\n\r");
     await waitFor(() => client.transport !== undefined);
     liveTransport(client).onLine?.("version=6.0.0-beta13.1 build=1 platform=Linux");
+    liveTransport(client).onLine?.("error id=0 msg=ok");
+    // The next command is sent once that answer is read.
+    await new Promise((r) => setTimeout(r, 0));
+    liveTransport(client).onLine?.("client_id=1");
     liveTransport(client).onLine?.("error id=0 msg=ok");
     await connecting;
 
@@ -681,6 +698,10 @@ describe("QueryClient transport seams", () => {
     channel.feed("TS3\n\rWelcome.\n\r");
     await waitFor(() => client.transport !== undefined);
     liveTransport(client).onLine?.("version=3.13.8 build=1 platform=Linux");
+    liveTransport(client).onLine?.("error id=0 msg=ok");
+    // The next command is sent once that answer is read.
+    await new Promise((r) => setTimeout(r, 0));
+    liveTransport(client).onLine?.("client_id=1");
     liveTransport(client).onLine?.("error id=0 msg=ok");
     await connecting;
 

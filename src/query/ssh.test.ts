@@ -435,10 +435,13 @@ describe("closing the transport", () => {
     // which is a microtask later: feeding the server's lines before that loses
     // them, and the connection then waits for an answer that already arrived.
     await vi.waitFor(() => expect(client.transport).toBeDefined());
-    // The two banner lines the transport drops, then the setup's own answer.
+    // The two banner lines the transport drops, then the setup's own answers.
     ssh.channel.emit("data", Buffer.from("TS3\n\rWelcome.\n\r"));
     ssh.channel.emit("data", Buffer.from("version=6.0.0-beta13.1 build=1 platform=Linux\n\r"));
     ssh.channel.emit("data", Buffer.from("error id=0 msg=ok\n\r"));
+    // whoami is sent once that answer is read.
+    await new Promise((r) => setTimeout(r, 0));
+    ssh.channel.emit("data", Buffer.from("client_id=1\n\rerror id=0 msg=ok\n\r"));
     await connecting;
     return { ssh, client };
   }

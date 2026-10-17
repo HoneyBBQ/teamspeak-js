@@ -23,6 +23,8 @@ class FakeTransport implements QueryTransport {
   onClose: ((error: Error | undefined) => void) | null = null;
   /** The rows `clientlist` answers with, for the tests that need a client list. */
   clientList: string[] = ["error id=0 msg=ok"];
+  /** The rows `whoami` answers with: no row, as a server that does not say who this is. */
+  whoami: string[] = ["error id=0 msg=ok"];
 
   constructor(supportsNotifications = true) {
     this.supportsNotifications = supportsNotifications;
@@ -32,6 +34,8 @@ class FakeTransport implements QueryTransport {
     this.sent.push(line);
     if (line.startsWith("version")) {
       this.receive("version=3.13.8 build=1 platform=Linux", "error id=0 msg=ok");
+    } else if (line.startsWith("whoami")) {
+      this.receive(...this.whoami);
     } else if (line.startsWith("clientlist")) {
       this.receive(...this.clientList);
     } else {
@@ -163,8 +167,9 @@ describe("QueryClient events", () => {
 
   // A query client is never kicked from the server, but a channel kick reaches
   // it as a move of its own — which is also what tells the client who it is.
-  it("reads a channel kick of itself, found in the client list", async () => {
+  it("reads a channel kick of itself, by the id whoami names", async () => {
     const transport = new FakeTransport();
+    transport.whoami = ["client_id=4 client_nickname=bot", "error id=0 msg=ok"];
     transport.clientList = [
       "clid=4 cid=1 client_nickname=bot client_unique_identifier=me client_type=1",
       "clid=5 cid=1 client_nickname=Alice client_unique_identifier=uid1 client_type=0",
@@ -185,6 +190,48 @@ describe("QueryClient events", () => {
     expect(moves).toHaveLength(2);
     expect(kicks).toHaveLength(1);
     expect(kicks[0]).toMatchObject({ reason: Reason.KickChannel, reasonMessage: "out" });
+  });
+
+  // The nickname is no way to find oneself: the server renames a client whose
+  // nickname is taken, and an earlier session that has not gone yet still holds
+  // it. The id is the one whoami names, whatever the list says.
+  it("is not taken for an older session that has the same nickname", async () => {
+    const transport = new FakeTransport();
+    transport.whoami = ["client_id=9 client_nickname=bot1", "error id=0 msg=ok"];
+    transport.clientList = [
+      "clid=4 cid=1 client_nickname=bot client_unique_identifier=old client_type=1",
+      "clid=9 cid=1 client_nickname=bot1 client_unique_identifier=me client_type=1",
+      "error id=0 msg=ok",
+    ];
+    const client = clientOn(transport, { nickname: "bot" });
+    await client.connect();
+
+    const kicks: KickedEvent[] = [];
+    client.on("kicked", (e) => kicks.push(e));
+
+    transport.receive("notifyclientmoved clid=4 ctid=1 reasonid=4 reasonmsg=theirs");
+    expect(kicks).toHaveLength(0);
+
+    transport.receive("notifyclientmoved clid=9 ctid=1 reasonid=4 reasonmsg=out");
+    expect(kicks).toHaveLength(1);
+    expect(kicks[0]).toMatchObject({ reason: Reason.KickChannel, reasonMessage: "out" });
+  });
+
+  it("reads a channel kick of itself without a nickname option", async () => {
+    const transport = new FakeTransport();
+    transport.whoami = ["client_id=9", "error id=0 msg=ok"];
+    transport.clientList = [
+      "clid=9 cid=1 client_nickname=serveradmin client_unique_identifier=me client_type=1",
+      "error id=0 msg=ok",
+    ];
+    const client = clientOn(transport);
+    await client.connect();
+
+    const kicks: KickedEvent[] = [];
+    client.on("kicked", (e) => kicks.push(e));
+
+    transport.receive("notifyclientmoved clid=9 ctid=1 reasonid=4 reasonmsg=out");
+    expect(kicks).toHaveLength(1);
   });
 
   // The escape hatch: every notification, modelled or not, after the event it
