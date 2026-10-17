@@ -17,7 +17,23 @@ import { generateIdentitySync } from "./crypto/identity.js";
 import { Client } from "./client.js";
 import type { ClientTrace } from "./trace.js";
 import { Readable, Writable } from "node:stream";
-import { ClientStatus, listChannels, getChannelInfo, createChannel } from "@honeybbq/teamspeak";
+import {
+  ClientStatus,
+  listChannels,
+  getChannelInfo,
+  createChannel,
+  editChannel,
+  moveChannel,
+  deleteChannel,
+  editServer,
+  sendChatComposing,
+  closePrivateChat,
+  sendPluginCommand,
+  Reason,
+  PropertyName,
+} from "@honeybbq/teamspeak";
+import type { ChannelID, ServerEventMap } from "@honeybbq/teamspeak";
+import { getChannelDescription, subscribeChannel, unsubscribeChannel } from "./api/voice.js";
 import {
   listClients,
   getClientProperties,
@@ -1075,5 +1091,400 @@ describe.skipIf(SKIP)("Integration — events about other clients", () => {
       expect(clientInternals(bystander()).clients.get(subjectID)?.channelGroupID).toBe(original);
     },
     30_000,
+  );
+});
+
+// ---- Live state: channel, server and plugin events -----------------------------
+//
+// Seen by a bystander voice client and, where the fixture has raw ServerQuery
+// on TCP, by a query client with the default categories. An administrator
+// (the query connection) acts; every test puts back what it changed.
+
+/** What both kinds of client offer for the events they share. */
+interface Watcher {
+  on<K extends keyof ServerEventMap>(
+    name: K,
+    listener: (payload: ServerEventMap[K]) => void,
+  ): () => void;
+}
+
+/** Resolve with the first event of `name` that `match` accepts; reject when none arrives. */
+function seen<K extends keyof ServerEventMap>(
+  watcher: Watcher,
+  name: K,
+  match: (payload: ServerEventMap[K]) => boolean = () => true,
+  ms = EVENT_MS,
+): Promise<ServerEventMap[K]> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      off();
+      reject(new Error(`no ${name} event arrived`));
+    }, ms);
+    const off = watcher.on(name, (payload) => {
+      if (!match(payload)) return;
+      clearTimeout(timer);
+      off();
+      resolve(payload);
+    });
+  });
+}
+
+/** Whether `name` arrives within `ms`; for the events that must not. */
+async function never(client: Client, name: keyof EventMap, ms = 1_500): Promise<boolean> {
+  let arrived = false;
+  const off = (client.on as (n: string, l: () => void) => () => void)(name, () => (arrived = true));
+  await new Promise((resolve) => setTimeout(resolve, ms));
+  off();
+  return !arrived;
+}
+
+describe.skipIf(SKIP)("Integration — channel, server and plugin events", () => {
+  let admin: QueryClient | undefined;
+  let rawObserver: QueryClient | undefined;
+  let subject: Client;
+  let subjectID: ClientID;
+  let alphaID: ChannelID;
+  const made: ChannelID[] = [];
+  const bystander = () => sharedClient;
+
+  const tag = () => `ts-js-ev-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+
+  beforeAll(async () => {
+    subject = peers.get("ts-js-peer") ?? (await connectPeer("ts-js-peer"));
+    subjectID = asClientID(subject.clientID);
+    for (let i = 0; i < 50 && !clientInternals(bystander()).clients.has(subjectID); i++) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    if (HAS_ADMIN) {
+      admin = new QueryClient(adminOptions());
+      await admin.connect({ signal: AbortSignal.timeout(15_000) });
+      const channels = await listChannels(admin);
+      alphaID = channels.find((c) => c.name === DEFAULT_CHANNEL)?.id ?? channels[0]!.id;
+    }
+    if (QUERY_KIND === "tcp") {
+      rawObserver = new QueryClient({ ...adminOptions(), nickname: "ts-js-live-observer" });
+      await rawObserver.connect({ signal: AbortSignal.timeout(15_000) });
+    }
+  }, 60_000);
+
+  afterAll(async () => {
+    if (admin)
+      for (const cid of made) await deleteChannel(admin, cid, { force: true }).catch(() => {});
+    await rawObserver?.disconnect().catch(() => {});
+    await admin?.disconnect().catch(() => {});
+  }, 30_000);
+
+  const watchers: ReadonlyArray<readonly [string, () => Watcher | undefined]> = [
+    ["a bystander voice client", () => bystander() as unknown as Watcher],
+    ["a TS3 raw ServerQuery client", () => rawObserver as unknown as Watcher | undefined],
+  ];
+
+  describe.each(watchers)("seen by %s", (who, getWatcher) => {
+    const skipReason = (): string | undefined => {
+      if (!HAS_ADMIN) return "no query endpoint provisioned";
+      if (getWatcher() === undefined) return "TS3 raw query is not provisioned here";
+      return undefined;
+    };
+    /** Skip with the reason, visibly. */
+    const needs = (ctx: { skip: (reason?: string) => never }): Watcher => {
+      const reason = skipReason();
+      if (reason !== undefined) ctx.skip(`${who}: ${reason}`);
+      return getWatcher()!;
+    };
+
+    it("a channel's life: created, edited, moved, deleted", async (ctx) => {
+      const watcher = needs(ctx);
+      const a = admin!;
+      const name = tag();
+      const created = seen(watcher, "channelCreated", (e) => e.changes.name === name);
+      const cid = await createChannel(a, {
+        name,
+        topic: "t1",
+        isPermanent: true,
+        maxClients: 5,
+      });
+      made.push(cid);
+      try {
+        const c = await created;
+        console.log(`${who}: created`, Object.keys(c.changes));
+        expect(c.channelID).toBe(cid);
+        expect(c.parentID).toBe(0n);
+        expect(Object.keys(c.changes)).toEqual(
+          expect.arrayContaining(["name", "topic", "isPermanent", "maxClients", "order"]),
+        );
+        expect("description" in c.changes).toBe(false);
+        expect(c.changes).toMatchObject({ topic: "t1", isPermanent: true, maxClients: 5 });
+        expect(c.invokerUID).toBe("serveradmin");
+
+        const edited = seen(watcher, "channelEdited", (e) => e.channelID === cid);
+        await editChannel(a, cid, { topic: "t2" });
+        const e = await edited;
+        expect(Object.keys(e.changes)).toEqual(["topic"]);
+        expect(e.changes.topic).toBe("t2");
+        expect(e.reason).toBe(Reason.ChannelEdit);
+        expect(e.invokerUID).toBe("serveradmin");
+
+        const moved = seen(watcher, "channelMoved", (m) => m.channelID === cid);
+        await moveChannel(a, cid, alphaID, { order: 0n as ChannelID });
+        const m = await moved;
+        expect(m).toMatchObject({ channelID: cid, parentID: alphaID, order: 0n });
+        expect(m.invokerUID).toBe("serveradmin");
+
+        const deleted = seen(watcher, "channelDeleted", (d) => d.channelID === cid);
+        await deleteChannel(a, cid, { force: true });
+        made.splice(made.indexOf(cid), 1);
+        const d = await deleted;
+        expect(d.invokerUID).toBe("serveradmin");
+        expect(d.invokerID).toBeGreaterThan(0);
+      } finally {
+        if (made.includes(cid)) {
+          await deleteChannel(a, cid, { force: true }).catch(() => {});
+          made.splice(made.indexOf(cid), 1);
+        }
+      }
+    }, 30_000);
+
+    it("a description and a password change: the signal, and the edit that goes with it", async (ctx) => {
+      const watcher = needs(ctx);
+      const a = admin!;
+      const cid = await createChannel(a, { name: tag(), isPermanent: true });
+      made.push(cid);
+      try {
+        const descriptionSignal = seen(
+          watcher,
+          "channelDescriptionChanged",
+          (e) => e.channelID === cid,
+        );
+        const descriptionEdit = seen(watcher, "channelEdited", (e) => e.channelID === cid);
+        await editChannel(a, cid, { description: "a description" });
+        await descriptionSignal;
+        expect(Object.keys((await descriptionEdit).changes)).toEqual([]);
+
+        const set = seen(watcher, "channelEdited", (e) => e.channelID === cid);
+        const setSignal = seen(watcher, "channelPasswordChanged", (e) => e.channelID === cid);
+        await editChannel(a, cid, { password: "hunter3" });
+        await setSignal;
+        expect((await set).changes).toEqual({ hasPassword: true });
+
+        const cleared = seen(watcher, "channelEdited", (e) => e.channelID === cid);
+        const clearedSignal = seen(watcher, "channelPasswordChanged", (e) => e.channelID === cid);
+        await editChannel(a, cid, { password: "" });
+        await clearedSignal;
+        expect((await cleared).changes).toEqual({ hasPassword: false });
+      } finally {
+        await deleteChannel(a, cid, { force: true }).catch(() => {});
+        made.splice(made.indexOf(cid), 1);
+      }
+    }, 30_000);
+
+    it("serverEdited: a changed name, and a welcome message with no property", async (ctx) => {
+      const watcher = needs(ctx);
+      const a = admin!;
+      const info = await getServerInfo(a);
+      const name = info[PropertyName.VirtualServerName] ?? "";
+      const welcome = info[PropertyName.VirtualServerWelcomeMessage] ?? "";
+      try {
+        const renamed = seen(
+          watcher,
+          "serverEdited",
+          (e) => PropertyName.VirtualServerName in e.changes,
+        );
+        await editServer(a, { [PropertyName.VirtualServerName]: `${name} (ev)` });
+        const r = await renamed;
+        expect(r.changes).toEqual({ [PropertyName.VirtualServerName]: `${name} (ev)` });
+        expect(r.invokerUID).toBe("serveradmin");
+
+        const welcomed = seen(
+          watcher,
+          "serverEdited",
+          (e) => !(PropertyName.VirtualServerName in e.changes),
+        );
+        await editServer(a, { [PropertyName.VirtualServerWelcomeMessage]: `${welcome} (ev)` });
+        expect((await welcomed).changes).toEqual({});
+      } finally {
+        await editServer(a, {
+          [PropertyName.VirtualServerName]: name,
+          [PropertyName.VirtualServerWelcomeMessage]: welcome,
+        }).catch(() => {});
+      }
+    }, 30_000);
+
+    it("a temporary channel the server deletes once it is empty", async (ctx) => {
+      const watcher = needs(ctx);
+      const a = admin!;
+      const name = tag();
+      const created = seen(watcher, "channelCreated", (e) => e.changes.name === name);
+      // The creator is moved into a temporary channel; leaving empties it.
+      const cid = await createChannel(subject, { name });
+      made.push(cid);
+      try {
+        await created;
+        const deleted = seen(watcher, "channelDeleted", (e) => e.channelID === cid, 15_000);
+        const back = await listChannels(a).then((l) => l.find((c) => c.id === alphaID)!.id);
+        await subject.send({
+          command: "clientmove",
+          params: [
+            ["clid", subjectID],
+            ["cid", back],
+          ],
+        });
+        const d = await deleted;
+        console.log(`${who}: server deleted`, d);
+        expect(d).toMatchObject({ channelID: cid, invokerID: 0, invokerName: "Server" });
+      } finally {
+        await deleteChannel(a, cid, { force: true }).catch(() => {});
+        made.splice(made.indexOf(cid), 1);
+      }
+    }, 40_000);
+  });
+
+  it("getChannelDescription: the answer is no channelEdited, and a real edit meanwhile is one", async (ctx) => {
+    if (!HAS_ADMIN) ctx.skip("no query endpoint provisioned");
+    const a = admin!;
+    const cid = await createChannel(a, {
+      name: tag(),
+      isPermanent: true,
+      description: "fetched text",
+    });
+    made.push(cid);
+    try {
+      const edits: Array<{ reason: number; keys: string[] }> = [];
+      const names: string[] = [];
+      const offEdit = subject.on("channelEdited", (e) =>
+        edits.push({ reason: e.reason, keys: Object.keys(e.changes) }),
+      );
+      const offAll = subject.on("notification", (n) => {
+        if (n.name === "notifychanneledited") names.push(n.params["reasonid"] ?? "");
+      });
+      const fetched = getChannelDescription(subject, cid);
+      // A real edit while the fetch is in flight is not swallowed.
+      await editChannel(a, cid, { topic: "meanwhile" });
+      expect(await fetched).toBe("fetched text");
+      await new Promise((r) => setTimeout(r, 1_000));
+      offEdit();
+      offAll();
+      console.log("channelEdited events:", edits, "reasonids on the catch-all:", names);
+      expect(names).toContain("9");
+      expect(edits).toEqual([{ reason: Reason.ChannelEdit, keys: ["topic"] }]);
+    } finally {
+      await deleteChannel(a, cid, { force: true }).catch(() => {});
+      made.splice(made.indexOf(cid), 1);
+    }
+  }, 30_000);
+
+  it("channelSubscribed and channelUnsubscribed: one event each, with the channel", async (ctx) => {
+    if (!HAS_ADMIN) ctx.skip("no query endpoint provisioned");
+    const a = admin!;
+    const cid = await createChannel(a, { name: tag(), isPermanent: true });
+    made.push(cid);
+    try {
+      const subscribed = nextEvent(subject, "channelSubscribed", (e) => e.channelID === cid);
+      await subscribeChannel(subject, cid);
+      expect((await subscribed).channelID).toBe(cid);
+      const unsubscribed = nextEvent(subject, "channelUnsubscribed", (e) => e.channelID === cid);
+      await unsubscribeChannel(subject, cid);
+      expect((await unsubscribed).channelID).toBe(cid);
+    } finally {
+      await deleteChannel(a, cid, { force: true }).catch(() => {});
+      made.splice(made.indexOf(cid), 1);
+    }
+  }, 30_000);
+
+  it("pluginCommand: who receives it for each target", async () => {
+    const c = asClientID(bystander().clientID);
+    const name = `ts-js-plug-${Date.now()}`;
+    const got = (client: Client, data: string) =>
+      nextEvent(client, "pluginCommand", (e) => e.name === name && e.data === data);
+
+    // The channel: both clients are in it, and the sender receives its own.
+    const [byC, bySubject] = [got(bystander(), "to channel"), got(subject, "to channel")];
+    await sendPluginCommand(subject, name, "to channel", "channel");
+    expect(await byC).toMatchObject({
+      invokerID: subjectID,
+      invokerName: "ts-js-peer",
+      invokerUID: subject.uid,
+    });
+    await bySubject;
+
+    // The server: every client, the sender among them.
+    const [serverC, serverSubject] = [got(bystander(), "to server"), got(subject, "to server")];
+    await sendPluginCommand(subject, name, "to server", "server");
+    await Promise.all([serverC, serverSubject]);
+
+    // One client: that client only; the sender hears nothing.
+    const direct = got(bystander(), "to one");
+    const senderHears = never(subject, "pluginCommand");
+    await sendPluginCommand(subject, name, "to one", { clientID: c });
+    expect((await direct).data).toBe("to one");
+    expect(await senderHears).toBe(true);
+
+    // An empty payload and one that needs escaping arrive as sent.
+    const empty = got(bystander(), "");
+    await sendPluginCommand(subject, name, "", "channel");
+    await empty;
+    const odd = got(bystander(), "a b|c/d\\e");
+    await sendPluginCommand(subject, name, "a b|c/d\\e", "channel");
+    await odd;
+  }, 30_000);
+
+  it("clientChatComposing: only the client it names is told", async () => {
+    const typing = nextEvent(bystander(), "clientChatComposing", (e) => e.clientID === subjectID);
+    const subjectHears = never(subject, "clientChatComposing");
+    await sendChatComposing(subject, asClientID(bystander().clientID));
+    expect(await typing).toEqual({ clientID: subjectID, uid: subject.uid });
+    expect(await subjectHears).toBe(true);
+  }, 15_000);
+
+  it("closePrivateChat: the client we wrote to is told", async () => {
+    const closed = (client: Client) =>
+      new Promise<string>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("no chat-closed notification")), EVENT_MS);
+        const off = client.on("notification", (n) => {
+          if (n.name !== "notifyclientchatclosed") return;
+          clearTimeout(timer);
+          off();
+          resolve(n.params["clid"] ?? "");
+        });
+      });
+    const c = asClientID(bystander().clientID);
+    await sendPrivateMessage(subject, c, "a chat to close");
+    const told = closed(bystander());
+    await closePrivateChat(subject, c);
+    expect(await told).toBe(String(subjectID));
+  }, 15_000);
+
+  // The five that TS3 raw ServerQuery was measured not to deliver: pinned here
+  // so a server that starts to send one shows up.
+  it.skipIf(QUERY_KIND !== "tcp")(
+    "a TS3 raw ServerQuery client receives none of the voice-only notifications",
+    async () => {
+      const observer = rawObserver!;
+      const names = new Set<string>();
+      const off = observer.on("notification", (n) => names.add(n.name));
+      try {
+        await updateClient(subject, { isAway: true, awayMessage: "ev" });
+        await updateClient(subject, { isAway: false, awayMessage: "" });
+        await sendPluginCommand(subject, "ts-js-plug", "x", "server");
+        await sendChatComposing(subject, asClientID(bystander().clientID));
+        await new Promise((r) => setTimeout(r, 2_000));
+      } finally {
+        off();
+        await updateClient(subject, { isAway: false, awayMessage: "" }).catch(() => {});
+      }
+      console.log("notifications the raw query client saw:", [...names]);
+      for (const voiceOnly of [
+        "notifyclientupdated",
+        "notifyservergroupclientadded",
+        "notifyservergroupclientdeleted",
+        "notifyclientchannelgroupchanged",
+        "notifyplugincmd",
+        "notifyclientchatcomposing",
+        "notifychannelsubscribed",
+        "notifychannelunsubscribed",
+      ]) {
+        expect(names.has(voiceOnly), voiceOnly).toBe(false);
+      }
+    },
+    20_000,
   );
 });

@@ -46,6 +46,11 @@ import {
   findClients,
   findCustomProperty,
   getOwnPermission,
+  PropertyName,
+  deleteChannel,
+  editChannel,
+  editServer,
+  getServerInfo,
   getVersion,
   kickClient,
   listAPIKeys,
@@ -55,10 +60,14 @@ import {
   listCustomProperties,
   listQueryLogins,
   listServers,
+  moveChannel,
   moveClient,
   permissionByName,
   sendChannelMessage,
   setCustomProperty,
+  sendChatComposing,
+  sendPluginCommand,
+  updateClient,
   whoAmI,
   asServerID,
   asUID,
@@ -743,6 +752,140 @@ describe.skipIf(SKIP)("Integration — ServerQuery client", () => {
       }
     }, 60_000);
   });
+
+  // The channel and server categories are registered by default, so the
+  // events they carry reach every transport that can receive.
+  it("receives channel and server changes as typed events", async (ctx) => {
+    const receiving = eventClients(ctx);
+    const actor = [...clients.values()][0]!;
+    const alpha = (await listChannels(actor)).find((c) => c.name === DEFAULT_CHANNEL)!.id;
+    const info = await getServerInfo(actor);
+    const serverName = info[PropertyName.VirtualServerName] ?? "";
+    const name = `ts-js-query-ev-${Date.now().toString(36)}`;
+
+    /** Every receiving client's next event of `event` that `match` accepts. */
+    const everyone = (event: string, match: (payload: Record<string, unknown>) => boolean) =>
+      Promise.all(
+        receiving.map(([kind, client]) =>
+          withTimeout(
+            new Promise<Record<string, unknown>>((resolve) => {
+              const off = (
+                client as unknown as {
+                  on(n: string, l: (p: Record<string, unknown>) => void): () => void;
+                }
+              ).on(event, (payload) => {
+                if (!match(payload)) return;
+                off();
+                resolve(payload);
+              });
+            }),
+          ).catch((error: unknown) => {
+            throw new Error(`${kind}: ${event}: ${String(error)}`);
+          }),
+        ),
+      );
+    const field = (payload: unknown, key: string): unknown =>
+      (payload as Record<string, unknown>)[key];
+
+    let cid: ChannelID | undefined;
+    try {
+      const madeEvents = everyone(
+        "channelCreated",
+        (e) =>
+          field(e, "channelID") !== undefined &&
+          (field(e, "changes") as { name?: string }).name === name,
+      );
+      cid = await createChannel(actor, { name, topic: "t1", isPermanent: true });
+      for (const e of await madeEvents) {
+        expect(field(e, "channelID")).toBe(cid);
+        expect(Object.keys(field(e, "changes") as object)).toEqual(
+          expect.arrayContaining(["name", "topic", "isPermanent", "order"]),
+        );
+      }
+
+      const edited = everyone("channelEdited", (e) => field(e, "channelID") === cid);
+      await editChannel(actor, cid, { topic: "t2" });
+      for (const e of await edited) {
+        expect(Object.keys(field(e, "changes") as object)).toEqual(["topic"]);
+        expect(field(e, "reason")).toBe(Reason.ChannelEdit);
+      }
+
+      const description = everyone(
+        "channelDescriptionChanged",
+        (e) => field(e, "channelID") === cid,
+      );
+      await editChannel(actor, cid, { description: "text" });
+      await description;
+
+      const password = everyone("channelPasswordChanged", (e) => field(e, "channelID") === cid);
+      await editChannel(actor, cid, { password: "pw-ev" });
+      await password;
+      const cleared = everyone("channelPasswordChanged", (e) => field(e, "channelID") === cid);
+      await editChannel(actor, cid, { password: "" });
+      await cleared;
+
+      const moved = everyone("channelMoved", (e) => field(e, "channelID") === cid);
+      await moveChannel(actor, cid, alpha, { order: 0n as ChannelID });
+      for (const e of await moved) expect(field(e, "parentID")).toBe(alpha);
+
+      const deleted = everyone("channelDeleted", (e) => field(e, "channelID") === cid);
+      await deleteChannel(actor, cid, { force: true });
+      cid = undefined;
+      await deleted;
+
+      const renamed = everyone(
+        "serverEdited",
+        (e) => PropertyName.VirtualServerName in (field(e, "changes") as object),
+      );
+      await editServer(actor, { [PropertyName.VirtualServerName]: `${serverName} (ev)` });
+      for (const e of await renamed) {
+        expect(field(e, "changes")).toEqual({
+          [PropertyName.VirtualServerName]: `${serverName} (ev)`,
+        });
+      }
+    } finally {
+      if (cid !== undefined) await deleteChannel(actor, cid, { force: true }).catch(() => {});
+      await editServer(actor, { [PropertyName.VirtualServerName]: serverName }).catch(() => {});
+    }
+  }, 90_000);
+
+  // Measured: neither TS3 over raw TCP nor TS6 over SSH sends a query client
+  // these. Pinned, so that a server that starts to send one shows up, and the
+  // event can then move to the shared map.
+  it("receives none of the voice-only notifications", async (ctx) => {
+    const receiving = eventClients(ctx);
+    const speaker = await voiceClient();
+    const seen = new Map<Kind, Set<string>>();
+    const offs = receiving.map(([kind, client]) => {
+      const names = new Set<string>();
+      seen.set(kind, names);
+      return client.on("notification", (n) => names.add(n.name));
+    });
+    try {
+      await updateClient(speaker, { isAway: true, awayMessage: "ev" });
+      await sendPluginCommand(speaker, "ts-js-plug", "x", "server");
+      await sendChatComposing(speaker, speaker.clientID);
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+    } finally {
+      for (const off of offs) off();
+      await updateClient(speaker, { isAway: false, awayMessage: "" }).catch(() => {});
+    }
+    for (const [kind, names] of seen) {
+      console.log(`${kind}: notifications seen`, [...names]);
+      for (const voiceOnly of [
+        "notifyclientupdated",
+        "notifyservergroupclientadded",
+        "notifyservergroupclientdeleted",
+        "notifyclientchannelgroupchanged",
+        "notifyplugincmd",
+        "notifyclientchatcomposing",
+        "notifychannelsubscribed",
+        "notifychannelunsubscribed",
+      ]) {
+        expect(names.has(voiceOnly), `${kind}: ${voiceOnly}`).toBe(false);
+      }
+    }
+  }, 30_000);
 
   it.skipIf(KINDS.length < 2)(
     "reports the same channels over every transport it can use",
