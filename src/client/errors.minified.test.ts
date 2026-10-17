@@ -38,12 +38,14 @@ const kinds = [
   "NoDataError",
   "AlreadyConnectedError",
   "HandshakeError",
+  "PuzzleTooHardError",
   "RemovedError",
 ] as const;
 
 function make(classes: Record<string, Function>, kind: string): Error {
   const C = classes[kind] as new (...args: unknown[]) => Error;
   if (kind === "ServerError") return new C(1, "x");
+  if (kind === "PuzzleTooHardError") return new C(5, 4);
   if (kind === "RemovedError") return new C(5, "bye", "admin");
   return new C("x");
 }
@@ -82,6 +84,7 @@ describe("client error names", () => {
       new client.InvalidAddressError("a", "b"),
       new client.FileTransferError("x"),
       new client.HandshakeError("x"),
+      new client.PuzzleTooHardError(5, 4),
       new client.InvalidIdentityError(),
       new client.ConnectionTimeoutError(),
       new client.RemovedError(1, "", ""),

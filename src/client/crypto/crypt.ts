@@ -1,6 +1,6 @@
 import { createHash, createECDH, randomBytes } from "node:crypto";
 import type { KeyObject } from "node:crypto";
-import { HandshakeError, FakeSignatureMismatchError } from "../errors.js";
+import { HandshakeError, FakeSignatureMismatchError, PuzzleTooHardError } from "../errors.js";
 import type { Identity } from "./identity.js";
 import { identityPrivateKey, importPublicKey } from "./identity.js";
 import { EAX } from "./eax.js";
@@ -13,11 +13,25 @@ const PACKET_TYPE_MASK = 0x0f;
 const INIT1_MAC = Buffer.from("TS3INIT1");
 
 /**
- * The most squarings the Init1 puzzle may ask for. TS3 3.13 and TS6 6.0 both
- * ask for 10000; a level far beyond that is a server trying to pin the event
- * loop, since the squarings run synchronously.
+ * The most squarings the Init1 puzzle may ask for. A server raises its puzzle
+ * level while it is flooded with connections. Measured, TS3 3.13 and TS6 6.0
+ * both ask for 10000 when calm, 100000 at protection level 1 and 1000000 at
+ * level 2, the highest they reach; a level lasts about 75 seconds after the
+ * burst that raised it. A squaring takes about 0.3 microseconds here, so those
+ * take 3 ms, 30 ms and 300 ms. The cap is four times the highest level seen,
+ * 1.2 s of work here. The solve gives the event loop back every
+ * {@link SQUARINGS_PER_SLICE} squarings and stops when the connect is
+ * cancelled, so a level near the cap costs the caller at most what the caller
+ * allows the connect to take, and blocks nothing in the meantime; a level above
+ * it is refused with a {@link PuzzleTooHardError}.
  */
-export const MAX_RSA_CHALLENGE_LEVEL: number = 100_000;
+export const MAX_RSA_CHALLENGE_LEVEL: number = 4_000_000;
+
+/**
+ * How many squarings the solve does before it lets the event loop run: about
+ * 15 ms of work, so a timer or another connection waits no longer than that.
+ */
+export const SQUARINGS_PER_SLICE = 50_000;
 
 export interface KeyNonce {
   key: Uint8Array;
@@ -69,9 +83,25 @@ export class Crypt {
     return this.#alpha;
   }
 
-  solveRsaChallenge(data: Uint8Array, offset: number, level: number): Uint8Array {
-    if (!Number.isInteger(level) || level < 0 || level > MAX_RSA_CHALLENGE_LEVEL) {
+  /**
+   * Answer the Init1 puzzle: square `x` modulo `n` `level` times, `x` and `n`
+   * being the two 64-byte numbers at `offset` in `data`. Rejects with a
+   * {@link PuzzleTooHardError} for a level above {@link MAX_RSA_CHALLENGE_LEVEL},
+   * with a {@link HandshakeError} for a level or modulus that is no puzzle, and
+   * with `signal`'s reason when it aborts, checked between slices of
+   * {@link SQUARINGS_PER_SLICE} squarings.
+   */
+  async solveRsaChallenge(
+    data: Uint8Array,
+    offset: number,
+    level: number,
+    signal?: AbortSignal,
+  ): Promise<Uint8Array> {
+    if (!Number.isInteger(level) || level < 0) {
       throw new HandshakeError(`RSA challenge level ${level} out of range`);
+    }
+    if (level > MAX_RSA_CHALLENGE_LEVEL) {
+      throw new PuzzleTooHardError(level, MAX_RSA_CHALLENGE_LEVEL);
     }
 
     const xBytes = data.slice(offset, offset + 64);
@@ -81,9 +111,16 @@ export class Crypt {
     const n = bytesToBigInt(nBytes);
     if (n === 0n) throw new HandshakeError("RSA challenge modulus is zero");
 
-    for (let i = 0; i < level; i++) {
-      y = (y * y) % n;
+    for (let done = 0; done < level;) {
+      signal?.throwIfAborted();
+      const slice = level - done < SQUARINGS_PER_SLICE ? level - done : SQUARINGS_PER_SLICE;
+      for (let i = 0; i < slice; i++) {
+        y = (y * y) % n;
+      }
+      done += slice;
+      if (done < level) await new Promise<void>((resolve) => setImmediate(resolve));
     }
+    signal?.throwIfAborted();
 
     return bigIntToBytes(y, 64);
   }

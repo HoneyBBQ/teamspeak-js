@@ -798,6 +798,8 @@ describe("what each milestone knows", () => {
     const connecting = client.connect();
     await until(() => clientInternals(client).handler.isOpen);
     sockets[0]!.deliver(puzzlePacket(3));
+    // The puzzle is answered a tick later, which the fake timers do not touch.
+    await settle();
     // Nothing is acknowledged: the Init1 packet goes out again.
     vi.advanceTimersByTime(1_200);
     const omega = identity.publicKey();
