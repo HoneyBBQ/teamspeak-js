@@ -60,6 +60,12 @@ export class AlreadyConnectedError extends TeamspeakError {
 }
 
 // @public
+export function applyChannelChanges(channel: Channel, changes: ChannelChanges): Channel;
+
+// @public
+export function applyClientChanges(entry: ClientEntry, changes: ClientChanges): ClientEntry;
+
+// @public
 export const asBanID: (v: bigint | number) => BanID;
 
 // @public
@@ -167,18 +173,28 @@ export interface BindingListOptions extends CommandOptions {
 
 // @public
 export interface Channel {
+    readonly bannerMode?: number | undefined;
+    readonly bannerURL?: string | undefined;
     readonly codec: number;
+    readonly codecLatencyFactor?: number | undefined;
     readonly codecQuality: number;
+    readonly deleteDelayMs?: number | undefined;
     readonly description: string;
     readonly hasPassword: boolean;
     readonly iconID: IconID | undefined;
     readonly id: ChannelID;
     readonly isDefault: boolean;
+    readonly isForcedSilence?: boolean | undefined;
+    readonly isMaxClientsUnlimited?: boolean | undefined;
+    readonly isMaxFamilyClientsInherited?: boolean | undefined;
+    readonly isMaxFamilyClientsUnlimited?: boolean | undefined;
     readonly isPermanent: boolean;
     readonly isSemiPermanent: boolean;
+    readonly isUnencrypted?: boolean | undefined;
     readonly maxClients: number;
     readonly maxFamilyClients: number;
     readonly name: string;
+    readonly namePhonetic?: string | undefined;
     readonly neededSubscribePower: number | undefined;
     readonly neededTalkPower: number;
     readonly order: ChannelID;
@@ -188,6 +204,11 @@ export interface Channel {
     readonly totalFamilyClients: number | undefined;
     readonly uid: ChannelUID;
 }
+
+// @public
+export type ChannelChanges = {
+    readonly [K in Exclude<keyof Channel, "id">]?: Channel[K];
+};
 
 // @public
 export interface ChannelCreateOptions extends ChannelSettings {
@@ -284,6 +305,19 @@ export type ChannelUID = string & {
 };
 
 // @public
+export type ClientChanges = {
+    readonly [K in Exclude<keyof ClientEntry, "id">]?: ClientEntry[K];
+};
+
+// @public
+export interface ClientChannelGroupChangedEvent extends Invoked {
+    readonly channelGroupID: ChannelGroupID;
+    readonly channelGroupInheritedChannelID: ChannelID;
+    readonly channelID: ChannelID;
+    readonly clientID: ClientID;
+}
+
+// @public
 export interface ClientDatabaseEditOptions {
     readonly description?: string | undefined;
 }
@@ -328,19 +362,50 @@ export type ClientEnterEvent = ClientEntry;
 
 // @public
 export interface ClientEntry {
+    readonly avatar?: string | undefined;
+    readonly awayMessage?: string | undefined;
+    readonly badges?: string | undefined;
     readonly channelGroupID: ChannelGroupID;
+    readonly channelGroupInheritedChannelID?: ChannelID | undefined;
     readonly channelID: ChannelID;
+    readonly country?: string | undefined;
     readonly createdAt: Date | undefined;
+    readonly databaseID?: ClientDBID | undefined;
+    readonly description?: string | undefined;
+    readonly hasInputHardware?: boolean | undefined;
+    readonly hasOutputHardware?: boolean | undefined;
+    readonly iconID?: IconID | undefined;
     readonly id: ClientID;
     readonly idleTimeMs: number | undefined;
+    readonly integrations?: string | undefined;
+    readonly ip?: string | undefined;
     readonly isAway: boolean;
+    readonly isChannelCommander?: boolean | undefined;
+    readonly isInputMuted?: boolean | undefined;
+    readonly isOutputMuted?: boolean | undefined;
+    readonly isOutputOnlyMuted?: boolean | undefined;
+    readonly isPrioritySpeaker?: boolean | undefined;
     readonly isRecording: boolean;
+    readonly isRequestingTalk?: boolean | undefined;
+    readonly isStreaming?: boolean | undefined;
     readonly isTalker: boolean;
     readonly lastConnectedAt: Date | undefined;
+    readonly metaData?: string | undefined;
+    readonly myTeamSpeakAvatar?: string | undefined;
+    readonly myTeamSpeakID?: string | undefined;
+    readonly neededServerQueryViewPower?: number | undefined;
     readonly nickname: string;
+    readonly nicknamePhonetic?: string | undefined;
+    readonly platform?: string | undefined;
     readonly serverGroups: readonly ServerGroupID[];
+    readonly signedBadges?: string | undefined;
+    readonly talkPower?: number | undefined;
+    readonly talkRequestMessage?: string | undefined;
     readonly type: number;
     readonly uid: UID;
+    readonly unreadMessages?: number | undefined;
+    readonly userTag?: string | undefined;
+    readonly version?: string | undefined;
 }
 
 // @public
@@ -408,6 +473,22 @@ export interface ClientPermissionOptions extends CommandOptions {
     readonly skip?: boolean | undefined;
 }
 
+// @public
+export interface ClientServerGroupAddedEvent extends ClientServerGroupEvent {
+}
+
+// @public
+export interface ClientServerGroupEvent extends Invoked {
+    readonly clientID: ClientID;
+    readonly groupID: ServerGroupID;
+    readonly nickname: string;
+    readonly uid: UID;
+}
+
+// @public
+export interface ClientServerGroupRemovedEvent extends ClientServerGroupEvent {
+}
+
 // Warning: (ae-forgotten-export) The symbol "clientStatusValues" needs to be exported by the entry point index.d.ts
 //
 // @public
@@ -436,6 +517,12 @@ const clientTypeValues: {
     readonly Voice: 0;
     readonly Query: 1;
 };
+
+// @public
+export interface ClientUpdatedEvent extends Invoked {
+    readonly changes: ClientChanges;
+    readonly clientID: ClientID;
+}
 
 // @public
 export interface ClientUpdateOptions {
@@ -1190,6 +1277,13 @@ export function initFileDownload(client: CommandExecutor, cid: ChannelID, path: 
 
 // @public
 export function initFileUpload(client: CommandExecutor, cid: ChannelID, path: string, size: bigint, options?: FileUploadOptions): Promise<FileUploadInfo>;
+
+// @public
+export interface Invoked {
+    readonly invokerID: ClientID;
+    readonly invokerName: string;
+    readonly invokerUID: UID;
+}
 
 // @public
 export function iterateClientDatabase(client: CommandExecutor, options?: PagingOptions): AsyncIterable<ClientDatabaseEntry>;

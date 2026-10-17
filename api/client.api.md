@@ -6,8 +6,12 @@
 
 import { Channel } from 'node:diagnostics_channel';
 import { ChannelID } from '@honeybbq/teamspeak';
+import type { ClientChannelGroupChangedEvent } from '@honeybbq/teamspeak';
 import { ClientID } from '@honeybbq/teamspeak';
+import type { ClientServerGroupAddedEvent } from '@honeybbq/teamspeak';
+import type { ClientServerGroupRemovedEvent } from '@honeybbq/teamspeak';
 import { ClientStatus } from '@honeybbq/teamspeak';
+import type { ClientUpdatedEvent } from '@honeybbq/teamspeak';
 import type { ClientVersion } from '@honeybbq/teamspeak';
 import { Codec } from '@honeybbq/teamspeak';
 import type { CommandExecutor } from '@honeybbq/teamspeak';
@@ -202,6 +206,10 @@ export function downloadFileData(host: string, info: FileDownloadInfo, dest: Wri
 
 // @public
 export interface EventMap extends ServerEventMap, SessionEventMap {
+    clientChannelGroupChanged: ClientChannelGroupChangedEvent;
+    clientServerGroupAdded: ClientServerGroupAddedEvent;
+    clientServerGroupRemoved: ClientServerGroupRemovedEvent;
+    clientUpdated: ClientUpdatedEvent;
     poked: PokeEvent;
     voiceData: VoiceDataEvent;
 }
@@ -223,6 +231,10 @@ const eventNameValues: {
     readonly ClientEnter: "clientEnter";
     readonly ClientLeave: "clientLeave";
     readonly ClientMoved: "clientMoved";
+    readonly ClientUpdated: "clientUpdated";
+    readonly ClientServerGroupAdded: "clientServerGroupAdded";
+    readonly ClientServerGroupRemoved: "clientServerGroupRemoved";
+    readonly ClientChannelGroupChanged: "clientChannelGroupChanged";
     readonly Poked: "poked";
     readonly VoiceData: "voiceData";
     readonly Notification: "notification";
@@ -431,7 +443,7 @@ export type ServerEvent = {
 }[ServerEventName];
 
 // @public
-export type ServerEventName = "textMessage" | "clientEnter" | "clientLeave" | "clientMoved" | "poked" | "voiceData" | "notification";
+export type ServerEventName = "textMessage" | "clientEnter" | "clientLeave" | "clientMoved" | "clientUpdated" | "clientServerGroupAdded" | "clientServerGroupRemoved" | "clientChannelGroupChanged" | "poked" | "voiceData" | "notification";
 
 // @public
 export interface SessionEndInfo {
