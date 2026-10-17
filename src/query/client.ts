@@ -448,6 +448,19 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
   }
 
   /**
+   * Log out of the server instance, which also deselects the virtual server:
+   * commands that need a login or a server fail until `login` and `use` run
+   * again. The connection stays open.
+   *
+   * Not served over WebQuery, whose api key is the login: the server refuses it
+   * there (5120, command not in api key scope). A reconnect logs in again from
+   * the `login` option.
+   */
+  async logout(options: CommandOptions = {}): Promise<void> {
+    await this.exec("logout", options);
+  }
+
+  /**
    * Select the virtual server the following commands address, by id or by
    * voice port. `nickname` names the query client on it.
    *
@@ -488,6 +501,30 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     await this.exec(
       buildCommandOrdered("servernotifyregister", [
         ["event", event],
+        ...(channelID === undefined ? [] : ([["id", String(channelID)]] as const)),
+      ]),
+      options,
+    );
+  }
+
+  /**
+   * Stop receiving the notifications of one category, or of every category
+   * when none is named; the counterpart of {@link QueryClient.registerNotifications}.
+   * `channelID` narrows `channel` to one channel, as it does there.
+   *
+   * The server accepts a category it does not know and does nothing. With the
+   * WebQuery transport there is nothing registered and the server refuses it.
+   * {@link QueryClient.eventCategories} keeps listing what `events` asked for,
+   * and a reconnect registers those again.
+   */
+  async unregisterNotifications(
+    event?: QueryEventCategory,
+    channelID?: bigint | number,
+    options: CommandOptions = {},
+  ): Promise<void> {
+    await this.exec(
+      buildCommandOrdered("servernotifyunregister", [
+        ...(event === undefined ? [] : ([["event", event]] as const)),
         ...(channelID === undefined ? [] : ([["id", String(channelID)]] as const)),
       ]),
       options,

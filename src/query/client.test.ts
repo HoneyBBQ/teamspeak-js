@@ -511,6 +511,35 @@ describe("QueryClient commands", () => {
     expect(transport.sent.slice(baseline)).toEqual(["servernotifyregister event=channel id=0"]);
   });
 
+  it("unregisters one category, one channel, or everything", async () => {
+    const { client, transport, baseline } = await connected();
+    const calls = [
+      () => client.unregisterNotifications("server"),
+      () => client.unregisterNotifications("channel", 3),
+      () => client.unregisterNotifications(),
+    ];
+    for (const [i, call] of calls.entries()) {
+      const done = call();
+      await transport.sentCount(baseline + i + 1);
+      transport.receive("error id=0 msg=ok");
+      await done;
+    }
+    expect(transport.sent.slice(baseline)).toEqual([
+      "servernotifyunregister event=server",
+      "servernotifyunregister event=channel id=3",
+      "servernotifyunregister",
+    ]);
+  });
+
+  it("logs out", async () => {
+    const { client, transport, baseline } = await connected();
+    const done = client.logout();
+    await transport.sentCount(baseline + 1);
+    transport.receive("error id=0 msg=ok");
+    await done;
+    expect(transport.sent.slice(baseline)).toEqual(["logout"]);
+  });
+
   // The voice protocol leaves out the fields a row repeats; ServerQuery never
   // does, so a row that lacks one must stay without it.
   it("does not complete a row from the row before it", async () => {
