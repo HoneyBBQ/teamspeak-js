@@ -13,15 +13,38 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   ClientType,
+  GroupType,
+  addServerGroupPermission,
   asChannelID,
+  asServerGroupID,
+  copyChannelGroup,
+  copyServerGroup,
   createChannel,
+  createChannelGroup,
+  createServerGroup,
   deleteChannel,
+  deleteChannelGroup,
+  deleteServerGroup,
   editChannel,
+  editServer,
+  getServerInfo,
+  listChannelGroups,
   listChannels,
   listClients,
+  listServerGroups,
   moveChannel,
+  permissionByName,
+  renameChannelGroup,
+  renameServerGroup,
 } from "@honeybbq/teamspeak";
-import type { Channel, ChannelID, Logger } from "@honeybbq/teamspeak";
+import type {
+  Channel,
+  ChannelGroupID,
+  ChannelID,
+  Logger,
+  ServerGroupID,
+} from "@honeybbq/teamspeak";
+import { getServerVariables } from "./api/voice.js";
 import { Client } from "./client.js";
 import { generateIdentitySync } from "./crypto/identity.js";
 import type { EventMap } from "./types.js";
@@ -327,4 +350,276 @@ describe.skipIf(SKIP)("Server view — live", () => {
       }
     }
   }, 60_000);
+});
+
+/** Poll until `condition` holds, for as long as an event may take. */
+async function eventually(what: string, condition: () => boolean): Promise<void> {
+  const deadline = Date.now() + EVENT_MS;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error(`${what} did not come true`);
+    await sleep(25);
+  }
+}
+
+describe.skipIf(SKIP)("Server view, groups and server — live", () => {
+  let admin: QueryClient;
+  let watcher: Client;
+  /** Every `viewChanged` the watcher was sent. */
+  const changed: number[] = [];
+  const serverGroups: ServerGroupID[] = [];
+  const channelGroups: ChannelGroupID[] = [];
+  const channels: ChannelID[] = [];
+  let original: Readonly<Record<string, string>> = {};
+
+  const listing = async () => ({
+    server: (await listServerGroups(admin)).map((g) => [g.id, g.name, g.type] as const),
+    channel: (await listChannelGroups(admin)).map((g) => [g.id, g.name, g.type] as const),
+  });
+  const viewed = (client: Client) => ({
+    server: [...client.view.serverGroups.values()].map((g) => [g.id, g.name, g.type] as const),
+    channel: [...client.view.channelGroups.values()].map((g) => [g.id, g.name, g.type] as const),
+  });
+  /** Wait for the view to hold what the server lists, then compare entry by entry. */
+  async function matchesListing(client: Client, label: string): Promise<void> {
+    const want = await listing();
+    await eventually(`the groups ${label}`, () => {
+      const have = viewed(client);
+      return (
+        JSON.stringify(have.server, (_, v) => (typeof v === "bigint" ? String(v) : v)) ===
+          JSON.stringify(want.server, (_, v) => (typeof v === "bigint" ? String(v) : v)) &&
+        JSON.stringify(have.channel, (_, v) => (typeof v === "bigint" ? String(v) : v)) ===
+          JSON.stringify(want.channel, (_, v) => (typeof v === "bigint" ? String(v) : v))
+      );
+    });
+    const have = viewed(client);
+    expect(have.server, `server groups ${label}`).toEqual(want.server);
+    expect(have.channel, `channel groups ${label}`).toEqual(want.channel);
+  }
+
+  beforeAll(async () => {
+    admin = new QueryClient(adminOptions());
+    await admin.connect({ signal: AbortSignal.timeout(15_000) });
+    original = await getServerInfo(admin);
+    await sleep(1_200);
+    watcher = await connectClient(`ts-js-vg-${RUN}`);
+    watcher.on("viewChanged", (event) => changed.push(event.revision));
+  }, 60_000);
+
+  afterAll(async () => {
+    await watcher?.disconnect().catch(() => {});
+    for (const id of serverGroups)
+      await deleteServerGroup(admin, id, { force: true }).catch(() => {});
+    for (const id of channelGroups)
+      await deleteChannelGroup(admin, id, { force: true }).catch(() => {});
+    for (const id of channels) await deleteChannel(admin, id, { force: true }).catch(() => {});
+    const restore: Record<string, string> = {};
+    for (const key of [
+      "virtualserver_name",
+      "virtualserver_welcomemessage",
+      "virtualserver_maxclients",
+    ]) {
+      if (original[key] !== undefined) restore[key] = original[key];
+    }
+    if (Object.keys(restore).length > 0) await editServer(admin, restore).catch(() => {});
+    await admin?.disconnect().catch(() => {});
+  }, 120_000);
+
+  it("holds the group lists the server lists, through 62 of each, a rename, a copy and a delete", async () => {
+    const view = watcher.view;
+    const startChanges = changed.length;
+    const startRevision = view.revision;
+    await eventually("groups loaded", () => view.groupsLoaded);
+    await matchesListing(watcher, "at the start");
+
+    let operations = 0;
+    for (let i = 0; i < 62; i++) {
+      serverGroups.push(await createServerGroup(admin, `vg-s${i}-${RUN}`, GroupType.Regular));
+      channelGroups.push(await createChannelGroup(admin, `vg-c${i}-${RUN}`, GroupType.Regular));
+      operations += 2;
+    }
+    await matchesListing(watcher, "after 62 of each");
+    expect(view.serverGroups.size).toBeGreaterThanOrEqual(62);
+    expect(view.channelGroups.size).toBeGreaterThanOrEqual(62);
+    const ids = [...view.serverGroups.keys()];
+    expect(ids).toEqual([...ids].sort((a, b) => (a < b ? -1 : 1)));
+
+    const kept = view.serverGroups;
+    await renameServerGroup(admin, serverGroups[3]!, `vg-renamed-${RUN}`);
+    await renameChannelGroup(admin, channelGroups[3]!, `vg-renamed-${RUN}`);
+    await matchesListing(watcher, "after a rename");
+    expect(view.serverGroups).not.toBe(kept);
+    expect(kept.get(serverGroups[3]!)?.name).toBe(`vg-s3-${RUN}`);
+
+    serverGroups.push(
+      await copyServerGroup(
+        admin,
+        serverGroups[5]!,
+        asServerGroupID(0n),
+        `vg-copy-${RUN}`,
+        GroupType.Regular,
+      ),
+    );
+    channelGroups.push(
+      await copyChannelGroup(
+        admin,
+        channelGroups[5]!,
+        0n as ChannelGroupID,
+        `vg-copy-${RUN}`,
+        GroupType.Regular,
+      ),
+    );
+    await matchesListing(watcher, "after a copy");
+
+    const gone = serverGroups.splice(10, 1)[0]!;
+    await deleteServerGroup(admin, gone, { force: true });
+    const goneChannel = channelGroups.splice(10, 1)[0]!;
+    await deleteChannelGroup(admin, goneChannel, { force: true });
+    await matchesListing(watcher, "after a delete");
+    expect(view.serverGroups.has(gone)).toBe(false);
+    expect(view.channelGroups.has(goneChannel)).toBe(false);
+
+    // A group's permissions are not announced, so nothing moves.
+    await sleep(300);
+    const revision = view.revision;
+    const groups = view.serverGroups;
+    await addServerGroupPermission(
+      admin,
+      serverGroups[0]!,
+      permissionByName("i_client_talk_power"),
+      5,
+    );
+    await sleep(500);
+    expect(view.revision).toBe(revision);
+    expect(view.serverGroups).toBe(groups);
+
+    // viewChanged: at least one, at most one per change, and the last says where the view is.
+    await sleep(300);
+    const events = changed.length - startChanges;
+    expect(events).toBeGreaterThanOrEqual(1);
+    expect(events).toBeLessThanOrEqual(operations + 8);
+    expect(changed.at(-1)).toBe(view.revision);
+    expect(view.revision).toBeGreaterThan(startRevision);
+    expect(new Set(changed).size).toBe(changed.length);
+  }, 240_000);
+
+  it("is complete at the first viewChanged for a client that joins 70 groups, and after a join during churn", async () => {
+    const want = await listing();
+    expect(want.server.length).toBeGreaterThan(62);
+    await sleep(1_200);
+    const client = new Client(generateIdentitySync(8), ADDR!, `ts-js-vg2-${RUN}`, {
+      serverPassword: SERVER_PASSWORD,
+      defaultChannel: DEFAULT_CHANNEL,
+    });
+    const firstChange = new Promise<boolean>((resolve) => {
+      client.on("viewChanged", () => resolve(client.view.groupsLoaded));
+    });
+    const churn: Promise<unknown> = (async () => {
+      // Groups appear and go while the client is joining.
+      for (let i = 0; i < 3; i++) {
+        const id = await createServerGroup(admin, `vg-churn${i}-${RUN}`, GroupType.Regular);
+        serverGroups.push(id);
+      }
+    })();
+    try {
+      await client.connect({ signal: AbortSignal.timeout(15_000) });
+      await client.view.whenReady({ signal: AbortSignal.timeout(10_000) });
+      await churn;
+      await eventually("groups loaded", () => client.view.groupsLoaded);
+      // The groups come right after the welcome; the first announcement at the latest carries them.
+      expect(await Promise.race([firstChange, sleep(EVENT_MS).then(() => false)])).toBe(true);
+      await matchesListing(client, "after a join during churn");
+    } finally {
+      await client.disconnect().catch(() => {});
+    }
+  }, 90_000);
+
+  it("patches the announced server properties, and the rest after getServerVariables", async () => {
+    const view = watcher.view;
+    expect(view.server["virtualserver_name"]).toBe(original["virtualserver_name"]);
+    expect(Object.keys(view.server).every((key) => key.startsWith("virtualserver_"))).toBe(true);
+
+    const renamed = nextEvent(watcher, "serverEdited", () => true);
+    await editServer(admin, { virtualserver_name: `vg-name-${RUN}` });
+    await renamed;
+    expect(view.server["virtualserver_name"]).toBe(`vg-name-${RUN}`);
+
+    // The server does not say which of these changed: the edit arrives empty.
+    const silent = nextEvent(watcher, "serverEdited", () => true);
+    const oldWelcome = view.server["virtualserver_welcomemessage"];
+    const oldMax = view.server["virtualserver_maxclients"];
+    await editServer(admin, {
+      virtualserver_welcomemessage: `vg-welcome-${RUN}`,
+      virtualserver_maxclients: String(Number(original["virtualserver_maxclients"] ?? "32") - 1),
+    });
+    const event = await silent;
+    expect(event.changes).toEqual({});
+    expect(view.server["virtualserver_welcomemessage"]).toBe(oldWelcome);
+    expect(view.server["virtualserver_maxclients"]).toBe(oldMax);
+
+    const variables = await getServerVariables(watcher);
+    expect(variables["virtualserver_welcomemessage"]).toBe(`vg-welcome-${RUN}`);
+    expect(view.server["virtualserver_welcomemessage"]).toBe(`vg-welcome-${RUN}`);
+    expect(view.server["virtualserver_maxclients"]).toBe(variables["virtualserver_maxclients"]);
+
+    const info = await getServerInfo(admin);
+    for (const [key, value] of Object.entries(view.server)) {
+      expect(info[key], key).toBe(value);
+    }
+    for (const counter of ["clientsonline", "channelsonline", "uptime", "client_connections"]) {
+      expect(view.server).not.toHaveProperty(`virtualserver_${counter}`);
+      expect(variables).toHaveProperty(`virtualserver_${counter}`);
+    }
+  }, 60_000);
+
+  it("names what a deleted channel and a client that left were", async () => {
+    const view = watcher.view;
+    const made = nextEvent(watcher, "channelCreated", (e) => e.changes.name === `vg-prev-${RUN}`);
+    const channel = await createChannel(admin, { name: `vg-prev-${RUN}`, isPermanent: true });
+    channels.push(channel);
+    await made;
+    const held = view.channel(channel)!;
+    const deleted = nextEvent(watcher, "channelDeleted", (e) => e.channelID === channel);
+    await deleteChannel(admin, channel, { force: true });
+    const event = await deleted;
+    expect(event.previous).toEqual(held);
+    expect(view.channel(channel)).toBeUndefined();
+
+    await sleep(1_200);
+    const bystander = await connectClient(`ts-js-vgb-${RUN}`);
+    try {
+      await eventually(
+        "the bystander is known",
+        () => view.client(bystander.clientID) !== undefined,
+      );
+      const known = view.client(bystander.clientID)!;
+      const left = nextEvent(watcher, "clientLeave", (e) => e.clientID === bystander.clientID);
+      await bystander.disconnect();
+      const leave = await left;
+      expect(leave.previous).toEqual(known);
+      expect(view.client(bystander.clientID)).toBeUndefined();
+    } finally {
+      await bystander.disconnect().catch(() => {});
+    }
+  }, 60_000);
+
+  it("reports a channel move with a viewChanged", async () => {
+    const view = watcher.view;
+    const a = await createChannel(admin, { name: `vg-mv1-${RUN}`, isPermanent: true });
+    channels.push(a);
+    const b = await createChannel(admin, { name: `vg-mv2-${RUN}`, isPermanent: true });
+    channels.push(b);
+    await eventually(
+      "both channels",
+      () => view.channel(a) !== undefined && view.channel(b) !== undefined,
+    );
+    await sleep(300);
+    const before = changed.length;
+    await moveChannel(admin, b, a, { order: asChannelID(0n) });
+    await eventually("the move", () => view.channel(b)?.parentID === a);
+    await eventually(
+      "viewChanged",
+      () => changed.length > before && changed.at(-1) === view.revision,
+    );
+    expect(changed.length - before).toBeLessThanOrEqual(2);
+  }, 30_000);
 });

@@ -24,8 +24,6 @@ import {
   str,
   big,
   num,
-  bool,
-  icon,
   date,
   durationMs,
   SECOND,
@@ -51,6 +49,7 @@ import {
 } from "../command/ids.js";
 import type { GroupAutoUpdateType, GroupType } from "../enums.js";
 import type { GroupDeleteOptions } from "./groups.js";
+import { parseServerGroup } from "./group-rows.js";
 import type { Permission } from "../permission.js";
 
 /** A server group as `servergrouplist` reports it. */
@@ -76,19 +75,6 @@ export interface ServerGroup {
   /** The power needed to remove a member. */
   readonly memberRemovePower: number;
 }
-
-const parseServerGroup = (row: Record<string, string>): ServerGroup => ({
-  id: asServerGroupID(big(row, "sgid")),
-  name: str(row, "name"),
-  type: num(row, "type"),
-  iconID: icon(row, "iconid"),
-  savedInDatabase: bool(row, "savedb"),
-  sortID: num(row, "sortid"),
-  nameMode: num(row, "namemode"),
-  modifyPower: num(row, "n_modifyp"),
-  memberAddPower: num(row, "n_member_addp"),
-  memberRemovePower: num(row, "n_member_removep"),
-});
 
 /** Every server group. */
 export async function listServerGroups(

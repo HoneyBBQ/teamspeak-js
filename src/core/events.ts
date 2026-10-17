@@ -5,7 +5,7 @@
 
 import type { ChannelGroupID, ChannelID, ClientID, ServerGroupID, UID } from "./command/ids.js";
 import type { ClientChanges, ClientEntry } from "./api/clients.js";
-import type { ChannelChanges } from "./api/command.js";
+import type { Channel, ChannelChanges } from "./api/command.js";
 import type { NotificationName } from "./notification-name.js";
 
 /** A text message, sent privately, to a channel, or to the whole server. */
@@ -71,6 +71,14 @@ export interface ClientLeaveEvent {
   readonly invokerUID: UID;
   /** The kicker; 0 unless kicked or banned. */
   readonly invokerID: ClientID;
+  /**
+   * The client's record as the voice client held it just before it left, so a
+   * listener can name who left. Absent when the client never announced it, and
+   * always absent on a ServerQuery client, which keeps no such record.
+   *
+   * @experimental New in 1.x and may change in a minor release.
+   */
+  readonly previous?: ClientEntry | undefined;
 }
 
 /** This client being kicked from its channel or the server. */
@@ -217,6 +225,17 @@ export interface ChannelMovedEvent extends Invoked {
 export interface ChannelDeletedEvent extends Invoked {
   /** The channel that was deleted. */
   readonly channelID: ChannelID;
+  /**
+   * The channel as the voice client's view held it just before the deletion
+   * (its `order` derived, its client counts `undefined`), so a listener can name
+   * what went. Absent when the view did not hold it, such as before the view is
+   * live, and always absent on a ServerQuery client, which has no view. A
+   * channel deleted with its children gives one event per child, children
+   * first, each with its own record.
+   *
+   * @experimental New in 1.x and may change in a minor release.
+   */
+  readonly previous?: Channel | undefined;
 }
 
 /**

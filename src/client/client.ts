@@ -67,7 +67,13 @@ import {
 import type { ClientVersion, CommandExecutor, CommandRequest } from "@honeybbq/teamspeak";
 import { handleNotification } from "../core/internal.js";
 import type { NotificationResult } from "../core/internal.js";
-import { parseChannel, parseCommand } from "../core/internal.js";
+import {
+  parseChannel,
+  parseChannelGroup,
+  parseCommand,
+  parseServerGroup,
+  parseUint16,
+} from "../core/internal.js";
 import { CommandThrottle } from "./throttle.js";
 import { splitCommandRows, sleep } from "../core/internal.js";
 import { isAutoNicknameMatch } from "./helpers.js";
@@ -408,6 +414,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
   /** Deliveries waiting for their turn; see #emit. */
   #queue: Array<() => void> = [];
   #draining = false;
+  /** The group list rows of the command line being handled, by the name of the line. */
+  #groupLine: { readonly name: string; readonly rows: Array<Record<string, string>> } | undefined;
   #voiceDropped = 0;
   #voiceDropWarnedAt = -Infinity;
 
@@ -426,7 +434,11 @@ export class Client implements CommandExecutor, AsyncDisposable {
     this.#fileTransferSocketFactory = options.fileTransferSocketFactory;
     this.#reconnectOptions = options.reconnect;
     this.#trace = options.trace === undefined ? undefined : { ...options.trace };
-    this.#viewStore = new ViewStore(this.#logger, () => this.#clid);
+    this.#viewStore = new ViewStore(
+      this.#logger,
+      () => this.#clid,
+      () => this.#scheduleDrain(),
+    );
     this.#clients = this.#viewStore.roster;
 
     this.#crypt = new Crypt(identity);
@@ -1414,6 +1426,26 @@ export class Client implements CommandExecutor, AsyncDisposable {
       for (const row of splitCommandRows(trimmed)) {
         this.#handleCommandStr(row);
       }
+      this.#applyGroupLine();
+    }
+  }
+
+  /**
+   * A group list is a whole set, and the server sends it as one command line,
+   * so it is applied once its last row has been handled.
+   */
+  #applyGroupLine(): void {
+    const line = this.#groupLine;
+    if (line === undefined) return;
+    this.#groupLine = undefined;
+    if (line.name === "notifyservergrouplist") {
+      this.#viewStore.setServerGroups(
+        line.rows.map(parseServerGroup).filter((group) => group.id !== 0n),
+      );
+    } else {
+      this.#viewStore.setChannelGroups(
+        line.rows.map(parseChannelGroup).filter((group) => group.id !== 0n),
+      );
     }
   }
 
@@ -1487,8 +1519,20 @@ export class Client implements CommandExecutor, AsyncDisposable {
         this.#cmdTrack.offerCorrelated(cmd.name, cmd.params);
       }
       if (cmd.name === "notifyconnectioninforequest") this.#answerConnectionInfoRequest();
+      if (cmd.name === "notifyservergrouplist" || cmd.name === "notifychannelgrouplist") {
+        if (this.#groupLine?.name !== cmd.name) this.#applyGroupLine();
+        this.#groupLine ??= { name: cmd.name, rows: [] };
+        this.#groupLine.rows.push(cmd.params);
+      } else if (cmd.name === "notifyserverupdated") {
+        this.#viewStore.mergeServer(cmd.params);
+      }
+      // The roster entry goes with the notification, so it is read first.
+      const leaving =
+        cmd.name === "notifyclientleftview"
+          ? this.#clients.get(parseUint16(cmd.params["clid"] ?? ""))
+          : undefined;
       const result = handleNotification(cmd, this.#clid, this.#clients);
-      this.#processNotificationResult(result);
+      this.#processNotificationResult(result, leaving);
       if (this.#listeners.get("notification")?.length || this.#eventMiddlewares.length > 0) {
         this.#emitServerEvent({
           name: "notification",
@@ -1513,6 +1557,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
         // report a connection whose next command — clientinit with its password
         // hashes among them — goes out under that dummy key.
         if (this.#status === ClientStatus.Connecting && this.#crypt.cryptoInitComplete) {
+          this.#viewStore.seedServer(cmd.params);
           handleInitServer(this.#internals, cmd.params);
         }
         break;
@@ -1569,7 +1614,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     }
   }
 
-  #processNotificationResult(result: NotificationResult): void {
+  #processNotificationResult(result: NotificationResult, leaving?: ClientEnterEvent): void {
     switch (result.kind) {
       case "clientEnter": {
         const info = result.info;
@@ -1598,7 +1643,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
         break;
       }
       case "clientLeave": {
-        const event = result.event;
+        const event = leaving === undefined ? result.event : { ...result.event, previous: leaving };
         this.#emitServerEvent({ name: "clientLeave", payload: event });
         if (!result.isSelf) break;
         if (event.reason === Reason.KickServer || event.reason === Reason.KickServerBan) {
@@ -1649,10 +1694,15 @@ export class Client implements CommandExecutor, AsyncDisposable {
         this.#viewStore.applyMoved(result.event);
         this.#emitServerEvent({ name: "channelMoved", payload: result.event });
         break;
-      case "channelDeleted":
+      case "channelDeleted": {
+        const previous = this.#viewStore.channelBeforeDeletion(result.event.channelID);
         this.#viewStore.applyDeleted(result.event);
-        this.#emitServerEvent({ name: "channelDeleted", payload: result.event });
+        this.#emitServerEvent({
+          name: "channelDeleted",
+          payload: previous === undefined ? result.event : { ...result.event, previous },
+        });
         break;
+      }
       case "channelDescriptionChanged":
         this.#emitServerEvent({ name: "channelDescriptionChanged", payload: result.event });
         break;
@@ -1660,6 +1710,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
         this.#emitServerEvent({ name: "channelPasswordChanged", payload: result.event });
         break;
       case "serverEdited":
+        this.#viewStore.patchServer(result.event.changes);
         this.#emitServerEvent({ name: "serverEdited", payload: result.event });
         break;
       case "channelSubscribed":
@@ -1768,6 +1819,10 @@ export class Client implements CommandExecutor, AsyncDisposable {
    */
   #enqueue(delivery: () => void): void {
     this.#queue.push(delivery);
+    this.#scheduleDrain();
+  }
+
+  #scheduleDrain(): void {
     if (this.#draining) return;
     this.#draining = true;
     setImmediate(this.#drain);
@@ -1776,6 +1831,10 @@ export class Client implements CommandExecutor, AsyncDisposable {
   #drain = (): void => {
     try {
       while (this.#queue.length > 0) this.#queue.shift()!();
+      // Everything handled so far is delivered: say once that the view moved.
+      // Listeners cannot change the view, so this is the last word of the run.
+      const revision = this.#viewStore.announce();
+      if (revision !== undefined) this.#deliver("viewChanged", { revision });
     } finally {
       if (this.#queue.length > 0) setImmediate(this.#drain);
       else this.#draining = false;

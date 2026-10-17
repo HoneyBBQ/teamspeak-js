@@ -11,8 +11,12 @@ import {
   type ChannelMovedEvent,
   type ClientEnterEvent,
   type ClientEntry,
+  type ChannelGroup,
+  type ChannelGroupID,
   type ClientID,
   type Logger,
+  type ServerGroup,
+  type ServerGroupID,
 } from "@honeybbq/teamspeak";
 import { abortReason } from "./abort.js";
 
@@ -38,6 +42,16 @@ export type ViewStatus = "empty" | "loading" | "live" | "stale";
  */
 export interface ViewReadyEvent {
   /** The view's `revision` when it became live. */
+  readonly revision: number;
+}
+
+/**
+ * What `viewChanged` delivers.
+ *
+ * @experimental New in 1.x and may change in a minor release.
+ */
+export interface ViewChangedEvent {
+  /** The view's `revision` when the event was delivered. */
   readonly revision: number;
 }
 
@@ -70,6 +84,11 @@ export interface ViewReadyEvent {
  *   and does not say when a subscription ends, so the view drops a channel's
  *   clients when it sees `channelUnsubscribed`. It is not a list of everyone on
  *   the server; `listClients` is, for the moment it is called.
+ * - The group definitions are the server's last full list of each kind, which
+ *   it sends again whole after any group is added, renamed, copied or deleted.
+ *   A change to a group's permissions is not announced, and is not in the view.
+ * - The server's properties are exact for those the server announces when
+ *   they change, and as of the last `getServerVariables` for the others.
  *
  * @experimental New in 1.x and may change in a minor release: the shape of the
  * view and its names are still settling.
@@ -129,6 +148,38 @@ export interface ServerView {
   clientsIn(id: ChannelID): readonly ClientEntry[];
   /** This client's own record; `undefined` until the welcome has delivered it. */
   readonly self: ClientEntry | undefined;
+
+  /**
+   * The server groups, in the server's order, which is ascending id. A change
+   * to the list makes the next read a new map; a client's `serverGroups` can
+   * name an id that is not in it for a moment, so look ups must allow for a
+   * miss. Empty until `groupsLoaded`.
+   */
+  readonly serverGroups: ReadonlyMap<ServerGroupID, ServerGroup>;
+  /** The channel groups, as `serverGroups` is for server groups. */
+  readonly channelGroups: ReadonlyMap<ChannelGroupID, ChannelGroup>;
+  /**
+   * True once both group lists of this connection have arrived. The server
+   * sends them right after the welcome, so `viewReady` can come first: the
+   * `viewChanged` that follows reports them. It is `false` again from the next
+   * `connect()` and stays `true` once `"stale"`.
+   */
+  readonly groupsLoaded: boolean;
+  /**
+   * The server's `virtualserver_*` properties by wire name, the keys
+   * `getServerInfo` returns and `PropertyName` names. A change makes the next
+   * read a new object.
+   *
+   * It starts from what the server says on joining. It then follows the edits
+   * the server announces, and merges every `getServerVariables` answer. The
+   * server announces an edit only to a property that answer does not carry; a
+   * change to the welcome message, the host message or the maximum number of
+   * clients, among others, arrives as an empty `serverEdited`. Call
+   * `getServerVariables` after one to bring those up to date. The counters and
+   * statistics that change by themselves (clients online, uptime, traffic) are
+   * never held.
+   */
+  readonly server: Readonly<Record<string, string>>;
 }
 
 /**
@@ -169,6 +220,66 @@ interface Waiter {
 
 const TOP = asChannelID(0n);
 
+/**
+ * The `virtualserver_*` properties of `servergetvariables` that change by
+ * themselves. A number nothing keeps current would be wrong from the next
+ * second, so the view never holds one.
+ */
+const COUNTERS: ReadonlySet<string> = new Set(
+  [
+    "clientsonline",
+    "queryclientsonline",
+    "channelsonline",
+    "uptime",
+    "client_connections",
+    "query_client_connections",
+    "month_bytes_downloaded",
+    "month_bytes_uploaded",
+    "total_bytes_downloaded",
+    "total_bytes_uploaded",
+    "total_packetloss_speech",
+    "total_packetloss_keepalive",
+    "total_packetloss_control",
+    "total_packetloss_total",
+    "total_ping",
+  ].map((name) => `virtualserver_${name}`),
+);
+
+/** The `virtualserver_*` entries of `params`, less the counters when `counters` is false. */
+function serverEntries(
+  params: Readonly<Record<string, string>>,
+  counters: boolean,
+): Array<[string, string]> {
+  return Object.entries(params).filter(
+    ([key]) => key.startsWith("virtualserver_") && (counters || !COUNTERS.has(key)),
+  );
+}
+
+/** Whether two records hold the same values under the same keys. */
+function sameRecord(a: object, b: object): boolean {
+  const left = Object.entries(a);
+  const right = Object.entries(b);
+  return (
+    left.length === right.length &&
+    left.every(([key, value], i) => {
+      const other = right[i]!;
+      return key === other[0] && Object.is(value, other[1]);
+    })
+  );
+}
+
+/** Whether two lists hold the same groups in the same order. */
+function sameGroups(a: ReadonlyMap<bigint, object>, b: ReadonlyMap<bigint, object>): boolean {
+  if (a.size !== b.size) return false;
+  const right = [...b];
+  let i = 0;
+  for (const [id, group] of a) {
+    const other = right[i++]!;
+    if (id !== other[0] || !sameRecord(group, other[1])) return false;
+  }
+  return true;
+}
+
 /** The channels of `tree`, parents first and siblings in order, in one map. */
 function preorder(tree: ChannelTree): ReadonlyMap<ChannelID, Channel> {
   const out = new Map<ChannelID, Channel>();
@@ -200,16 +311,26 @@ export class ViewStore {
   #rows: Channel[] = [];
   #known: { readonly revision: number; readonly clients: ReadonlyMap<ClientID, ClientEntry> };
   #ordered: { readonly tree: ChannelTree; readonly channels: ReadonlyMap<ChannelID, Channel> };
+  #serverGroups: ReadonlyMap<ServerGroupID, ServerGroup> = new Map();
+  #channelGroups: ReadonlyMap<ChannelGroupID, ChannelGroup> = new Map();
+  #serverGroupsSeen = false;
+  #channelGroupsSeen = false;
+  #server: Readonly<Record<string, string>> = {};
+  /** The revision `viewReady` or `viewChanged` last reported. */
+  #announced = 0;
+  #changed: () => void;
   #waiters = new Set<Waiter>();
   /** Why the last connection ended. */
   #endedBy: Error | undefined;
 
-  constructor(logger: Logger, selfID: () => number) {
+  /** `changed` is called when the revision moves outside a loading view, so an event can follow. */
+  constructor(logger: Logger, selfID: () => number, changed: () => void = () => {}) {
     this.#logger = logger;
     this.#selfID = selfID;
+    this.#changed = changed;
     this.#ordered = { tree: this.#tree, channels: new Map() };
     this.#known = { revision: this.#revision, clients: new Map() };
-    this.roster.onChange(() => this.#revision++);
+    this.roster.onChange(() => this.#bump());
 
     // oxlint-disable-next-line no-this-alias -- accessors cannot be arrow functions
     const store = this;
@@ -248,6 +369,18 @@ export class ViewStore {
         const id = store.#selfID();
         return id === 0 ? undefined : store.roster.get(id);
       },
+      get serverGroups() {
+        return store.#serverGroups;
+      },
+      get channelGroups() {
+        return store.#channelGroups;
+      },
+      get groupsLoaded() {
+        return store.#groupsLoaded();
+      },
+      get server() {
+        return store.#server;
+      },
     };
   }
 
@@ -256,8 +389,31 @@ export class ViewStore {
     this.roster.clear();
     this.#rows = [];
     this.#tree = ChannelTree.from([]);
+    this.#serverGroups = new Map();
+    this.#channelGroups = new Map();
+    this.#serverGroupsSeen = false;
+    this.#channelGroupsSeen = false;
+    this.#server = {};
     this.#status = "loading";
+    this.#bump();
+  }
+
+  /** The revision moved. */
+  #bump(): void {
     this.#revision++;
+    if (this.#status !== "loading") this.#changed();
+  }
+
+  /**
+   * The revision to announce with `viewChanged`, or `undefined` when there is
+   * nothing to say: the view is loading, or it is as it was when the last
+   * `viewReady` or `viewChanged` reported it.
+   */
+  announce(): number | undefined {
+    if (this.#status === "loading" || this.#status === "empty") return undefined;
+    if (this.#revision === this.#announced) return undefined;
+    this.#announced = this.#revision;
+    return this.#revision;
   }
 
   /** A `channellist` row of the welcome. */
@@ -282,7 +438,8 @@ export class ViewStore {
     this.#tree = ChannelTree.from(rows);
     if (!this.#tree.consistent) this.#logger.debug("the channel list is not a tree");
     this.#status = "live";
-    this.#revision++;
+    this.#bump();
+    this.#announced = this.#revision;
     for (const waiter of this.#waiters) waiter.resolve();
     return this.#revision;
   }
@@ -311,7 +468,7 @@ export class ViewStore {
     if (this.#status !== "live") return;
     const before = this.#tree;
     this.#tree = next(before);
-    this.#revision++;
+    this.#bump();
     if (before.consistent && !this.#tree.consistent) {
       this.#logger.debug("a channel event could not be placed", {
         event: name,
@@ -331,11 +488,74 @@ export class ViewStore {
     }
   }
 
+  /**
+   * The server's list of its server groups, one line of rows. It replaces the
+   * set, so a group the line lacks is gone; a row without an id is skipped.
+   */
+  setServerGroups(groups: readonly ServerGroup[]): void {
+    if (!this.#accepting()) return;
+    const loaded = this.#groupsLoaded();
+    const next = new Map<ServerGroupID, ServerGroup>();
+    for (const group of groups) next.set(group.id, group);
+    this.#serverGroupsSeen = true;
+    const changed = !sameGroups(this.#serverGroups, next);
+    if (changed) this.#serverGroups = next;
+    if (changed || loaded !== this.#groupsLoaded()) this.#bump();
+  }
+
+  /** The server's list of its channel groups; see {@link ViewStore.setServerGroups}. */
+  setChannelGroups(groups: readonly ChannelGroup[]): void {
+    if (!this.#accepting()) return;
+    const loaded = this.#groupsLoaded();
+    const next = new Map<ChannelGroupID, ChannelGroup>();
+    for (const group of groups) next.set(group.id, group);
+    this.#channelGroupsSeen = true;
+    const changed = !sameGroups(this.#channelGroups, next);
+    if (changed) this.#channelGroups = next;
+    if (changed || loaded !== this.#groupsLoaded()) this.#bump();
+  }
+
+  #groupsLoaded(): boolean {
+    return this.#serverGroupsSeen && this.#channelGroupsSeen;
+  }
+
+  /** The `initserver` parameters: the server's own properties are kept, nothing of the client's. */
+  seedServer(params: Readonly<Record<string, string>>): void {
+    this.#mergeServer(serverEntries(params, true));
+  }
+
+  /** An edit the server announced. */
+  patchServer(changes: Readonly<Record<string, string>>): void {
+    this.#mergeServer(serverEntries(changes, true));
+  }
+
+  /** An answer to `servergetvariables`, whoever asked: merged, less the counters. */
+  mergeServer(params: Readonly<Record<string, string>>): void {
+    this.#mergeServer(serverEntries(params, false));
+  }
+
+  #mergeServer(entries: ReadonlyArray<[string, string]>): void {
+    if (!this.#accepting()) return;
+    if (entries.every(([key, value]) => this.#server[key] === value)) return;
+    this.#server = { ...this.#server, ...Object.fromEntries(entries) };
+    this.#bump();
+  }
+
+  /** Group lists and server properties are taken while loading and live, not once stale. */
+  #accepting(): boolean {
+    return this.#status === "loading" || this.#status === "live";
+  }
+
+  /** The channel as the view holds it, for the event that reports its deletion. */
+  channelBeforeDeletion(id: ChannelID): Channel | undefined {
+    return this.#status === "live" ? this.#tree.get(id) : undefined;
+  }
+
   /** The connection ended, for `error`; undefined for a disconnect. */
   end(error: unknown): void {
     if (this.#status !== "loading" && this.#status !== "live") return;
     this.#status = "stale";
-    this.#revision++;
+    this.#bump();
     this.#endedBy =
       error === undefined
         ? new NotConnectedError()

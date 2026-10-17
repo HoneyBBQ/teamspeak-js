@@ -22,7 +22,7 @@ import type {
 } from "@honeybbq/teamspeak";
 import type { Duplex } from "node:stream";
 import type { ClientTrace } from "./trace.js";
-import type { ViewReadyEvent } from "./view.js";
+import type { ViewChangedEvent, ViewReadyEvent } from "./view.js";
 
 // ---- Events ---------------------------------------------------------------
 
@@ -77,6 +77,19 @@ export interface EventMap extends ServerEventMap, SessionEventMap {
    * @experimental New in 1.x and may change in a minor release.
    */
   viewReady: ViewReadyEvent;
+  /**
+   * The view being newer than the last time it was reported. It follows the
+   * typed events of the packets that changed the view, once for everything
+   * that arrived together, and carries only the `revision`: it never replaces
+   * the typed events, and says nothing of what changed. It is not sent while
+   * `view.status` is `"loading"`, nor when the revision is the one `viewReady`
+   * or the last `viewChanged` reported. It also reports the group lists, which
+   * the server sends right after the welcome, and the view going `"stale"`.
+   * Delivered to listeners only, not to event middleware.
+   *
+   * @experimental New in 1.x and may change in a minor release.
+   */
+  viewChanged: ViewChangedEvent;
   /**
    * This client being subscribed to a channel, by `subscribeChannel`,
    * `subscribeAllChannels` or the server. Only the voice protocol has
@@ -240,6 +253,8 @@ const eventNameValues = {
   ClientChatComposing: "clientChatComposing",
   /** The view being complete; see `ServerView`. */
   ViewReady: "viewReady",
+  /** The view changing; see `ServerView`. */
+  ViewChanged: "viewChanged",
   /** This client being poked. */
   Poked: "poked",
   /** Audio from another client. Only decoded with a listener or event middleware. */
