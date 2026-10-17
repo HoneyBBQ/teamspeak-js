@@ -1,4 +1,5 @@
 import { clientInternals } from "./client.js";
+import { asChannelID } from "@honeybbq/teamspeak";
 import { afterEach, describe, it, expect } from "vitest";
 import { createSocket, type Socket } from "node:dgram";
 import {
@@ -216,6 +217,36 @@ describe("Client events for channels, the server and plugins", () => {
     );
 
     expect(seen).toEqual(["notifychanneledited:text", "edited:9", "notifychanneledited:undefined"]);
+  });
+});
+
+describe("getChannelDescription", () => {
+  const send = (rows: Array<Record<string, string>>) => ({
+    send: async () => rows,
+  });
+
+  it("reads the row that holds the text, not an edit that arrived first", async () => {
+    const { getChannelDescription } = await import("./api/voice.js");
+    const client = send([
+      { cid: "9", reasonid: "10", invokerid: "2", channel_topic: "meanwhile" },
+      { cid: "9", reasonid: "9", channel_description: "the text" },
+    ]);
+
+    expect(await getChannelDescription(client as unknown as Client, asChannelID(9))).toBe(
+      "the text",
+    );
+  });
+
+  it("is empty for a channel with none, and when no answer came", async () => {
+    const { getChannelDescription } = await import("./api/voice.js");
+
+    expect(
+      await getChannelDescription(
+        send([{ cid: "9", reasonid: "9", channel_description: "" }]) as unknown as Client,
+        asChannelID(9),
+      ),
+    ).toBe("");
+    expect(await getChannelDescription(send([]) as unknown as Client, asChannelID(9))).toBe("");
   });
 });
 

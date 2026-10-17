@@ -11,7 +11,11 @@ import type { Client } from "../client.js";
 import { ErrorCode, ServerError } from "@honeybbq/teamspeak";
 import type { ChannelID, CommandOptions } from "@honeybbq/teamspeak";
 
-/** The channel's description, which `listChannels` omits for bandwidth. */
+/**
+ * The channel's description, which `listChannels` omits for bandwidth. The
+ * server answers with a `notifychanneledited` that the client does not report as
+ * a `channelEdited` event, since it is no edit.
+ */
 export async function getChannelDescription(
   client: Client,
   cid: ChannelID,
@@ -21,7 +25,11 @@ export async function getChannelDescription(
     { command: "channelgetdescription", params: [["cid", cid]] },
     options,
   );
-  return rows[0]?.["channel_description"] ?? "";
+  // The answer is the row that holds the text. Another `notifychanneledited`
+  // can arrive while the command waits, a real edit with other properties,
+  // and the first row is then not the answer.
+  const answer = rows.find((row) => row["cid"] === String(cid) && "channel_description" in row);
+  return answer?.["channel_description"] ?? "";
 }
 
 /**
