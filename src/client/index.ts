@@ -12,6 +12,8 @@
 export { Client } from "./client.js";
 export { EventName, GroupWhisperType, GroupWhisperScope } from "./types.js";
 
+export type { ServerView, ViewReadyEvent, ViewStatus } from "./view.js";
+
 export type {
   EventMap,
   EventMiddleware,

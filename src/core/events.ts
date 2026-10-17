@@ -260,6 +260,12 @@ export interface ChannelSubscribedEvent {
 /**
  * This client no longer being subscribed to a channel, by its own request or
  * because the server withdrew it. Delivered by the voice client only.
+ *
+ * The server does not announce that the clients in the channel left view, and
+ * tells nothing more about them afterwards, so they are no longer known: the
+ * voice client drops them from its roster and view when this arrives, before
+ * it is delivered. Who is in a channel that is not subscribed to cannot be
+ * known from events; `listClients` says, for the instant it is called.
  */
 export interface ChannelUnsubscribedEvent {
   /** The channel. */
@@ -352,7 +358,14 @@ export interface DisconnectedEvent {
 export interface ServerEventMap {
   /** A text message to this client, its channel or the server. */
   textMessage: TextMessageEvent;
-  /** A client coming into view, including every client already there on connecting. */
+  /**
+   * A client coming into view, including every client already there on
+   * connecting. Only the clients of channels this client is subscribed to are
+   * announced: on connecting, those in the channel it joined, and later those
+   * of a channel it subscribes to or moves into. It is not a list of the
+   * server's clients, and a client in any other channel is not known until
+   * then; see `channelUnsubscribed` for how that ends.
+   */
   clientEnter: ClientEnterEvent;
   /** A client going out of view. */
   clientLeave: ClientLeaveEvent;

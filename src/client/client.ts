@@ -67,7 +67,7 @@ import {
 import type { ClientVersion, CommandExecutor, CommandRequest } from "@honeybbq/teamspeak";
 import { handleNotification } from "../core/internal.js";
 import type { NotificationResult } from "../core/internal.js";
-import { parseCommand } from "../core/internal.js";
+import { parseChannel, parseCommand } from "../core/internal.js";
 import { CommandThrottle } from "./throttle.js";
 import { splitCommandRows, sleep } from "../core/internal.js";
 import { isAutoNicknameMatch } from "./helpers.js";
@@ -80,6 +80,7 @@ import { unknownServerCapabilities, type ServerCapabilities } from "./capabiliti
 import { joinHostPort, parseConnectAddress, splitHostPort } from "./address.js";
 import { commandChannel, incomingChannel, type CommandTrace } from "./diagnostics.js";
 import { defaultShouldRetry } from "./reconnect.js";
+import { ViewStore, type ServerView } from "./view.js";
 
 /**
  * What clientinit sends about the connection, with the passwords already in
@@ -399,7 +400,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
   #status: ClientStatus = ClientStatus.Disconnected;
   #throttle = new CommandThrottle();
   #cmdTrack = new CommandTracker(() => this.#clid);
-  #clients = new Map<number, ClientEnterEvent>();
+  #viewStore: ViewStore;
+  #clients: Map<number, ClientEnterEvent>;
   #attempt: ConnectAttempt = newConnectAttempt();
 
   #listeners = new Map<keyof EventMap, Subscription[]>();
@@ -424,6 +426,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
     this.#fileTransferSocketFactory = options.fileTransferSocketFactory;
     this.#reconnectOptions = options.reconnect;
     this.#trace = options.trace === undefined ? undefined : { ...options.trace };
+    this.#viewStore = new ViewStore(this.#logger, () => this.#clid);
+    this.#clients = this.#viewStore.roster;
 
     this.#crypt = new Crypt(identity);
     this.#handler = this.#newHandler();
@@ -480,6 +484,17 @@ export class Client implements CommandExecutor, AsyncDisposable {
     this.#eventChain = buildEventChain([...this.#eventMiddlewares], (event) =>
       this.#deliver(event.name, event.payload),
     );
+  }
+
+  /**
+   * What this client knows of the server: the channel tree, the clients it
+   * has been told about, and itself. Always there, and `"empty"` until the
+   * first `connect()`.
+   *
+   * @experimental New in 1.x and may change in a minor release.
+   */
+  get view(): ServerView {
+    return this.#viewStore.view;
   }
 
   /** Where the client is in its connection's life. */
@@ -1228,6 +1243,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
 
   /** Report the end of the session in progress, once. */
   #endSession(error: unknown): void {
+    this.#viewStore.end(error);
     const session = this.#session;
     if (session === undefined) return;
     this.#session = undefined;
@@ -1276,7 +1292,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     this.#handler = this.#newHandler();
     this.#attempt = newConnectAttempt();
     this.#cmdTrack.reset(new NotConnectedError());
-    this.#clients.clear();
+    this.#viewStore.reset();
     this.#clid = 0;
     this.#capabilities = unknownServerCapabilities();
   }
@@ -1431,6 +1447,12 @@ export class Client implements CommandExecutor, AsyncDisposable {
     // buffered as if they were the response to the caller's first command,
     // which is how a channellist could come back with duplicate and empty rows.
     if (cmd.name === "channellistfinished") {
+      // The tree and the clients of the own channel are complete here, so the
+      // view is too; the group lists and permissions the server sends next
+      // are not part of it.
+      const revision =
+        this.#status === ClientStatus.Connected ? this.#viewStore.finish() : undefined;
+      if (revision !== undefined) this.#emit("viewReady", { revision });
       this.#cmdTrack.signalWelcomeComplete();
       this.#markWelcomeDone();
       return;
@@ -1438,7 +1460,12 @@ export class Client implements CommandExecutor, AsyncDisposable {
 
     if (cmd.name === "channellist") {
       const trace = this.#attempt.trace;
-      if (trace !== undefined && !trace.welcomeDone) trace.channels++;
+      if (trace !== undefined && !trace.welcomeDone) {
+        trace.channels++;
+        if (this.#status === ClientStatus.Connected) {
+          this.#viewStore.collect(parseChannel(cmd.params));
+        }
+      }
     }
 
     // The server answers our goodbye by announcing that we left, not with an
@@ -1611,15 +1638,19 @@ export class Client implements CommandExecutor, AsyncDisposable {
         this.#emitServerEvent({ name: "clientChannelGroupChanged", payload: result.event });
         break;
       case "channelCreated":
+        this.#viewStore.applyCreated(result.event);
         this.#emitServerEvent({ name: "channelCreated", payload: result.event });
         break;
       case "channelEdited":
+        this.#viewStore.applyEdited(result.event);
         this.#emitServerEvent({ name: "channelEdited", payload: result.event });
         break;
       case "channelMoved":
+        this.#viewStore.applyMoved(result.event);
         this.#emitServerEvent({ name: "channelMoved", payload: result.event });
         break;
       case "channelDeleted":
+        this.#viewStore.applyDeleted(result.event);
         this.#emitServerEvent({ name: "channelDeleted", payload: result.event });
         break;
       case "channelDescriptionChanged":
@@ -1635,6 +1666,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
         this.#emitServerEvent({ name: "channelSubscribed", payload: result.event });
         break;
       case "channelUnsubscribed":
+        // The server does not say the clients of the channel left.
+        this.#viewStore.dropChannel(result.event.channelID);
         this.#emitServerEvent({ name: "channelUnsubscribed", payload: result.event });
         break;
       case "pluginCommand":
@@ -1910,6 +1943,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
   #failConnection(error: unknown): void {
     if (this.#status === ClientStatus.Connected) return;
     this.#attempt.reject(error);
+    this.#viewStore.end(error);
 
     if (this.#status === ClientStatus.Disconnected) return;
     this.#status = ClientStatus.Disconnected;

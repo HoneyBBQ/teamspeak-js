@@ -22,6 +22,7 @@ import type {
 } from "@honeybbq/teamspeak";
 import type { Duplex } from "node:stream";
 import type { ClientTrace } from "./trace.js";
+import type { ViewReadyEvent } from "./view.js";
 
 // ---- Events ---------------------------------------------------------------
 
@@ -67,6 +68,16 @@ export interface EventMap extends ServerEventMap, SessionEventMap {
    */
   clientChannelGroupChanged: ClientChannelGroupChangedEvent;
   /**
+   * The view being complete: the channel tree is built, the clients of the
+   * channel this client joined are known, and `view.status` is `"live"`. It
+   * fires once after each connection's welcome, reconnections included, and
+   * after the `connected` of that connection. `connect()` does not wait for
+   * it; `view.whenReady()` does.
+   *
+   * @experimental New in 1.x and may change in a minor release.
+   */
+  viewReady: ViewReadyEvent;
+  /**
    * This client being subscribed to a channel, by `subscribeChannel`,
    * `subscribeAllChannels` or the server. Only the voice protocol has
    * subscriptions: a ServerQuery client hears every channel, and its server
@@ -77,6 +88,13 @@ export interface EventMap extends ServerEventMap, SessionEventMap {
    * This client no longer being subscribed to a channel, by request or because
    * the server withdrew the subscription. Unsubscribing from a channel
    * the client is not subscribed to sends nothing.
+   *
+   * The server sends no `clientLeave` for the clients in the channel, and
+   * reports nothing more about them: not their moves, nor their leaving the
+   * server. The client forgets them (`view.clients` and the roster that
+   * `invokerGroups` reads drop them) before this is delivered, and a client
+   * that comes into view again is announced by a new `clientEnter`. Code that
+   * follows the events alone must do the same.
    */
   channelUnsubscribed: ChannelUnsubscribedEvent;
   /**
@@ -220,6 +238,8 @@ const eventNameValues = {
   PluginCommand: "pluginCommand",
   /** A client typing a private message to this client. */
   ClientChatComposing: "clientChatComposing",
+  /** The view being complete; see `ServerView`. */
+  ViewReady: "viewReady",
   /** This client being poked. */
   Poked: "poked",
   /** Audio from another client. Only decoded with a listener or event middleware. */

@@ -430,6 +430,20 @@ export interface ChannelSubscribedEvent {
 }
 
 // @public
+export class ChannelTree {
+    applyCreated(event: ChannelCreatedEvent): ChannelTree;
+    applyDeleted(event: ChannelDeletedEvent): ChannelTree;
+    applyEdited(event: ChannelEditedEvent): ChannelTree;
+    applyMoved(event: ChannelMovedEvent): ChannelTree;
+    children(parent?: ChannelID): readonly Channel[];
+    get consistent(): boolean;
+    static from(channels: Iterable<Channel>): ChannelTree;
+    get(id: ChannelID): Channel | undefined;
+    path(id: ChannelID): readonly Channel[];
+    get size(): number;
+}
+
+// @public
 export type ChannelUID = string & {
     readonly __brand: "ChannelUID";
 };

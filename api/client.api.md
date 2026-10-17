@@ -4,13 +4,15 @@
 
 ```ts
 
-import { Channel } from 'node:diagnostics_channel';
+import { Channel } from '@honeybbq/teamspeak';
+import { Channel as Channel_2 } from 'node:diagnostics_channel';
 import type { ChannelGroupID } from '@honeybbq/teamspeak';
 import { ChannelID } from '@honeybbq/teamspeak';
 import type { ChannelSubscribedEvent } from '@honeybbq/teamspeak';
 import type { ChannelUnsubscribedEvent } from '@honeybbq/teamspeak';
 import type { ClientChannelGroupChangedEvent } from '@honeybbq/teamspeak';
 import type { ClientChatComposingEvent } from '@honeybbq/teamspeak';
+import { ClientEntry } from '@honeybbq/teamspeak';
 import { ClientID } from '@honeybbq/teamspeak';
 import type { ClientServerGroupAddedEvent } from '@honeybbq/teamspeak';
 import type { ClientServerGroupRemovedEvent } from '@honeybbq/teamspeak';
@@ -102,6 +104,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     get status(): ClientStatus;
     get uid(): UID;
     uploadFileData(host: string, info: FileUploadInfo, data: Readable, options?: Pick<FileTransferOptions, "signal" | "trace">): Promise<void>;
+    get view(): ServerView;
 }
 
 // @public
@@ -235,6 +238,7 @@ export interface EventMap extends ServerEventMap, SessionEventMap {
     clientUpdated: ClientUpdatedEvent;
     pluginCommand: PluginCommandEvent;
     poked: PokeEvent;
+    viewReady: ViewReadyEvent;
     voiceData: VoiceDataEvent;
 }
 
@@ -270,6 +274,7 @@ const eventNameValues: {
     readonly ChannelUnsubscribed: "channelUnsubscribed";
     readonly PluginCommand: "pluginCommand";
     readonly ClientChatComposing: "clientChatComposing";
+    readonly ViewReady: "viewReady";
     readonly Poked: "poked";
     readonly VoiceData: "voiceData";
     readonly Notification: "notification";
@@ -431,7 +436,7 @@ export class Identity {
 }
 
 // @public
-export const incomingChannel: Channel<IncomingTrace>;
+export const incomingChannel: Channel_2<IncomingTrace>;
 
 // @public
 export interface IncomingTrace {
@@ -536,6 +541,23 @@ export type ServerEvent = {
 export type ServerEventName = "textMessage" | "clientEnter" | "clientLeave" | "clientMoved" | "channelCreated" | "channelEdited" | "channelMoved" | "channelDeleted" | "channelDescriptionChanged" | "channelPasswordChanged" | "serverEdited" | "clientUpdated" | "clientServerGroupAdded" | "clientServerGroupRemoved" | "clientChannelGroupChanged" | "channelSubscribed" | "channelUnsubscribed" | "pluginCommand" | "clientChatComposing" | "poked" | "voiceData" | "notification";
 
 // @public
+export interface ServerView {
+    channel(id: ChannelID): Channel | undefined;
+    readonly channels: ReadonlyMap<ChannelID, Channel>;
+    children(parent?: ChannelID): readonly Channel[];
+    client(id: ClientID): ClientEntry | undefined;
+    readonly clients: ReadonlyMap<ClientID, ClientEntry>;
+    clientsIn(id: ChannelID): readonly ClientEntry[];
+    path(id: ChannelID): readonly Channel[];
+    readonly revision: number;
+    readonly self: ClientEntry | undefined;
+    readonly status: ViewStatus;
+    whenReady(options?: {
+        readonly signal?: AbortSignal | undefined;
+    }): Promise<void>;
+}
+
+// @public
 export interface SessionEndInfo {
     readonly attempt: number;
     readonly clientID: ClientID;
@@ -595,6 +617,14 @@ export function verifyChannelPassword(client: Client, cid: ChannelID, password: 
 
 // @public
 export function verifyServerPassword(client: Client, password: string, options?: CommandOptions): Promise<boolean>;
+
+// @public
+export interface ViewReadyEvent {
+    readonly revision: number;
+}
+
+// @public
+export type ViewStatus = "empty" | "loading" | "live" | "stale";
 
 // @public
 export interface VoiceOptions {

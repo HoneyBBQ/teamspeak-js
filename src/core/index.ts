@@ -150,3 +150,4 @@ export * from "./api/credentials.js";
 export * from "./api/instance.js";
 export { applyChannelChanges } from "./api/command.js";
 export type { Channel, ChannelChanges, PagingOptions, PermissionEntry } from "./api/command.js";
+export { ChannelTree } from "./channel-tree.js";
