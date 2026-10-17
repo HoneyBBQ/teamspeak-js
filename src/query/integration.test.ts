@@ -13,7 +13,7 @@
  * TeamSpeak 6 serves no raw query port, so there the fixture writes a WebQuery
  * URL instead and the suite takes the `web` transport. SSH runs only where
  * `TEAMSPEAK_QUERY_SSH_PORT` is set: TeamSpeak 3 does not publish it, and
- * TeamSpeak 6 leaves it off by default.
+ * TeamSpeak 6 leaves it off unless `TSSERVER_QUERY_SSH_ENABLED=1` is set.
  *
  * SSH verifies the server's host key, as the client always does. Against the
  * `known_hosts` file `TEAMSPEAK_QUERY_SSH_KNOWN_HOSTS` names when it is set, and
@@ -28,7 +28,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { utils } from "ssh2";
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, type TestContext } from "vitest";
 import {
   ClientStatus,
   Reason,
@@ -228,6 +228,17 @@ describe.skipIf(SKIP)("Integration — ServerQuery client", () => {
     rmSync(scratch, { recursive: true, force: true });
   }, 60_000);
 
+  /**
+   * The clients that receive pushed events. A test about events skips when
+   * there are none, rather than passing having checked nothing: WebQuery has no
+   * event categories, so a run with only that transport has nothing to test.
+   */
+  function eventClients(ctx: TestContext): Array<[Kind, QueryClient]> {
+    const receiving = [...clients].filter(([, client]) => client.eventCategories.length > 0);
+    if (receiving.length === 0) ctx.skip("no transport in this run delivers events");
+    return receiving;
+  }
+
   /** A voice client, connected once and reused: antiflood counts every connect. */
   async function voiceClient(): Promise<Client> {
     if (voice !== undefined) return voice;
@@ -286,10 +297,10 @@ describe.skipIf(SKIP)("Integration — ServerQuery client", () => {
   // A text message reaches the channel the sender is in, and a query client
   // sits in whichever channel it selected, so the voice client joins that one
   // first — which is the move this test is about as well.
-  it("receives a move and a text message as typed events", async () => {
+  it("receives a move and a text message as typed events", async (ctx) => {
+    const receiving = eventClients(ctx);
     const joiner = await voiceClient();
-    for (const [kind, client] of clients) {
-      if (client.eventCategories.length === 0) continue;
+    for (const [kind, client] of receiving) {
       const me = await whoAmI(client);
       // Out of the way first, so that the move below is a move either way.
       if (joiner.channelID === me.channelID) {
@@ -332,9 +343,8 @@ describe.skipIf(SKIP)("Integration — ServerQuery client", () => {
 
   // An enter is announced only for a client that arrives after registering,
   // which is why the client lists the ones already connected when it connects.
-  it("receives a client entering as a typed event", async () => {
-    for (const [kind, client] of clients) {
-      if (client.eventCategories.length === 0) continue;
+  it("receives a client entering as a typed event", async (ctx) => {
+    for (const [kind, client] of eventClients(ctx)) {
       const entered = new Promise<ClientEnterEvent>((resolve) =>
         client.on("clientEnter", (info) => {
           if (info.nickname === "ts-js-query-late") resolve(info);
@@ -360,9 +370,8 @@ describe.skipIf(SKIP)("Integration — ServerQuery client", () => {
   // `reasonid=5` aimed at one is refused with 516 whoever sends it. A channel
   // kick is accepted, and reaches it as a move of its own — which the client
   // reports as a kick, because that is what it is.
-  it("takes a channel kick as its own kick", async () => {
-    for (const [kind, client] of clients) {
-      if (client.eventCategories.length === 0) continue;
+  it("takes a channel kick as its own kick", async (ctx) => {
+    for (const [kind, client] of eventClients(ctx)) {
       const me = await whoAmI(client);
       const target = (await listChannels(client)).find(
         (channel) => channel.name === PASSWORD_CHANNEL,
@@ -391,87 +400,99 @@ describe.skipIf(SKIP)("Integration — ServerQuery client", () => {
     }
   }, 60_000);
 
-  it("delivers no events over WebQuery, and refuses to register for them", async () => {
-    const web = clients.get("web");
-    if (web === undefined) return;
-    expect(web.eventCategories).toEqual([]);
-    // A listener for a server event could never run, so the client refuses one
-    // rather than accepting a listener that stays silent forever.
-    expect(() => web.on("textMessage", () => {})).toThrow(TypeError);
-    // The server refuses the command itself with 5120, which is why the client
-    // never sends it there.
-    await expect(web.registerNotifications("textserver")).rejects.toMatchObject({
-      code: NOT_IN_API_KEY_SCOPE,
-    });
-  }, 30_000);
+  it.skipIf(!KINDS.includes("web"))(
+    "delivers no events over WebQuery, and refuses to register for them",
+    async () => {
+      const web = clients.get("web")!;
+      expect(web.eventCategories).toEqual([]);
+      // A listener for a server event could never run, so the client refuses one
+      // rather than accepting a listener that stays silent forever.
+      expect(() => web.on("textMessage", () => {})).toThrow(TypeError);
+      // The server refuses the command itself with 5120, which is why the client
+      // never sends it there.
+      await expect(web.registerNotifications("textserver")).rejects.toMatchObject({
+        code: NOT_IN_API_KEY_SCOPE,
+      });
+    },
+    30_000,
+  );
 
   // The point of the check: a server that is not the one recorded is refused
   // before the login goes anywhere, whether it presents another key or the
   // address is not the recorded one at all.
-  it("refuses an SSH server whose host key is not the recorded one", async () => {
-    if (!KINDS.includes("ssh")) return;
-    const stranger = utils.generateKeyPairSync("ed25519");
-    const [keyType, encoded] = stranger.public.trim().split(/\s+/);
-    const wrongKey = knownHostsFile(
-      "stranger",
-      `[${SSH_HOST}]:${SSH_PORT} ${keyType} ${encoded}\n`,
-    );
-    const client = new QueryClient({
-      transport: {
-        kind: "ssh",
-        host: SSH_HOST,
-        port: SSH_PORT,
-        username: SSH_USER,
-        password: SSH_PASSWORD,
-        knownHosts: wrongKey,
-      },
-    });
+  it.skipIf(!KINDS.includes("ssh"))(
+    "refuses an SSH server whose host key is not the recorded one",
+    async () => {
+      const stranger = utils.generateKeyPairSync("ed25519");
+      const [keyType, encoded] = stranger.public.trim().split(/\s+/);
+      const wrongKey = knownHostsFile(
+        "stranger",
+        `[${SSH_HOST}]:${SSH_PORT} ${keyType} ${encoded}\n`,
+      );
+      const client = new QueryClient({
+        transport: {
+          kind: "ssh",
+          host: SSH_HOST,
+          port: SSH_PORT,
+          username: SSH_USER,
+          password: SSH_PASSWORD,
+          knownHosts: wrongKey,
+        },
+      });
 
-    const error = await client
-      .connect({ signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) })
-      .catch((failure: unknown) => failure);
+      const error = await client
+        .connect({ signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) })
+        .catch((failure: unknown) => failure);
 
-    expect(error).toBeInstanceOf(SshHostKeyError);
-    expect((error as SshHostKeyError).message).toContain("something else is answering");
-    expect(client.status).toBe(ClientStatus.Disconnected);
-    console.log(`ssh with the wrong key recorded: ${(error as Error).message}`);
-  }, 30_000);
+      expect(error).toBeInstanceOf(SshHostKeyError);
+      expect((error as SshHostKeyError).message).toContain("something else is answering");
+      expect(client.status).toBe(ClientStatus.Disconnected);
+      console.log(`ssh with the wrong key recorded: ${(error as Error).message}`);
+    },
+    30_000,
+  );
 
-  it("refuses an SSH server that is not in the known_hosts file", async () => {
-    if (!KINDS.includes("ssh")) return;
-    const presented = await presentedSshKey();
-    // The right key, recorded for another port: what a mistyped port looks like.
-    const elsewhere = knownHostsFile(
-      "other-port",
-      `[${SSH_HOST}]:${SSH_PORT + 1} ${presented.keyType} ${Buffer.from(presented.key).toString("base64")}\n`,
-    );
-    const client = new QueryClient({
-      transport: {
-        kind: "ssh",
-        host: SSH_HOST,
-        port: SSH_PORT,
-        username: SSH_USER,
-        password: SSH_PASSWORD,
-        knownHosts: elsewhere,
-      },
-    });
+  it.skipIf(!KINDS.includes("ssh"))(
+    "refuses an SSH server that is not in the known_hosts file",
+    async () => {
+      const presented = await presentedSshKey();
+      // The right key, recorded for another port: what a mistyped port looks like.
+      const elsewhere = knownHostsFile(
+        "other-port",
+        `[${SSH_HOST}]:${SSH_PORT + 1} ${presented.keyType} ${Buffer.from(presented.key).toString("base64")}\n`,
+      );
+      const client = new QueryClient({
+        transport: {
+          kind: "ssh",
+          host: SSH_HOST,
+          port: SSH_PORT,
+          username: SSH_USER,
+          password: SSH_PASSWORD,
+          knownHosts: elsewhere,
+        },
+      });
 
-    const error = await client
-      .connect({ signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) })
-      .catch((failure: unknown) => failure);
+      const error = await client
+        .connect({ signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) })
+        .catch((failure: unknown) => failure);
 
-    expect(error).toBeInstanceOf(SshHostKeyError);
-    expect((error as SshHostKeyError).message).toContain("is not in");
-    console.log(`ssh with the port not recorded: ${(error as Error).message}`);
-  }, 30_000);
+      expect(error).toBeInstanceOf(SshHostKeyError);
+      expect((error as SshHostKeyError).message).toContain("is not in");
+      console.log(`ssh with the port not recorded: ${(error as Error).message}`);
+    },
+    30_000,
+  );
 
-  it("reports the same channels over every transport it can use", async () => {
-    if (clients.size < 2) return;
-    const [, first] = [...clients][0]!;
-    const expected = (await listChannels(first)).map((channel) => channel.name).sort();
-    for (const [kind, other] of [...clients].slice(1)) {
-      const names = (await listChannels(other)).map((channel) => channel.name).sort();
-      expect(names, kind).toEqual(expected);
-    }
-  }, 40_000);
+  it.skipIf(KINDS.length < 2)(
+    "reports the same channels over every transport it can use",
+    async () => {
+      const [, first] = [...clients][0]!;
+      const expected = (await listChannels(first)).map((channel) => channel.name).sort();
+      for (const [kind, other] of [...clients].slice(1)) {
+        const names = (await listChannels(other)).map((channel) => channel.name).sort();
+        expect(names, kind).toEqual(expected);
+      }
+    },
+    40_000,
+  );
 });

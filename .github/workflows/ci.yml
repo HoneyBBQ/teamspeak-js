@@ -172,6 +172,8 @@ jobs:
             query_host: 127.0.0.1
             query_http: ""
             query_port: 10011
+            # TS3 has no SSH ServerQuery.
+            query_ssh_port: ""
           - name: TS6
             image: teamspeaksystems/teamspeak6-server:latest
             # TS6 dropped raw ServerQuery for HTTP, so the fixture talks
@@ -179,6 +181,10 @@ jobs:
             query_host: ""
             query_http: 127.0.0.1:10080
             query_port: 10080
+            # TS6 also serves ServerQuery over SSH, which is the transport that
+            # carries the serveradmin password and checks the host key, so the
+            # suite has to reach it. Off unless the service enables it below.
+            query_ssh_port: 10022
     services:
       teamspeak:
         image: ${{ matrix.server.image }}
@@ -186,10 +192,15 @@ jobs:
           TS3SERVER_LICENSE: accept
           TSSERVER_LICENSE_ACCEPTED: accept
           TSSERVER_QUERY_HTTP_ENABLED: "1"
+          # SSH ServerQuery logs in with a password, where WebQuery uses the
+          # api key, so TS6 is given one to log in with. TS3 ignores both.
+          TSSERVER_QUERY_SSH_ENABLED: "1"
+          TSSERVER_QUERY_ADMIN_PASSWORD: ci-serveradmin-password
         ports:
           - 9987:9987/udp
           - 10011:10011
           - 10080:10080
+          - 10022:10022
           # File transfer: the server hands out this port with each transfer
           # key, so it must be reachable at the same number from the runner.
           - 30033:30033
@@ -227,6 +238,8 @@ jobs:
           TS3_QUERY_HOST='${{ matrix.server.query_host }}' \
           TS3_QUERY_HTTP='${{ matrix.server.query_http }}' \
           TS3_QUERY_PORT='${{ matrix.server.query_port }}' \
+          TS3_QUERY_SSH_PORT='${{ matrix.server.query_ssh_port }}' \
+          TS3_QUERY_SSH_PASSWORD=ci-serveradmin-password \
           ./scripts/ts3-fixture.sh
       - name: Run integration tests
         env:
