@@ -31,6 +31,7 @@ import { utils } from "ssh2";
 import { describe, it, expect, beforeAll, afterAll, type TestContext } from "vitest";
 import {
   ClientStatus,
+  ErrorCode,
   Reason,
   TextMessageTarget,
   addAPIKey,
@@ -92,7 +93,7 @@ import {
 import { Client } from "../client/client.js";
 import { generateIdentitySync } from "../client/crypto/identity.js";
 import { QueryClient } from "./client.js";
-import { SshHostKeyError } from "./errors.js";
+import { GuestAccessError, QueryAuthError, SshHostKeyError } from "./errors.js";
 import type { QueryClientOptions } from "./options.js";
 import { connectSsh } from "./ssh.js";
 import type { SshHostKey } from "./ssh.js";
@@ -126,8 +127,7 @@ const SSH_KNOWN_HOSTS = process.env["TEAMSPEAK_QUERY_SSH_KNOWN_HOSTS"] ?? "";
 /** Set where the server accepts guest logins: TeamSpeak 6 beta13 and later, not TS3. */
 const GUEST = process.env["TEAMSPEAK_QUERY_GUEST"] === "1";
 
-/** 5120, `command not in api key scope`: not a name `ErrorCode` gives. */
-const NOT_IN_API_KEY_SCOPE = 5120;
+const NOT_IN_API_KEY_SCOPE = ErrorCode.APIKeyOutOfScope;
 
 const CONNECT_TIMEOUT_MS = 15_000;
 const CONNECT_ATTEMPTS = 3;
@@ -1139,6 +1139,68 @@ describe.skipIf(SKIP || !GUEST)("Integration — guest ServerQuery", () => {
       await expect(
         client.connect({ signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) }),
       ).rejects.toBeDefined();
+    },
+    30_000,
+  );
+});
+
+// Where the fixture does not say the server has guest access (TeamSpeak 3 has
+// none; a TeamSpeak 6 started with it off refuses too), a guest connection is
+// refused, and the refusal says so. Measured on 3.13.8: WebQuery answers 5124
+// ("missing apikey", HTTP 401) and SSH fails the `guest` user's authentication.
+describe.skipIf(SKIP || GUEST)("Integration — a server with no guest access", () => {
+  const scratch = mkdtempSync(join(tmpdir(), "query-noguest-"));
+  let knownHosts = "";
+
+  beforeAll(async () => {
+    if (SKIP || GUEST || !KINDS.includes("ssh")) return;
+    const line = SSH_KNOWN_HOSTS !== "" ? undefined : knownHostsLine(await presentedSshKey());
+    knownHosts = SSH_KNOWN_HOSTS;
+    if (line !== undefined) {
+      knownHosts = join(scratch, "recorded");
+      writeFileSync(knownHosts, line);
+    }
+  }, 30_000);
+
+  afterAll(() => {
+    rmSync(scratch, { recursive: true, force: true });
+  });
+
+  async function refusal(options: QueryClientOptions): Promise<unknown> {
+    const client = new QueryClient(options);
+    try {
+      await client.connect({ signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) });
+    } catch (error) {
+      return error;
+    }
+    await client.disconnect();
+    throw new Error("the guest connection was accepted");
+  }
+
+  it.skipIf(!KINDS.includes("web"))(
+    "a guest over web is told there is no guest access, with the server's code",
+    async () => {
+      const error = await refusal({
+        transport: { kind: "web", url: QUERY_URL, guest: true },
+        server: { id: 1 },
+      });
+      expect(error).toBeInstanceOf(GuestAccessError);
+      expect((error as GuestAccessError).code).toBe(5124);
+      expect((error as GuestAccessError).message).toContain("does not offer guest access");
+    },
+    30_000,
+  );
+
+  it.skipIf(!KINDS.includes("ssh"))(
+    "a guest over ssh is told there is no guest access, with the login failure",
+    async () => {
+      const error = await refusal({
+        transport: { kind: "ssh", host: SSH_HOST, port: SSH_PORT, guest: true, knownHosts },
+        server: { id: 1 },
+        events: false,
+      });
+      expect(error).toBeInstanceOf(GuestAccessError);
+      expect((error as GuestAccessError).cause).toBeInstanceOf(QueryAuthError);
     },
     30_000,
   );

@@ -2,6 +2,7 @@ import {
   AlreadyConnectedError,
   ClientStatus,
   CommandTimeoutError,
+  ErrorCode,
   NotConnectedError,
   Reason,
   ServerError,
@@ -36,6 +37,7 @@ import type { QueryTransport } from "./transport.js";
 import { connectTcp } from "./tcp.js";
 import { connectSsh } from "./ssh.js";
 import { WebQueryTransport } from "./web.js";
+import { GuestAccessError, QueryAuthError } from "./errors.js";
 import {
   assertEventsSupported,
   normalizeQueryOptions,
@@ -318,6 +320,33 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
    * the same session the first connection was.
    */
   async #establish(signal: AbortSignal | undefined, generation: number): Promise<void> {
+    try {
+      await this.#establishSession(signal, generation);
+    } catch (error) {
+      throw this.#guestRefusal(error) ?? error;
+    }
+  }
+
+  /**
+   * The refusal of a guest connection by a server with no guest access, as
+   * itself: 5124 over WebQuery, a failed `guest` authentication over SSH.
+   */
+  #guestRefusal(error: unknown): GuestAccessError | undefined {
+    const transport = this.#options.transport;
+    if (transport.kind === "web" && transport.apiKey === undefined) {
+      if (error instanceof ServerError && error.code === ErrorCode.APIKeyMissing) {
+        return new GuestAccessError(error, error.code);
+      }
+    } else if (
+      transport.kind === "ssh" &&
+      (transport.connect as { guest?: unknown }).guest === true
+    ) {
+      if (error instanceof QueryAuthError) return new GuestAccessError(error);
+    }
+    return undefined;
+  }
+
+  async #establishSession(signal: AbortSignal | undefined, generation: number): Promise<void> {
     const transport = await this.#openTransport(signal);
     // Given up on while the transport was being opened: it is closed rather
     // than installed, and the caller hears that nothing is connected.

@@ -37,7 +37,12 @@ export type { QueryTransport } from "./transport.js";
 export { defaultShouldRetry } from "./reconnect.js";
 
 // Errors unique to ServerQuery.
-export { MissingDependencyError, QueryAuthError, SshHostKeyError } from "./errors.js";
+export {
+  GuestAccessError,
+  MissingDependencyError,
+  QueryAuthError,
+  SshHostKeyError,
+} from "./errors.js";
 
 // The transports each `transport` kind builds on, for a caller that wants one
 // directly or that is writing its own `custom` opener.
