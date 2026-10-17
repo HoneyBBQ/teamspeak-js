@@ -27,7 +27,8 @@ export interface SshClient {
     host: string;
     port: number;
     username: string;
-    password: string;
+    /** Absent for the `guest` account, which logs in without a password. */
+    password?: string;
     readyTimeout: number;
     hostVerifier: (key: Uint8Array) => boolean;
   }): void;
@@ -230,6 +231,43 @@ export interface SshDialTarget {
   readonly username: string;
   /** The query login's password. */
   readonly password: string;
+  /** Left out: a login with a name and a password is not a guest's. */
+  readonly guest?: never;
+  /** Left out: a connection of your own is {@link SshSuppliedConnectionOptions}. */
+  readonly connection?: never;
+}
+
+/**
+ * The address of a server to connect to as its `guest` account: TeamSpeak 6
+ * beta13 and later accept the SSH user `guest` without a password, and run it
+ * with the Guest Server Query group's permissions.
+ *
+ * Connecting as a guest is a choice that is made out loud: a missing
+ * `username` or `password` in {@link SshDialTarget} is an error and never
+ * becomes a guest connection. The host key is still checked, by the same
+ * policy: a guest's answers are only as good as the server they come from.
+ *
+ * What a guest may do is the server's to say. On beta13.1, `version` and
+ * `whoami` answer, `serverinfo` and the like are refused with 2568, and
+ * `servernotifyregister` is the Guest group's permission to give or withhold,
+ * so pass `events: false` to a `QueryClient` that should not register for any.
+ * A server started with `--query-ssh-allow-guest=0` refuses the login with a
+ * {@link QueryAuthError}.
+ *
+ * @experimental Part of the `@honeybbq/teamspeak/query` entry, which may
+ * change in a minor release.
+ */
+export interface SshGuestTarget {
+  /** The server's host. */
+  readonly host: string;
+  /** The SSH query port; 10022 by default. */
+  readonly port?: number | undefined;
+  /** Only `true` is a value: log in as `guest`, with no password. */
+  readonly guest: true;
+  /** Left out: a guest logs in as `guest`. */
+  readonly username?: never;
+  /** Left out: a guest has no password. */
+  readonly password?: never;
   /** Left out: a connection of your own is {@link SshSuppliedConnectionOptions}. */
   readonly connection?: never;
 }
@@ -245,7 +283,7 @@ export interface SshDialTarget {
  * @experimental Part of the `@honeybbq/teamspeak/query` entry, which may
  * change in a minor release.
  */
-export type SshDialOptions = SshDialTarget & SshHostKeyPolicy;
+export type SshDialOptions = (SshDialTarget | SshGuestTarget) & SshHostKeyPolicy;
 
 /**
  * Use an SSH client you made and connected yourself, or a factory for one:
@@ -274,6 +312,8 @@ export interface SshSuppliedConnectionOptions {
    * implementation written today. Its host key is checked by whoever made it.
    */
   readonly connection: SshConnection;
+  /** Left out: the supplied client is authenticated already. */
+  readonly guest?: never;
   /** Left out: the supplied client is authenticated already. */
   readonly username?: never;
   /** Left out: the supplied client is authenticated already. */
@@ -337,6 +377,7 @@ export interface SshChoice {
   readonly connection?: unknown;
   readonly username?: unknown;
   readonly password?: unknown;
+  readonly guest?: unknown;
 }
 
 /**
@@ -351,7 +392,8 @@ export interface SshChoice {
  * The same rule as the types state, for the callers they do not reach.
  */
 export function hostKeyDecision(options: SshChoice): HostKeyDecision {
-  const { hostKey, knownHosts, insecureIgnoreHostKey, connection, username, password } = options;
+  const { hostKey, knownHosts, insecureIgnoreHostKey, connection, username, password, guest } =
+    options;
   if (hostKey !== undefined && typeof hostKey !== "function") {
     throw new TypeError("hostKey is a function that throws to refuse a host key");
   }
@@ -379,9 +421,9 @@ export function hostKeyDecision(options: SshChoice): HostKeyDecision {
         `${given[0]} has no effect with connection, which makes the connection itself: its host key is checked by whoever made it`,
       );
     }
-    if (username !== undefined || password !== undefined) {
+    if (username !== undefined || password !== undefined || guest !== undefined) {
       throw new TypeError(
-        "username and password have no effect with connection, which is authenticated already: nothing would send them",
+        "username, password and guest have no effect with connection, which is authenticated already: nothing would send them",
       );
     }
     return { kind: "connection" };
@@ -432,13 +474,7 @@ export async function connectSsh(options: SshOptions): Promise<StreamTransport> 
   // The login is read only where this module dials: a supplied client is
   // authenticated already. Checked here, so a missing one fails before ssh2 is
   // loaded or anything is opened.
-  const login =
-    connection === undefined
-      ? {
-          username: nonEmptyString(options.username, "username"),
-          password: nonEmptyString(options.password, "password"),
-        }
-      : undefined;
+  const login = connection === undefined ? loginOf(options) : undefined;
   signal?.throwIfAborted();
   const verify = await verifierFor(decision, host, port);
   const ssh = await clientFor(connection);
@@ -519,7 +555,8 @@ export async function connectSsh(options: SshOptions): Promise<StreamTransport> 
       port,
       // Set exactly when `connection` is not, and this is the dial path.
       username: login!.username,
-      password: login!.password,
+      // Left out for a guest, so ssh2 offers no password at all.
+      ...(login!.password === undefined ? {} : { password: login!.password }),
       readyTimeout: 10_000,
       hostVerifier: (blob) => {
         const outcome = decide(verify, host, port, blob);
@@ -530,9 +567,32 @@ export async function connectSsh(options: SshOptions): Promise<StreamTransport> 
   });
 }
 
-function nonEmptyString(value: unknown, name: string): string {
+/**
+ * Who logs in: the name and password given, or `guest` with none when
+ * `guest: true` says so. Missing credentials are an error, never a guest.
+ */
+function loginOf(options: SshChoice): { username: string; password: string | undefined } {
+  if (options.guest !== undefined) {
+    if (options.guest !== true) {
+      throw new TypeError("guest is `true` or left out: it is a decision, not a switch");
+    }
+    if (options.username !== undefined || options.password !== undefined) {
+      throw new TypeError(
+        "username and password were given with guest; a guest logs in as `guest` with no password",
+      );
+    }
+    return { username: "guest", password: undefined };
+  }
+  const hint = "; to connect without a login, as a guest, set guest to true";
+  return {
+    username: nonEmptyString(options.username, "username", hint),
+    password: nonEmptyString(options.password, "password", hint),
+  };
+}
+
+function nonEmptyString(value: unknown, name: string, hint = ""): string {
   if (typeof value !== "string" || value === "")
-    throw new TypeError(`${name} is a non-empty string`);
+    throw new TypeError(`${name} is a non-empty string${hint}`);
   return value;
 }
 

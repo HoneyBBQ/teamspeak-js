@@ -181,6 +181,33 @@ describe("QueryClient options", () => {
     ).toThrow(TypeError);
   });
 
+  // A guest connection is a decision that is made out loud: credentials that
+  // are missing are an error, and never a guest.
+  it("connects as a guest only when `guest: true` says so", () => {
+    const guestWeb = { kind: "web", url: "http://h", guest: true } as const;
+    expect(() => new QueryClient({ transport: guestWeb })).not.toThrow();
+    const guestSsh = { kind: "ssh", host: "h", guest: true, hostKey: () => {} } as const;
+    expect(() => new QueryClient({ transport: guestSsh })).not.toThrow();
+
+    const bad = (transport: object): (() => unknown) => {
+      return () => new QueryClient({ transport } as unknown as QueryClientOptions);
+    };
+    // Missing credentials fail closed, and the message names the way out.
+    expect(bad({ kind: "web", url: "http://h" })).toThrow(/guest/);
+    expect(bad({ kind: "web", url: "http://h", apiKey: "" })).toThrow(/guest/);
+    expect(bad({ kind: "ssh", host: "h", hostKey: () => {} })).toThrow(/username.*guest/);
+    expect(bad({ kind: "ssh", host: "h", username: "guest", hostKey: () => {} })).toThrow(
+      /password.*guest/,
+    );
+    // `guest` is not a switch, and does not combine with a credential.
+    expect(bad({ ...guestWeb, guest: false })).toThrow(TypeError);
+    expect(bad({ ...guestWeb, apiKey: "k" })).toThrow(TypeError);
+    expect(bad({ ...guestSsh, password: "p" })).toThrow(TypeError);
+    expect(bad({ ...guestSsh, username: "serveradmin" })).toThrow(TypeError);
+    // The host key policy is still required of a guest.
+    expect(bad({ kind: "ssh", host: "h", guest: true })).toThrow(/hostKey/);
+  });
+
   it("rejects a number that is out of range, naming the option", () => {
     expect(() => new QueryClient({ transport: { kind: "tcp", host: "h", port: 0 } })).toThrow(
       RangeError,

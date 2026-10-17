@@ -65,6 +65,7 @@ import {
   editChannel,
   editServer,
   getServerInfo,
+  getInstanceInfo,
   getVersion,
   kickClient,
   listAPIKeys,
@@ -121,6 +122,8 @@ const SSH_HOST = process.env["TEAMSPEAK_QUERY_SSH_HOST"] ?? QUERY_HOST;
 const SSH_USER = process.env["TEAMSPEAK_QUERY_SSH_USER"] ?? "";
 const SSH_PASSWORD = process.env["TEAMSPEAK_QUERY_SSH_PASSWORD"] ?? "";
 const SSH_KNOWN_HOSTS = process.env["TEAMSPEAK_QUERY_SSH_KNOWN_HOSTS"] ?? "";
+/** Set where the server accepts guest logins: TeamSpeak 6 beta13 and later, not TS3. */
+const GUEST = process.env["TEAMSPEAK_QUERY_GUEST"] === "1";
 
 /** 5120, `command not in api key scope`: not a name `ErrorCode` gives. */
 const NOT_IN_API_KEY_SCOPE = 5120;
@@ -994,5 +997,92 @@ describe.skipIf(SKIP)("Integration — group creates whose answer carries no dat
       }
     },
     60_000,
+  );
+});
+
+// A guest is a TeamSpeak 6 beta13 account with no credential: SSH user `guest`
+// with no password, and a WebQuery request without an api key. It runs with the
+// Guest Server Query group's permissions, so what it may do is the server's to
+// say. Measured on beta13.1: `version` and `whoami` answer; `instanceinfo` is
+// refused with 2568 over SSH, and WebQuery refuses `apikeylist` with 5120, a
+// command outside the guest scope.
+describe.skipIf(SKIP || !GUEST)("Integration — guest ServerQuery", () => {
+  const scratch = mkdtempSync(join(tmpdir(), "query-guest-"));
+  let knownHosts = "";
+
+  /** The guest transports this run can use. */
+  const guestKinds = KINDS.filter((kind): kind is "ssh" | "web" => kind !== "tcp");
+
+  function guestOptions(kind: "ssh" | "web"): QueryClientOptions {
+    return {
+      transport:
+        kind === "ssh"
+          ? { kind: "ssh", host: SSH_HOST, port: SSH_PORT, guest: true, knownHosts }
+          : { kind: "web", url: QUERY_URL, guest: true },
+      server: { id: 1 },
+      // The Guest Server Query group decides whether a guest may register for
+      // notifications; a client that does not need them does not ask.
+      events: kind === "ssh" ? false : undefined,
+    };
+  }
+
+  beforeAll(async () => {
+    if (SKIP || !GUEST) return;
+    if (KINDS.includes("ssh")) {
+      const line = SSH_KNOWN_HOSTS !== "" ? undefined : knownHostsLine(await presentedSshKey());
+      knownHosts = SSH_KNOWN_HOSTS;
+      if (line !== undefined) {
+        knownHosts = join(scratch, "recorded");
+        writeFileSync(knownHosts, line);
+      }
+    }
+  }, 30_000);
+
+  afterAll(() => {
+    rmSync(scratch, { recursive: true, force: true });
+  });
+
+  it.each(["ssh", "web"] as const)(
+    "a guest connects over %s, and is refused what is admin-only",
+    async (kind, ctx) => {
+      if (!guestKinds.includes(kind)) {
+        ctx.skip(`no ${kind} endpoint was provisioned`);
+        return;
+      }
+      const client = new QueryClient(guestOptions(kind));
+      await connectWithRetries(client);
+      try {
+        expect(client.status).toBe(ClientStatus.Connected);
+        expect((await getVersion(client)).version).not.toBe("");
+        // The guest is its own account, not the administrator.
+        const me = await whoAmI(client);
+        expect(me.loginName).not.toBe("serveradmin");
+
+        const refused = await (
+          kind === "ssh" ? getInstanceInfo(client) : listAPIKeys(client)
+        ).catch((failure: unknown) => failure);
+        expect(refused).toMatchObject({ code: kind === "ssh" ? 2568 : NOT_IN_API_KEY_SCOPE });
+        console.log(
+          `guest over ${kind}: an admin-only command refused with ${String((refused as { code?: unknown }).code)}`,
+        );
+      } finally {
+        await client.disconnect();
+      }
+    },
+    60_000,
+  );
+
+  it.skipIf(!KINDS.includes("web"))(
+    "a WebQuery request with a wrong api key is not a guest",
+    async () => {
+      const client = new QueryClient({
+        transport: { kind: "web", url: QUERY_URL, apiKey: "not-a-key" },
+        server: { id: 1 },
+      });
+      await expect(
+        client.connect({ signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) }),
+      ).rejects.toBeDefined();
+    },
+    30_000,
   );
 });

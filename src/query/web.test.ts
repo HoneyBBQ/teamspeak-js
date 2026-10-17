@@ -95,6 +95,23 @@ describe("WebQueryTransport", () => {
     });
   });
 
+  it("sends no api key for a guest, and refuses a missing one otherwise", async () => {
+    const { calls, fetchFn } = fakeFetch([ok([{ cid: "1", channel_name: "Lobby", pid: "0" }])]);
+    const client = await webClient(
+      new WebQueryTransport({ url: "http://h", guest: true, serverID: 1, fetch: fetchFn }),
+      calls,
+    );
+
+    await listChannels(client);
+
+    expect(calls[0]?.headers).not.toHaveProperty("x-api-key");
+    const missing = (options: object): WebQueryTransport =>
+      new WebQueryTransport({ url: "http://h", ...options } as never);
+    expect(() => missing({})).toThrow("guest");
+    expect(() => missing({ apiKey: "" })).toThrow("guest");
+    expect(() => missing({ apiKey: "K", guest: true })).toThrow(TypeError);
+  });
+
   it("sends the rows of a list as an array", async () => {
     const { calls, fetchFn } = fakeFetch([ok()]);
     const client = await webClient(

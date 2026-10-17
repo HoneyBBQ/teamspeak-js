@@ -135,12 +135,11 @@ export type QueryTransportOptions = {
     readonly connect?: TcpConnector | undefined;
 } | ({
     readonly kind: "ssh";
-} & SshConnectOptions) | {
+} & SshConnectOptions) | ({
     readonly kind: "web";
     readonly url: string;
-    readonly apiKey: string;
     readonly fetch?: typeof fetch | undefined;
-} | {
+} & WebCredentials) | {
     readonly kind: "custom";
     readonly open: (signal?: AbortSignal) => Promise<QueryTransport>;
 };
@@ -157,7 +156,7 @@ export interface SshClient {
         host: string;
         port: number;
         username: string;
-        password: string;
+        password?: string;
         readyTimeout: number;
         hostVerifier: (key: Uint8Array) => boolean;
     }): void;
@@ -176,15 +175,26 @@ export type SshConnection = SshClient | (() => Promise<SshClient>);
 export type SshConnectOptions = SshDialOptions | SshSuppliedConnectionOptions;
 
 // @public
-export type SshDialOptions = SshDialTarget & SshHostKeyPolicy;
+export type SshDialOptions = (SshDialTarget | SshGuestTarget) & SshHostKeyPolicy;
 
 // @public
 export interface SshDialTarget {
     readonly connection?: never;
+    readonly guest?: never;
     readonly host: string;
     readonly password: string;
     readonly port?: number | undefined;
     readonly username: string;
+}
+
+// @public
+export interface SshGuestTarget {
+    readonly connection?: never;
+    readonly guest: true;
+    readonly host: string;
+    readonly password?: never;
+    readonly port?: number | undefined;
+    readonly username?: never;
 }
 
 // @public
@@ -240,6 +250,7 @@ export type SshOptions = SshConnectOptions & {
 // @public
 export interface SshSuppliedConnectionOptions {
     readonly connection: SshConnection;
+    readonly guest?: never;
     readonly host: string;
     readonly hostKey?: never;
     readonly insecureIgnoreHostKey?: never;
@@ -275,6 +286,15 @@ export interface TcpOptions {
 }
 
 // @public
+export type WebCredentials = {
+    readonly apiKey: string;
+    readonly guest?: never;
+} | {
+    readonly guest: true;
+    readonly apiKey?: never;
+};
+
+// @public
 export class WebQueryHttpError extends TeamspeakError {
     constructor(status: number, statusText: string);
     // (undocumented)
@@ -283,12 +303,11 @@ export class WebQueryHttpError extends TeamspeakError {
 }
 
 // @public
-export interface WebQueryOptions {
-    readonly apiKey: string;
-    readonly fetch?: typeof fetch | undefined;
-    readonly serverID?: number | bigint | undefined;
+export type WebQueryOptions = WebCredentials & {
     readonly url: string;
-}
+    readonly serverID?: number | bigint | undefined;
+    readonly fetch?: typeof fetch | undefined;
+};
 
 // @public
 export class WebQueryTransport implements QueryTransport {

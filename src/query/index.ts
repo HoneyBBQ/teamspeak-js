@@ -52,6 +52,7 @@ export type {
   SshConnection,
   SshDialOptions,
   SshDialTarget,
+  SshGuestTarget,
   SshHostKey,
   SshHostKeyCallbackPolicy,
   SshHostKeyPolicy,
@@ -62,4 +63,4 @@ export type {
   SshSuppliedConnectionOptions,
 } from "./ssh.js";
 export { WebQueryHttpError, WebQueryTransport } from "./web.js";
-export type { WebQueryOptions } from "./web.js";
+export type { WebCredentials, WebQueryOptions } from "./web.js";

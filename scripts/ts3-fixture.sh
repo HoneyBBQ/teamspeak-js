@@ -20,6 +20,9 @@
 # the suite then ran against an unprovisioned server and skipped its way to
 # green, which is how a protocol bug stayed invisible for months.
 #
+# TS3_QUERY_GUEST=1 marks a TeamSpeak 6 server (beta13 or later) that accepts
+# guest ServerQuery logins, so the suite also tests those.
+#
 # Needs python3, to read WebQuery's JSON replies.
 set -euo pipefail
 
@@ -388,6 +391,14 @@ export TEAMSPEAK_QUERY_SSH_HOST=${TS3_QUERY_SSH_HOST:-$SSH_DEFAULT_HOST}
 export TEAMSPEAK_QUERY_SSH_PORT=$TS3_QUERY_SSH_PORT
 export TEAMSPEAK_QUERY_SSH_USER=${TS3_QUERY_SSH_USER:-serveradmin}
 export TEAMSPEAK_QUERY_SSH_PASSWORD=${TS3_QUERY_SSH_PASSWORD:-${ADMIN_PW:-$HTTP_API_KEY}}"
+fi
+
+# TeamSpeak 6 beta13 and later accept a guest ServerQuery login without prior
+# setup; TS3 does not. The guest tests run only where TS3_QUERY_GUEST=1 says the
+# server offers one, and need the SSH or WebQuery endpoint provisioned above.
+if [ "${TS3_QUERY_GUEST:-}" = "1" ]; then
+  QUERY_ENV="$QUERY_ENV
+export TEAMSPEAK_QUERY_GUEST=1"
 fi
 
 cat > "$ENV_FILE" <<ENVFILE

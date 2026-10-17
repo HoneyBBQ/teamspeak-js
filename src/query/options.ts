@@ -3,6 +3,7 @@ import type { QueryTransport } from "./transport.js";
 import type { TcpConnector } from "./tcp.js";
 import { hostKeyDecision } from "./ssh.js";
 import type { SshConnectOptions, SshConnection } from "./ssh.js";
+import type { WebCredentials } from "./web.js";
 
 /**
  * The connection a `QueryClient` talks over, as a description rather than an
@@ -31,16 +32,14 @@ export type QueryTransportOptions =
       /** A ServerQuery over SSH. */
       readonly kind: "ssh";
     } & SshConnectOptions)
-  | {
+  | ({
       /** TeamSpeak 6's HTTP WebQuery. */
       readonly kind: "web";
       /** The server's base URL, such as `http://127.0.0.1:10080`. */
       readonly url: string;
-      /** The api key, sent as `x-api-key`; it replaces `login`. */
-      readonly apiKey: string;
       /** The `fetch` to use; a small one over `node:http` by default. */
       readonly fetch?: typeof fetch | undefined;
-    }
+    } & WebCredentials)
   | {
       /** An application-supplied transport. */
       readonly kind: "custom";
@@ -175,7 +174,8 @@ export type ResolvedTransport =
   | {
       readonly kind: "web";
       readonly url: string;
-      readonly apiKey: string;
+      /** Absent exactly for a guest connection, which sends no api key. */
+      readonly apiKey: string | undefined;
       readonly fetch: typeof fetch | undefined;
     }
   | { readonly kind: "custom"; readonly open: (signal?: AbortSignal) => Promise<QueryTransport> };
@@ -210,6 +210,38 @@ function nonEmpty(value: unknown, name: string): string {
     throw new TypeError(`${name} is a non-empty string`);
   }
   return value;
+}
+
+/** `guest` is `true` or left out: it is a decision, not a switch to set to false. */
+function guestFlag(value: unknown): boolean {
+  if (value === undefined) return false;
+  if (value !== true) {
+    throw new TypeError("transport.guest is `true` or left out: it is a decision, not a switch");
+  }
+  return true;
+}
+
+/**
+ * The SSH login: a name and a password, or `guest` alone. Without `guest`,
+ * missing credentials are an error rather than a guest connection.
+ */
+function sshCredentials(
+  options: Record<string, unknown>,
+): { username: string; password: string } | { guest: true } {
+  if (guestFlag(options["guest"])) {
+    if (options["username"] !== undefined || options["password"] !== undefined) {
+      throw new TypeError(
+        "transport.username and transport.password were given with transport.guest; a guest logs in as `guest` with no password",
+      );
+    }
+    return { guest: true };
+  }
+  const missing = (name: string): string =>
+    `transport.${name} is a non-empty string; to connect without a login, as a guest, set transport.guest to true`;
+  const { username, password } = options;
+  if (typeof username !== "string" || username === "") throw new TypeError(missing("username"));
+  if (typeof password !== "string" || password === "") throw new TypeError(missing("password"));
+  return { username, password };
 }
 
 function port(value: unknown, name: string): number {
@@ -266,8 +298,7 @@ function transportOptions(transport: unknown): ResolvedTransport {
       }
       const login = {
         ...address,
-        username: nonEmpty(options["username"], "transport.username"),
-        password: nonEmpty(options["password"], "transport.password"),
+        ...sshCredentials(options),
       };
       switch (decision.kind) {
         case "verifier":
@@ -283,10 +314,24 @@ function transportOptions(transport: unknown): ResolvedTransport {
       if (fetchFn !== undefined && typeof fetchFn !== "function") {
         throw new TypeError("transport.fetch is a function");
       }
+      const url = nonEmpty(options["url"], "transport.url");
+      const guest = guestFlag(options["guest"]);
+      const apiKey = options["apiKey"];
+      if (guest) {
+        if (apiKey !== undefined) {
+          throw new TypeError(
+            "transport.apiKey and transport.guest were given together; a guest sends no api key",
+          );
+        }
+      } else if (typeof apiKey !== "string" || apiKey === "") {
+        throw new TypeError(
+          "transport.apiKey is a non-empty string; to connect without one, as a guest, set transport.guest to true",
+        );
+      }
       return {
         kind: "web",
-        url: nonEmpty(options["url"], "transport.url"),
-        apiKey: nonEmpty(options["apiKey"], "transport.apiKey"),
+        url,
+        apiKey: guest ? undefined : apiKey,
         fetch: fetchFn as typeof globalThis.fetch | undefined,
       };
     }

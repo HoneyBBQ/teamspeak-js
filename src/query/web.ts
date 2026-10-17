@@ -30,12 +30,39 @@ export class WebQueryHttpError extends TeamspeakError {
   }
 }
 
+/**
+ * Who a WebQuery request is made as: the owner of an api key, or a guest.
+ *
+ * TeamSpeak 6 beta13 and later run a request that carries no api key in the
+ * `guest` scope, with the Guest Server Query group's permissions: `version`
+ * and `whoami` answer, and a command outside the guest scope is refused with
+ * 5120 ("command not allowed for guest access") over HTTP 401. A server
+ * started with `--query-http-allow-guest=0` refuses a request without a key.
+ *
+ * A guest connection is a choice made out loud: a missing or empty `apiKey`
+ * is an error and never becomes one.
+ *
+ * @experimental Part of the `@honeybbq/teamspeak/query` entry, which may
+ * change in a minor release.
+ */
+export type WebCredentials =
+  | {
+      /** The api key, sent as `x-api-key`; it replaces `login`. */
+      readonly apiKey: string;
+      /** Left out: an api key is not a guest's. */
+      readonly guest?: never;
+    }
+  | {
+      /** Only `true` is a value: send no api key and run as the server's guest. */
+      readonly guest: true;
+      /** Left out: a guest sends no api key. */
+      readonly apiKey?: never;
+    };
+
 /** How a WebQuery is reached. */
-export interface WebQueryOptions {
+export type WebQueryOptions = WebCredentials & {
   /** The server's base URL, such as `http://127.0.0.1:10080`. */
   readonly url: string;
-  /** The api key, sent as `x-api-key`. */
-  readonly apiKey: string;
   /** The virtual server to address; `use` changes it. Unset addresses the instance. */
   readonly serverID?: number | bigint | undefined;
   /**
@@ -44,7 +71,7 @@ export interface WebQueryOptions {
    * standard blocks.
    */
   readonly fetch?: typeof fetch | undefined;
-}
+};
 
 /** The answer WebQuery gives: rows, and the status of the command. */
 interface WebAnswer {
@@ -76,13 +103,22 @@ export class WebQueryTransport implements QueryTransport {
   onClose: ((error: Error | undefined) => void) | null = null;
 
   #base: string;
-  #apiKey: string;
+  #apiKey: string | undefined;
   #prefix: string;
   #fetch: typeof fetch;
   #closed = false;
 
   constructor(options: WebQueryOptions) {
     this.#base = options.url.replace(/\/+$/, "");
+    if (options.guest === true) {
+      if (options.apiKey !== undefined) {
+        throw new TypeError("apiKey and guest were given together; a guest sends no api key");
+      }
+    } else if (typeof options.apiKey !== "string" || options.apiKey === "") {
+      throw new TypeError(
+        "apiKey is a non-empty string; to connect without one, as a guest, set guest to true",
+      );
+    }
     this.#apiKey = options.apiKey;
     this.#prefix = options.serverID === undefined ? "" : `/${options.serverID}`;
     this.#fetch = options.fetch ?? httpFetch;
@@ -103,7 +139,10 @@ export class WebQueryTransport implements QueryTransport {
     const params = rows.map((row) => ({ ...row.params }));
     const response = await this.#fetch(`${this.#base}${this.#prefix}/${name}`, {
       method: "POST",
-      headers: { "x-api-key": this.#apiKey, "content-type": "application/json" },
+      headers: {
+        ...(this.#apiKey === undefined ? {} : { "x-api-key": this.#apiKey }),
+        "content-type": "application/json",
+      },
       body: JSON.stringify(params.length === 1 ? params[0] : params),
     });
 

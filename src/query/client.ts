@@ -760,7 +760,7 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
       case "web":
         return new WebQueryTransport({
           url: transport.url,
-          apiKey: transport.apiKey,
+          ...(transport.apiKey === undefined ? { guest: true } : { apiKey: transport.apiKey }),
           fetch: transport.fetch,
           serverID: serverIDOf(this.#options.server),
         });

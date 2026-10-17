@@ -190,6 +190,38 @@ async function dial(
   };
 }
 
+describe("connectSsh as a guest", () => {
+  it("logs in as `guest` and offers no password", async () => {
+    const before = fake.FakeClient.instances.length;
+    const outcome = connectSsh({
+      host: "ts.example.com",
+      guest: true,
+      hostKey: () => {},
+    }).catch((error: unknown) => error);
+    await vi.waitFor(() => {
+      expect(fake.FakeClient.instances.length).toBeGreaterThan(before);
+      expect(fake.FakeClient.instances.at(-1)?.config).toBeDefined();
+    });
+    const config = fake.FakeClient.instances.at(-1)!.config!;
+    expect(config.username).toBe("guest");
+    expect(config).not.toHaveProperty("password");
+    fake.FakeClient.instances.at(-1)!.emit("error", new Error("stop"));
+    await outcome;
+  });
+
+  it("is never what missing credentials fall back to", async () => {
+    const attempt = connectSsh(unchecked({ host: "h", hostKey: () => {} }));
+    await expect(attempt).rejects.toThrow(/username.*guest/);
+    await expect(
+      connectSsh(unchecked({ host: "h", guest: true, password: "p", hostKey: () => {} })),
+    ).rejects.toThrow(TypeError);
+    await expect(
+      connectSsh(unchecked({ host: "h", guest: false, hostKey: () => {} })),
+    ).rejects.toThrow(TypeError);
+    expect(fake.FakeClient.instances).toHaveLength(0);
+  });
+});
+
 describe("connectSsh with no decision about the host key", () => {
   it("fails closed, naming all three options and why, before anything is opened", async () => {
     const attempt = connectSsh(
