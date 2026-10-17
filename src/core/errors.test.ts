@@ -29,6 +29,18 @@ describe("parseServerError", () => {
   });
 });
 
+describe("WebQuery access refusals", () => {
+  it.each([
+    ["out of scope", 5120, ErrorCode.APIKeyOutOfScope],
+    ["invalid apikey", 5122, ErrorCode.APIKeyInvalid],
+    ["missing apikey", 5124, ErrorCode.APIKeyMissing],
+  ])("names the code of %s", (msg, id, name) => {
+    const { err } = parseServerError({ id: String(id), msg });
+    expect(err?.code).toBe(name);
+    expect(name).toBe(id);
+  });
+});
+
 describe("instanceof across copies of the package", () => {
   it("matches by kind, up the chain, and only with the brand", async () => {
     const core = await import("./errors.js");

@@ -392,6 +392,22 @@ const errorCodeValues = {
   ProvisioningTS3ServerNotFound: 0x1119,
   /** Unknown permissionID. */
   ProvisioningNoPermission: 0x111a,
+  /**
+   * Out of scope: WebQuery refused a command outside the scope of the api key
+   * that made the request, or outside the guest scope of a request that carried
+   * none. HTTP 401.
+   */
+  APIKeyOutOfScope: 0x1400,
+  /**
+   * Invalid apikey: WebQuery does not accept the api key sent, or the key may
+   * not address the virtual server in the path. HTTP 401.
+   */
+  APIKeyInvalid: 0x1402,
+  /**
+   * Missing apikey: the request carried no api key, or an empty one, and the
+   * server offers no guest access. HTTP 401.
+   */
+  APIKeyMissing: 0x1404,
 } as const;
 /**
  * The error codes a TeamSpeak server reports, by name.

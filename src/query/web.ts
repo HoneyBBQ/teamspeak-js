@@ -63,7 +63,12 @@ export type WebCredentials =
 export type WebQueryOptions = WebCredentials & {
   /** The server's base URL, such as `http://127.0.0.1:10080`. */
   readonly url: string;
-  /** The virtual server to address; `use` changes it. Unset addresses the instance. */
+  /**
+   * The virtual server to address; `use` changes it. Unset leaves the server out
+   * of the path, which TeamSpeak 6 reads as the instance. TeamSpeak 3 runs every
+   * command on a virtual server even then, so an instance command such as
+   * `queryloginadd client_login_name=…` answers 1539 there.
+   */
   readonly serverID?: number | bigint | undefined;
   /**
    * The `fetch` to use. By default a small one over `node:http`: the global

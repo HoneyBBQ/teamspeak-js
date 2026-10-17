@@ -106,3 +106,40 @@ export class QueryAuthError extends TeamspeakError {
     this.username = username;
   }
 }
+
+/**
+ * A connection made with `guest: true` was refused because the server offers
+ * no guest access. TeamSpeak 3 has none, and a TeamSpeak 6 server started with
+ * guest access off refuses the same way.
+ *
+ * Over WebQuery the server answers a request without an api key with 5124
+ * (`ErrorCode.APIKeyMissing`); over SSH it fails the `guest` user's
+ * authentication. The server's own error is kept as `cause`, and over WebQuery
+ * its code as {@link GuestAccessError.code}, so the refusal can still be
+ * matched by number.
+ *
+ * @experimental Part of the `@honeybbq/teamspeak/query` entry, which may
+ * change in a minor release.
+ */
+export class GuestAccessError extends TeamspeakError {
+  /** {@inheritDoc @honeybbq/teamspeak!TeamspeakError.kind} */
+  static override readonly kind: string = "GuestAccessError";
+  static {
+    Object.defineProperty(this.prototype, "name", {
+      value: "GuestAccessError",
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
+
+  /** The server's error code when it sent one (5124 over WebQuery); `undefined` over SSH. */
+  readonly code: number | undefined;
+
+  constructor(cause: Error, code?: number) {
+    super(`the server does not offer guest access (TeamSpeak 3 has none): ${cause.message}`, {
+      cause,
+    });
+    this.code = code;
+  }
+}
