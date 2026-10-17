@@ -4,6 +4,38 @@ Until 1.0.0-beta.4 this package was published as `@honeybbq/teamspeak-core`, and
 `@honeybbq/teamspeak-client` was a second package. The sections below, down to
 the last version heading, are the core's history; the client's is at the bottom.
 
+## 1.0.0-beta.9
+
+### Major Changes
+
+- [#66](https://github.com/HoneyBBQ/teamspeak-js/pull/66) [`dab88f6`](https://github.com/HoneyBBQ/teamspeak-js/commit/dab88f60928f5e94e9d8b82e6a1bce0498ec0d59) - `ClientDatabaseEditOptions.nickname` and `ServerGroupClientListOptions.uids` are gone: neither ever worked. `editClientDatabase(c, cldbid, { nickname })` sent `client_nickname`, which `clientdbedit` does not take, and both TeamSpeak 3 and TeamSpeak 6 answered error 1542 (missing required parameter); the command only edits `description`, and there is no way to change a stored nickname through it. `listServerGroupClients(c, sgid, { uids })` sent `-uid`, which `servergroupclientlist` ignores, so the rows stayed `cldbid` only. Pass `names: true` instead: the server then returns each member's nickname and unique identifier together, so `ServerGroupMember.uid` is filled by `names`.
+
+### Minor Changes
+
+- [#68](https://github.com/HoneyBBQ/teamspeak-js/pull/68) [`3e1bbd5`](https://github.com/HoneyBBQ/teamspeak-js/commit/3e1bbd572f9305634b8da0b9916b0cff333c6129) - `findBans` looks bans up by address, nickname, uid or myTeamSpeak id (`banfind`, TS6 only: TS3 has no such command, and TS6's WebQuery answers it as unknown). A ban can be made with a `mytsid` and a `lastNickname`, and `BanEntry` has the `mytsid` TS6 reports. `listBans` takes `start` and `limit` to page the list. A privilege key can be made with a `customSet` of custom client properties, which `PrivilegeKey` reports back; the set is escaped twice on the wire, because the server's own example, escaped once, cuts a value at its first space.
+
+- [#68](https://github.com/HoneyBBQ/teamspeak-js/pull/68) [`3e1bbd5`](https://github.com/HoneyBBQ/teamspeak-js/commit/3e1bbd572f9305634b8da0b9916b0cff333c6129) - The commands that could only be sent as raw lines now have typed functions. API keys: `addAPIKey`, `listAPIKeys`, `deleteAPIKey`. ServerQuery logins: `addQueryLogin`, `listQueryLogins`, `deleteQueryLogin`, and `setQueryLogin` for the voice protocol. Custom client properties: `setCustomProperty`, `deleteCustomProperty`, `listCustomProperties`, `findCustomProperty`. Also `sendOfflineMessage`, `getOwnPermission` (`permget`), and `addServerGroupPermissionByType` and `deleteServerGroupPermissionByType` for every group of a type on every virtual server. The key an API key creation returns, the password of a login and the administrator key of a new server are ordinary fields of the result, secrets the server shows only once: store them, and do not log them.
+
+  For an instance administrator over ServerQuery: `listServers`, `createServer`, `startServer`, `stopServer`, `deleteServer`, `stopInstance`, `sendGlobalMessage`, and `createServerSnapshot` and `deployServerSnapshot` with a password, `keepFiles` and the channel mapping. A voice client's Server Admin gets error 2568 for all of them. An unlicensed TS3 or TS6 runs one virtual server, and refuses another with 2816. `APIKeyID` and `asAPIKeyID`, `APIKeyScope` and `GroupAutoUpdateType` come with them.
+
+- [#68](https://github.com/HoneyBBQ/teamspeak-js/pull/68) [`3e1bbd5`](https://github.com/HoneyBBQ/teamspeak-js/commit/3e1bbd572f9305634b8da0b9916b0cff333c6129) - `findClients` takes `channelID` and `channelUID` to report where each match is, as `ClientMatch.channelID` and `channelUID`. They report and do not filter, and TS6 only: TS3 accepts the flags and sends neither. `FileUploadInfo` and `FileDownloadInfo` carry the `ip` the server sends when the file transfer is not reachable at the command connection's address, undefined otherwise. `listChannels` also asks for `-secondsempty` and `-banners`; `Channel` has no field for them yet.
+
+- [#67](https://github.com/HoneyBBQ/teamspeak-js/pull/67) [`4429dc0`](https://github.com/HoneyBBQ/teamspeak-js/commit/4429dc0a008c43beed5aa0a90b9b9ea29bff628e) - The voice client reports changes to other clients as typed events, and keeps its record of them current.
+
+  New events: `clientUpdated`, `clientServerGroupAdded`, `clientServerGroupRemoved` and `clientChannelGroupChanged`. A TeamSpeak 3 ServerQuery connection does not receive these from the server, so the ServerQuery client does not offer them.
+
+  `clientUpdated` carries `changes`, holding only the properties the server sent, under the names `updateClient` takes; a property that is absent did not change. `applyClientChanges` and `applyChannelChanges` merge a change into a record and return a new one.
+
+  `TextMessageEvent.invokerGroups` no longer goes stale: the voice client updates what it knows of a client when its groups change, and refreshes its channel group when that changes in the channel the client is in. A ServerQuery client still reads groups from the listing it took when it connected.
+
+  `ClientEntry` gains optional `databaseID`, `awayMessage`, `isInputMuted`, `isOutputMuted`, `talkPower`, `description`, `avatar`, `country`, `version`, `platform` and others, and `Channel` gains `isMaxClientsUnlimited`, `deleteDelayMs`, `namePhonetic` and others. They are `undefined` where the answer did not carry them, such as a field no `listClients` flag brings; `getChannelInfo` fills the channel ones.
+
+  Every notification is still delivered as `notification`, after its typed event. Code that switches over event names, in event middleware or elsewhere, needs a default case, as it always did.
+
+- [#68](https://github.com/HoneyBBQ/teamspeak-js/pull/68) [`3e1bbd5`](https://github.com/HoneyBBQ/teamspeak-js/commit/3e1bbd572f9305634b8da0b9916b0cff333c6129) - `QueryClient` has `logout()` and `unregisterNotifications()`, the counterparts of `login()` and `registerNotifications()`. `logout` also deselects the virtual server; WebQuery refuses both, as its api key is the login and nothing is registered there.
+
+- [#68](https://github.com/HoneyBBQ/teamspeak-js/pull/68) [`3e1bbd5`](https://github.com/HoneyBBQ/teamspeak-js/commit/3e1bbd572f9305634b8da0b9916b0cff333c6129) - A raw `exec` over the voice protocol now returns the rows of `tokenadd`, `tokenlist`, `apikeyadd`, `apikeylist`, `permget`, `getconnectioninfo`, `clientgetvariables`, `servergetvariables` and `clientsetserverquerylogin`. The server answers each with a notification (`notifytokenadd`, `notifyapikeyadd`, `notifypermget`, `notifyconnectioninfo`, `notifyclientupdated`, `notifyserverupdated` and the like) and the client used to report an empty success. `CommandName` and `NotificationName` name them.
+
 ## 1.0.0-beta.8
 
 ### Patch Changes
