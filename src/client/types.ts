@@ -93,9 +93,8 @@ const groupWhisperTypeValues = {
  * Server group, channel group and all clients were measured on TeamSpeak 3
  * and 6; channel commander was not.
  */
-export const GroupWhisperType: typeof groupWhisperTypeValues = /* @__PURE__ */ Object.freeze(
-  groupWhisperTypeValues,
-);
+export const GroupWhisperType: typeof groupWhisperTypeValues =
+  /* @__PURE__ */ Object.freeze(groupWhisperTypeValues);
 /** A group whisper type. */
 export type GroupWhisperType = (typeof GroupWhisperType)[keyof typeof GroupWhisperType];
 
@@ -121,9 +120,8 @@ const groupWhisperScopeValues = {
  * packet). All channels and the current channel were measured on TeamSpeak 3
  * and 6; the others carry the packet's names and were not.
  */
-export const GroupWhisperScope: typeof groupWhisperScopeValues = /* @__PURE__ */ Object.freeze(
-  groupWhisperScopeValues,
-);
+export const GroupWhisperScope: typeof groupWhisperScopeValues =
+  /* @__PURE__ */ Object.freeze(groupWhisperScopeValues);
 /** A group whisper scope. */
 export type GroupWhisperScope = (typeof GroupWhisperScope)[keyof typeof GroupWhisperScope];
 

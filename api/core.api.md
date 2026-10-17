@@ -403,6 +403,23 @@ export interface ClientChannelGroupChangedEvent extends Invoked {
 }
 
 // @public
+export interface ClientConnectionInfo {
+    readonly clientToServerLoss: PacketLoss;
+    readonly connectedTimeMs: number;
+    readonly fileTransferBandwidthReceived: number;
+    readonly fileTransferBandwidthSent: number;
+    readonly id: ClientID;
+    readonly idleTimeMs: number;
+    readonly ip?: string | undefined;
+    readonly pingDeviationMs: number;
+    readonly pingMs: number;
+    readonly port?: number | undefined;
+    readonly received: Readonly<Record<ConnectionTrafficClass, ClientTraffic>>;
+    readonly sent: Readonly<Record<ConnectionTrafficClass, ClientTraffic>>;
+    readonly serverToClientLoss: PacketLoss;
+}
+
+// @public
 export interface ClientDatabaseEditOptions {
     readonly description?: string | undefined;
 }
@@ -597,6 +614,14 @@ const clientStatusValues: {
     readonly Connected: "connected";
 };
 
+// @public
+export interface ClientTraffic {
+    readonly bandwidthLastMinute: number;
+    readonly bandwidthLastSecond: number;
+    readonly bytes: number;
+    readonly packets: number;
+}
+
 // Warning: (ae-forgotten-export) The symbol "clientTypeValues" needs to be exported by the entry point index.d.ts
 //
 // @public
@@ -630,6 +655,7 @@ export interface ClientUpdateOptions {
     readonly isOutputMuted?: boolean | undefined;
     readonly isRecording?: boolean | undefined;
     readonly isRequestingTalk?: boolean | undefined;
+    readonly metaData?: string | undefined;
     readonly nickname?: string | undefined;
     readonly nicknamePhonetic?: string | undefined;
     readonly talkRequestMessage?: string | undefined;
@@ -829,12 +855,15 @@ const commandNameValues: {
     readonly ServerTempPasswordDel: "servertemppassworddel";
     readonly ServerTempPasswordList: "servertemppasswordlist";
     readonly SetClientChannelGroup: "setclientchannelgroup";
+    readonly SetConnectionInfo: "setconnectioninfo";
     readonly TokenAdd: "tokenadd";
     readonly TokenDelete: "tokendelete";
     readonly TokenList: "tokenlist";
     readonly TokenUse: "tokenuse";
     readonly Use: "use";
     readonly Version: "version";
+    readonly VerifyChannelPassword: "verifychannelpassword";
+    readonly VerifyServerPassword: "verifyserverpassword";
     readonly WhoAmI: "whoami";
 };
 
@@ -878,6 +907,9 @@ export interface ComplaintListOptions extends CommandOptions {
 export interface ConnectedEvent {
     readonly reconnected: boolean;
 }
+
+// @public
+export type ConnectionTrafficClass = "speech" | "keepalive" | "control";
 
 // @public
 export const consoleLogger: Logger;
@@ -1302,6 +1334,9 @@ export function findPermission(client: CommandExecutor, permission: Permission, 
 export function getChannelInfo(client: CommandExecutor, cid: ChannelID, options?: CommandOptions): Promise<Channel>;
 
 // @public
+export function getClientConnectionInfo(client: CommandExecutor, clid: ClientID, options?: CommandOptions): Promise<ClientConnectionInfo>;
+
+// @public
 export function getClientDatabaseInfo(client: CommandExecutor, cldbid: ClientDBID, options?: CommandOptions): Promise<ClientDatabaseEntry>;
 
 // @public
@@ -1717,6 +1752,18 @@ export interface OwnPermission {
     readonly id: PermissionID;
     readonly name: string;
     readonly value: number;
+}
+
+// @public
+export interface PacketLoss {
+    // (undocumented)
+    readonly control: number;
+    // (undocumented)
+    readonly keepalive: number;
+    // (undocumented)
+    readonly speech: number;
+    // (undocumented)
+    readonly total: number;
 }
 
 // @public

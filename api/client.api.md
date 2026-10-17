@@ -5,6 +5,7 @@
 ```ts
 
 import { Channel } from 'node:diagnostics_channel';
+import type { ChannelGroupID } from '@honeybbq/teamspeak';
 import { ChannelID } from '@honeybbq/teamspeak';
 import type { ClientChannelGroupChangedEvent } from '@honeybbq/teamspeak';
 import { ClientID } from '@honeybbq/teamspeak';
@@ -29,6 +30,7 @@ import { Readable } from 'node:stream';
 import type { ReconnectOptions } from '@honeybbq/teamspeak';
 import type { ServerEventMap } from '@honeybbq/teamspeak';
 import { ServerFamily } from '@honeybbq/teamspeak';
+import type { ServerGroupID } from '@honeybbq/teamspeak';
 import { ServerID } from '@honeybbq/teamspeak';
 import type { SessionEventMap } from '@honeybbq/teamspeak';
 import { TeamspeakError } from '@honeybbq/teamspeak';
@@ -72,6 +74,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     }): Promise<void>;
     disconnect(options?: {
         readonly signal?: AbortSignal | undefined;
+        readonly reasonMessage?: string | undefined;
     }): Promise<void>;
     downloadFileData(host: string, info: FileDownloadInfo, dest: Writable, options?: Pick<FileTransferOptions, "signal" | "trace">): Promise<void>;
     events<K extends keyof EventMap>(event: K, options?: {
@@ -84,6 +87,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     on<K extends keyof EventMap>(event: K, listener: Listener<EventMap, K>): Unsubscribe;
     once<K extends keyof EventMap>(event: K, listener: Listener<EventMap, K>): Unsubscribe;
     send(request: CommandRequest, options?: CommandOptions): Promise<Record<string, string>[]>;
+    sendGroupWhisper(data: Uint8Array, target: GroupWhisperTarget, codec: Codec): void;
     sendVoice(data: Uint8Array, codec: Codec, options?: VoiceOptions): void;
     sendWhisper(data: Uint8Array, targets: WhisperTargets, codec: Codec): void;
     get serverCapabilities(): ServerCapabilities;
@@ -100,7 +104,9 @@ export interface ClientOptions {
     readonly eventMiddleware?: readonly EventMiddleware[] | undefined;
     readonly fileTransferSocketFactory?: FileTransferSocketFactory | undefined;
     readonly logger?: Logger | undefined;
+    readonly metaData?: string | undefined;
     readonly nicknameLookup?: boolean | undefined;
+    readonly privilegeKey?: string | undefined;
     readonly reconnect?: ReconnectOptions | undefined;
     readonly resolver?: AddrResolver | undefined;
     readonly serverPassword?: string | undefined;
@@ -316,6 +322,55 @@ export function generateIdentitySync(targetLevel: number): Identity;
 // @public
 export function getChannelDescription(client: Client, cid: ChannelID, options?: CommandOptions): Promise<string>;
 
+// Warning: (ae-forgotten-export) The symbol "groupWhisperScopeValues" needs to be exported by the entry point index.d.ts
+//
+// @public
+export const GroupWhisperScope: typeof groupWhisperScopeValues;
+
+// @public
+export type GroupWhisperScope = (typeof GroupWhisperScope)[keyof typeof GroupWhisperScope];
+
+// @public
+const groupWhisperScopeValues: {
+    readonly AllChannels: 0;
+    readonly CurrentChannel: 1;
+    readonly ParentChannel: 2;
+    readonly AllParentChannels: 3;
+    readonly ChannelFamily: 4;
+    readonly CompleteChannelFamily: 5;
+    readonly Subchannels: 6;
+};
+
+// @public
+export type GroupWhisperTarget = {
+    readonly type: typeof GroupWhisperType.ServerGroup;
+    readonly scope: GroupWhisperScope;
+    readonly group: ServerGroupID;
+} | {
+    readonly type: typeof GroupWhisperType.ChannelGroup;
+    readonly scope: GroupWhisperScope;
+    readonly group: ChannelGroupID;
+} | {
+    readonly type: typeof GroupWhisperType.ChannelCommander | typeof GroupWhisperType.AllClients;
+    readonly scope: GroupWhisperScope;
+};
+
+// Warning: (ae-forgotten-export) The symbol "groupWhisperTypeValues" needs to be exported by the entry point index.d.ts
+//
+// @public
+export const GroupWhisperType: typeof groupWhisperTypeValues;
+
+// @public
+export type GroupWhisperType = (typeof GroupWhisperType)[keyof typeof GroupWhisperType];
+
+// @public
+const groupWhisperTypeValues: {
+    readonly ServerGroup: 0;
+    readonly ChannelGroup: 1;
+    readonly ChannelCommander: 2;
+    readonly AllClients: 3;
+};
+
 // @public
 export interface HandshakeDoneInfo extends AttemptInfo {
     readonly durationMs: number;
@@ -492,6 +547,12 @@ export function unsubscribeChannel(client: Client, cid: ChannelID, options?: Com
 export function uploadFileData(host: string, info: FileUploadInfo, data: Readable, options?: FileTransferOptions): Promise<void>;
 
 // @public
+export function verifyChannelPassword(client: Client, cid: ChannelID, password: string, options?: CommandOptions): Promise<boolean>;
+
+// @public
+export function verifyServerPassword(client: Client, password: string, options?: CommandOptions): Promise<boolean>;
+
+// @public
 export interface VoiceOptions {
 }
 
@@ -505,6 +566,7 @@ export interface WelcomeDoneInfo extends AttemptInfo {
 
 // @public
 export interface WhisperTargets {
+    readonly channels?: readonly ChannelID[] | undefined;
     readonly clients?: readonly ClientID[] | undefined;
 }
 
