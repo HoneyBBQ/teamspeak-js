@@ -286,7 +286,6 @@ export type ChannelUID = string & {
 // @public
 export interface ClientDatabaseEditOptions {
     readonly description?: string | undefined;
-    readonly nickname?: string | undefined;
 }
 
 // @public
@@ -2174,7 +2173,6 @@ export interface ServerGroup {
 // @public
 export interface ServerGroupClientListOptions extends CommandOptions {
     readonly names?: boolean | undefined;
-    readonly uids?: boolean | undefined;
 }
 
 // @public

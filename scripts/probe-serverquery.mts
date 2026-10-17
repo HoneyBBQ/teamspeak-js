@@ -689,7 +689,7 @@ async function probe(target: Target): Promise<Findings> {
       await step(run, "listServerGroupClients (none)", () => listServerGroupClients(q, sg));
       await step(run, "addClientToServerGroup", () => addClientToServerGroup(q, sg, vc2db));
       await step(run, "listServerGroupClients", () =>
-        listServerGroupClients(q, sg, { names: true, uids: true }),
+        listServerGroupClients(q, sg, { names: true }),
       );
       await step(run, "getServerGroupsByClient", () => getServerGroupsByClient(q, vc2db));
       await step(run, "removeClientFromServerGroup", () =>

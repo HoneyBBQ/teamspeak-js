@@ -504,13 +504,11 @@ export async function removeClientFromServerGroup(
 
 /** Which optional fields `servergroupclientlist` should include. */
 export interface ServerGroupClientListOptions extends CommandOptions {
-  /** Each member's nickname (`-names`). */
+  /** Each member's nickname and unique identifier (`-names`). */
   readonly names?: boolean | undefined;
-  /** Each member's unique identifier (`-uid`). */
-  readonly uids?: boolean | undefined;
 }
 
-const memberFlags: WireNames<ServerGroupClientListOptions> = { names: "-names", uids: "-uid" };
+const memberFlags: WireNames<ServerGroupClientListOptions> = { names: "-names" };
 
 /** A member of a server group. */
 export interface ServerGroupMember {
@@ -518,11 +516,11 @@ export interface ServerGroupMember {
   readonly databaseID: ClientDBID;
   /** The member's nickname, with `names`; "" otherwise. */
   readonly nickname: string;
-  /** The member's unique identifier, with `uids`; "" otherwise. */
+  /** The member's unique identifier, with `names`; "" otherwise. */
   readonly uid: UID;
 }
 
-/** Members of a server group, optionally with their nicknames and uids. */
+/** Members of a server group, optionally with their nicknames and unique identifiers. */
 export async function listServerGroupClients(
   client: CommandExecutor,
   sgid: ServerGroupID,

@@ -562,13 +562,10 @@ export async function getClientDatabaseInfo(
 export interface ClientDatabaseEditOptions {
   /** The client's description (`client_description`). */
   readonly description?: string | undefined;
-  /** The nickname on record (`client_nickname`). */
-  readonly nickname?: string | undefined;
 }
 
 const databaseEditNames: WireNames<ClientDatabaseEditOptions> = {
   description: "client_description",
-  nickname: "client_nickname",
 };
 
 /**
