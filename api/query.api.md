@@ -59,6 +59,7 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     }): AsyncIterableIterator<QueryEventMap[K]>;
     exec(line: string, options?: CommandOptions): Promise<Array<Record<string, string>>>;
     login(name: string, password: string, options?: CommandOptions): Promise<void>;
+    logout(options?: CommandOptions): Promise<void>;
     on<K extends keyof QueryEventMap>(event: K, listener: Listener<QueryEventMap, K>): Unsubscribe;
     once<K extends keyof QueryEventMap>(event: K, listener: Listener<QueryEventMap, K>): Unsubscribe;
     registerNotifications(event: QueryEventCategory, channelID?: bigint | number, options?: CommandOptions): Promise<void>;
@@ -67,6 +68,7 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     get serverVersion(): string;
     get status(): ClientStatus;
     get transport(): QueryTransport | undefined;
+    unregisterNotifications(event?: QueryEventCategory, channelID?: bigint | number, options?: CommandOptions): Promise<void>;
     use(server: {
         readonly id: ServerID | number;
     } | {
