@@ -796,15 +796,16 @@ describe.skipIf(SKIP)("Integration — ServerQuery client", () => {
           (field(e, "changes") as { name?: string }).name === name,
       );
       cid = await createChannel(actor, { name, topic: "t1", isPermanent: true });
+      const target = cid;
       for (const e of await madeEvents) {
-        expect(field(e, "channelID")).toBe(cid);
+        expect(field(e, "channelID")).toBe(target);
         expect(Object.keys(field(e, "changes") as object)).toEqual(
           expect.arrayContaining(["name", "topic", "isPermanent", "order"]),
         );
       }
 
-      const edited = everyone("channelEdited", (e) => field(e, "channelID") === cid);
-      await editChannel(actor, cid, { topic: "t2" });
+      const edited = everyone("channelEdited", (e) => field(e, "channelID") === target);
+      await editChannel(actor, target, { topic: "t2" });
       for (const e of await edited) {
         expect(Object.keys(field(e, "changes") as object)).toEqual(["topic"]);
         expect(field(e, "reason")).toBe(Reason.ChannelEdit);
@@ -812,24 +813,24 @@ describe.skipIf(SKIP)("Integration — ServerQuery client", () => {
 
       const description = everyone(
         "channelDescriptionChanged",
-        (e) => field(e, "channelID") === cid,
+        (e) => field(e, "channelID") === target,
       );
-      await editChannel(actor, cid, { description: "text" });
+      await editChannel(actor, target, { description: "text" });
       await description;
 
-      const password = everyone("channelPasswordChanged", (e) => field(e, "channelID") === cid);
-      await editChannel(actor, cid, { password: "pw-ev" });
+      const password = everyone("channelPasswordChanged", (e) => field(e, "channelID") === target);
+      await editChannel(actor, target, { password: "pw-ev" });
       await password;
-      const cleared = everyone("channelPasswordChanged", (e) => field(e, "channelID") === cid);
-      await editChannel(actor, cid, { password: "" });
+      const cleared = everyone("channelPasswordChanged", (e) => field(e, "channelID") === target);
+      await editChannel(actor, target, { password: "" });
       await cleared;
 
-      const moved = everyone("channelMoved", (e) => field(e, "channelID") === cid);
-      await moveChannel(actor, cid, alpha, { order: 0n as ChannelID });
+      const moved = everyone("channelMoved", (e) => field(e, "channelID") === target);
+      await moveChannel(actor, target, alpha, { order: 0n as ChannelID });
       for (const e of await moved) expect(field(e, "parentID")).toBe(alpha);
 
-      const deleted = everyone("channelDeleted", (e) => field(e, "channelID") === cid);
-      await deleteChannel(actor, cid, { force: true });
+      const deleted = everyone("channelDeleted", (e) => field(e, "channelID") === target);
+      await deleteChannel(actor, target, { force: true });
       cid = undefined;
       await deleted;
 

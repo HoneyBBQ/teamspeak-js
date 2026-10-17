@@ -1129,10 +1129,21 @@ function seen<K extends keyof ServerEventMap>(
   });
 }
 
-/** Whether `name` arrives within `ms`; for the events that must not. */
-async function never(client: Client, name: keyof EventMap, ms = 1_500): Promise<boolean> {
+/**
+ * Whether no event of `name` that `match` accepts arrives within `ms`; for the
+ * events that must not. The filter keeps other suites' traffic, on the same
+ * server, from counting.
+ */
+async function never<K extends keyof EventMap>(
+  client: Client,
+  name: K,
+  match: (payload: EventMap[K]) => boolean,
+  ms = 1_500,
+): Promise<boolean> {
   let arrived = false;
-  const off = (client.on as (n: string, l: () => void) => () => void)(name, () => (arrived = true));
+  const off = client.on(name, ((payload: EventMap[K]) => {
+    if (match(payload)) arrived = true;
+  }) as never);
   await new Promise((resolve) => setTimeout(resolve, ms));
   off();
   return !arrived;
@@ -1390,11 +1401,48 @@ describe.skipIf(SKIP)("Integration — channel, server and plugin events", () =>
     }
   }, 30_000);
 
-  it("pluginCommand: who receives it for each target", async () => {
+  /**
+   * Put both clients in the default channel, where the channel-wide commands
+   * reach both; earlier tests may have left one elsewhere. Returns what puts
+   * them back.
+   */
+  async function together(): Promise<() => Promise<void>> {
+    const before = [subject, bystander()].map((client) => [client, client.channelID] as const);
+    for (const [client] of before) {
+      if (client.channelID !== alphaID) {
+        await moveClient(client, asClientID(client.clientID), alphaID);
+      }
+    }
+    return async () => {
+      for (const [client, channelID] of before) {
+        if (client.channelID !== channelID) {
+          await moveClient(client, asClientID(client.clientID), channelID).catch(() => {});
+        }
+      }
+    };
+  }
+
+  it("pluginCommand: who receives it for each target", async (ctx) => {
+    if (!HAS_ADMIN) ctx.skip("no query endpoint provisioned, so the default channel is not known");
+    const restore = await together();
+    try {
+      await pluginCommandTargets();
+    } finally {
+      await restore();
+    }
+  }, 30_000);
+
+  async function pluginCommandTargets(): Promise<void> {
     const c = asClientID(bystander().clientID);
     const name = `ts-js-plug-${Date.now()}`;
     const got = (client: Client, data: string) =>
-      nextEvent(client, "pluginCommand", (e) => e.name === name && e.data === data);
+      nextEvent(client, "pluginCommand", (e) => e.name === name && e.data === data).catch(
+        (error: unknown) => {
+          throw new Error(
+            `${client === subject ? "the sender" : "the other client"}, "${data}": ${String(error)}`,
+          );
+        },
+      );
 
     // The channel: both clients are in it, and the sender receives its own.
     const [byC, bySubject] = [got(bystander(), "to channel"), got(subject, "to channel")];
@@ -1413,7 +1461,7 @@ describe.skipIf(SKIP)("Integration — channel, server and plugin events", () =>
 
     // One client: that client only; the sender hears nothing.
     const direct = got(bystander(), "to one");
-    const senderHears = never(subject, "pluginCommand");
+    const senderHears = never(subject, "pluginCommand", (e) => e.name === name);
     await sendPluginCommand(subject, name, "to one", { clientID: c });
     expect((await direct).data).toBe("to one");
     expect(await senderHears).toBe(true);
@@ -1425,11 +1473,11 @@ describe.skipIf(SKIP)("Integration — channel, server and plugin events", () =>
     const odd = got(bystander(), "a b|c/d\\e");
     await sendPluginCommand(subject, name, "a b|c/d\\e", "channel");
     await odd;
-  }, 30_000);
+  }
 
   it("clientChatComposing: only the client it names is told", async () => {
     const typing = nextEvent(bystander(), "clientChatComposing", (e) => e.clientID === subjectID);
-    const subjectHears = never(subject, "clientChatComposing");
+    const subjectHears = never(subject, "clientChatComposing", (e) => e.clientID === subjectID);
     await sendChatComposing(subject, asClientID(bystander().clientID));
     expect(await typing).toEqual({ clientID: subjectID, uid: subject.uid });
     expect(await subjectHears).toBe(true);
