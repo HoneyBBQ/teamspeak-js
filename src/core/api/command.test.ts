@@ -1055,6 +1055,8 @@ describe("getClientConnectionInfo", () => {
     expect(info.ip).toBeUndefined();
     expect(info.port).toBeUndefined();
     expect(info.pingMs).toBe(0);
+  });
+});
 
 describe("plugin commands and the typing indicator", () => {
   it("addresses the channel, the server, or one client", async () => {

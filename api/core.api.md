@@ -290,14 +290,38 @@ export type ChannelChanges = {
 };
 
 // @public
+export interface ChannelCreatedEvent extends Invoked {
+    readonly changes: ChannelChanges;
+    readonly channelID: ChannelID;
+    readonly parentID: ChannelID;
+}
+
+// @public
 export interface ChannelCreateOptions extends ChannelSettings {
     readonly name: string;
     readonly parentID?: ChannelID | undefined;
 }
 
 // @public
+export interface ChannelDeletedEvent extends Invoked {
+    readonly channelID: ChannelID;
+}
+
+// @public
 export interface ChannelDeleteOptions extends CommandOptions {
     readonly force?: boolean | undefined;
+}
+
+// @public
+export interface ChannelDescriptionChangedEvent {
+    readonly channelID: ChannelID;
+}
+
+// @public
+export interface ChannelEditedEvent extends Invoked {
+    readonly changes: ChannelChanges;
+    readonly channelID: ChannelID;
+    readonly reason: number;
 }
 
 // @public
@@ -356,8 +380,21 @@ export interface ChannelMatch {
 }
 
 // @public
+export interface ChannelMovedEvent extends Invoked {
+    readonly channelID: ChannelID;
+    readonly order: ChannelID;
+    readonly parentID: ChannelID;
+    readonly reason: number;
+}
+
+// @public
 export interface ChannelMoveOptions extends CommandOptions {
     readonly order?: ChannelID | undefined;
+}
+
+// @public
+export interface ChannelPasswordChangedEvent {
+    readonly channelID: ChannelID;
 }
 
 // @public
@@ -385,9 +422,19 @@ export interface ChannelSettings {
 }
 
 // @public
+export interface ChannelSubscribedEvent {
+    readonly channelID: ChannelID;
+}
+
+// @public
 export type ChannelUID = string & {
     readonly __brand: "ChannelUID";
 };
+
+// @public
+export interface ChannelUnsubscribedEvent {
+    readonly channelID: ChannelID;
+}
 
 // @public
 export type ClientChanges = {
@@ -400,6 +447,12 @@ export interface ClientChannelGroupChangedEvent extends Invoked {
     readonly channelGroupInheritedChannelID: ChannelID;
     readonly channelID: ChannelID;
     readonly clientID: ClientID;
+}
+
+// @public
+export interface ClientChatComposingEvent {
+    readonly clientID: ClientID;
+    readonly uid: UID;
 }
 
 // @public
@@ -667,6 +720,9 @@ export interface ClientVersion {
     readonly sign: string;
     readonly version: string;
 }
+
+// @public
+export function closePrivateChat(client: CommandExecutor, clid: ClientID, options?: CommandOptions): Promise<void>;
 
 // Warning: (ae-forgotten-export) The symbol "codecValues" needs to be exported by the entry point index.d.ts
 //
@@ -2123,6 +2179,17 @@ const permissionTargetValues: {
 };
 
 // @public
+export interface PluginCommandEvent extends Invoked {
+    readonly data: string;
+    readonly name: string;
+}
+
+// @public
+export type PluginCommandTarget = "channel" | "server" | {
+    readonly clientID: ClientID;
+};
+
+// @public
 export function pokeClient(client: CommandExecutor, clid: ClientID, message: string, options?: CommandOptions): Promise<void>;
 
 // @public
@@ -2451,10 +2518,16 @@ export function resetPermissions(client: CommandExecutor, options?: CommandOptio
 export function sendChannelMessage(client: CommandExecutor, message: string, options?: CommandOptions): Promise<void>;
 
 // @public
+export function sendChatComposing(client: CommandExecutor, clid: ClientID, options?: CommandOptions): Promise<void>;
+
+// @public
 export function sendGlobalMessage(client: CommandExecutor, message: string, options?: CommandOptions): Promise<void>;
 
 // @public
 export function sendOfflineMessage(client: CommandExecutor, uid: UID, subject: string, message: string, options?: CommandOptions): Promise<void>;
+
+// @public
+export function sendPluginCommand(client: CommandExecutor, name: string, data: string, target: PluginCommandTarget, options?: CommandOptions): Promise<void>;
 
 // @public
 export function sendPrivateMessage(client: CommandExecutor, clid: ClientID, message: string, options?: CommandOptions): Promise<void>;
@@ -2494,6 +2567,11 @@ export interface ServerDeleteOptions extends CommandOptions {
 }
 
 // @public
+export interface ServerEditedEvent extends Invoked {
+    readonly changes: Readonly<Record<string, string>>;
+}
+
+// @public
 export class ServerError extends TeamspeakError {
     constructor(code: number, serverMessage: string, details?: {
         extraMessage?: string | undefined;
@@ -2508,10 +2586,17 @@ export class ServerError extends TeamspeakError {
 
 // @public
 export interface ServerEventMap {
+    channelCreated: ChannelCreatedEvent;
+    channelDeleted: ChannelDeletedEvent;
+    channelDescriptionChanged: ChannelDescriptionChangedEvent;
+    channelEdited: ChannelEditedEvent;
+    channelMoved: ChannelMovedEvent;
+    channelPasswordChanged: ChannelPasswordChangedEvent;
     clientEnter: ClientEnterEvent;
     clientLeave: ClientLeaveEvent;
     clientMoved: ClientMovedEvent;
     notification: NotificationEvent;
+    serverEdited: ServerEditedEvent;
     textMessage: TextMessageEvent;
 }
 
