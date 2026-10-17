@@ -50,8 +50,8 @@ one answer shape.
   decides, not the HTTP status.
 - A wrong key is 401 and carries a TeamSpeak code (5122), so it is a
   `ServerError`. Only an answer with no code at all is a transport error.
-- No key at all is served as a guest: `whoami` answers 200 and everything else
-  401 with code 5120.
+- No key at all is served as a guest (beta13 and later; see
+  [Guests](#guests)).
 - `login`, `use` and `quit` do not exist. `use` is answered by the transport,
   which changes the server the next requests address.
 - The api key the server printed at its first start is refused every `ft*`
@@ -238,6 +238,59 @@ What the table does not say:
   login; over WebQuery the server refuses it, and `servernotifyunregister`, with 5120.
 - **A deleted API key** can be the one a WebQuery connection uses: deleting the key a
   server printed at its first start ends that access.
+
+### Guests
+
+TS6 beta13 accepts a guest ServerQuery login without any setup, protected by the
+Guest Server Query group's permissions. Measured on 6.0.0-beta13.1.
+
+- **SSH.** The user `guest` is accepted with no password, with an empty
+  password, with any password, and by keyboard-interactive. The session starts
+  with no server selected, like any other; after `use 1`, `version` and `whoami`
+  answer, and `serverinfo`, `serverlist`, `clientlist` and `instanceinfo` answer
+  2568 with `failed_permid` 26, 3, 30 and 2. `servernotifyregister` for
+  `textprivate` answers 2568 (`failed_permid=48`), so a guest that is not given
+  that permission connects with `events: false`. A guest may `login` as another
+  account over the session. The switch is `--query-ssh-allow-guest` (default
+  1. or `TSSERVER_QUERY_SSH_ALLOW_GUEST`.
+- **WebQuery.** A request with no `x-api-key` header, with an empty one, or with
+  an empty `api-key` parameter runs in the guest scope: `version`, `whoami`,
+  `channellist` and `clientlist` answer, a permission-gated command such as
+  `hostinfo` answers 2568 with `failed_permission` (HTTP 200), and a command
+  outside the scope (`serverinfo`, `apikeylist`, `servergrouplist`,
+  `channelfind`, `clientfind`) answers HTTP 401 with code 5120 and
+  `extra_message` "command not allowed for guest access". A wrong key is not a
+  guest: HTTP 401, code 5122. The switch is `--query-http-allow-guest`
+  (default 1) or `TSSERVER_QUERY_HTTP_ALLOW_GUEST`.
+- **Flood limit.** The query flood limit applies to a guest's address like any
+  other: a guest that sends several commands a second is answered 524 ("client
+  is flooding") until it waits.
+
+The client connects as a guest only when told to, with `guest: true` on the
+`ssh` and `web` transports; a missing `username`, `password` or `apiKey` is an
+error and never a guest.
+
+### Documented TS6 commands that this server answers 256
+
+The command reference lists these, and `help` lists `authenticationtoken` and
+`chatlogintoken`, but beta13.1 answers `error id=256 msg=command not found` to
+each of them over SSH as `serveradmin` (and, measured earlier, over voice and
+WebQuery). The documented parameters change nothing. No function is typed for
+them.
+
+| Command                      | Tried                                                                                                    | Answer |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------- | ------ |
+| `authenticationtoken`        | `authenticationtoken duration=60`                                                                        | 256    |
+| `chatlogintoken`             | `chatlogintoken`                                                                                         | 256    |
+| `homebaseset`                | `homebaseset`, `homebaseset cldbid=1`                                                                    | 256    |
+| `homebaseisset`              | `homebaseisset`, `homebaseisset cldbid=1`                                                                | 256    |
+| `homebasedel`                | `homebasedel`, `homebasedel cldbid=1`                                                                    | 256    |
+| `homebaselist`               | `homebaselist`                                                                                           | 256    |
+| `clientdblist -homebaseonly` | accepted without error, but the filter is not applied: the whole list comes back, with no homebase field | 0      |
+
+The permissions the documentation names for them, such as
+`b_virtualserver_homebase_set`, do not exist on this server: `permget` and
+`permidgetbyname` answer 2562.
 
 ### Counts
 
