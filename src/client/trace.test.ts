@@ -5,7 +5,13 @@ import { unknownServerCapabilities } from "./capabilities.js";
 import { generateIdentitySync } from "./crypto/identity.js";
 import { ConnectPhase, type ClientTrace } from "./trace.js";
 import { ConnectionTimeoutError, HandshakeError, InvalidAddressError } from "./errors.js";
-import { NotConnectedError, asChannelGroupID, asChannelID } from "@honeybbq/teamspeak";
+import {
+  NotConnectedError,
+  asChannelGroupID,
+  asChannelID,
+  asClientID,
+  getClientConnectionInfo,
+} from "@honeybbq/teamspeak";
 import { parseCommand } from "../core/internal.js";
 import { GroupWhisperScope, GroupWhisperType } from "./types.js";
 import {
@@ -1215,6 +1221,35 @@ describe("the connection info request", () => {
     expect(Number(answer["connection_packets_received_control"])).toBeGreaterThan(0);
     expect(Number(answer["connection_bytes_sent_control"])).toBeGreaterThan(0);
     expect(answer).not.toHaveProperty("connection_ping");
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  // Recorded on TeamSpeak 6 with several commands in flight: the error of the
+  // command arrived before its row, and unprompted rows for the same client
+  // came in between. Each call must still get its own client's row.
+  it("answers getconnectioninfo whether the row or the error comes first", async () => {
+    const lines: string[] = [];
+    onSentLine((_, text) => lines.push(text));
+    const { client, sockets } = makeClient();
+    const connecting = client.connect();
+    await handshake(client, sockets);
+    await connecting;
+    const rcOf = (n: number): string =>
+      /return_code=(\S+)/.exec(lines.filter((l) => l.startsWith("getconnectioninfo"))[n]!)![1]!;
+    const row = (clid: number): string =>
+      `notifyconnectioninfo clid=${clid} connection_ping=${clid}.0000`;
+
+    const first = getClientConnectionInfo(client, asClientID(192));
+    const second = getClientConnectionInfo(client, asClientID(193));
+    await until(() => lines.filter((l) => l.startsWith("getconnectioninfo")).length === 2);
+    deliverSession(client, sockets[0]!, `error id=0 msg=ok return_code=${rcOf(0)}`);
+    deliverSession(client, sockets[0]!, row(192));
+    deliverSession(client, sockets[0]!, row(193));
+    deliverSession(client, sockets[0]!, `error id=0 msg=ok return_code=${rcOf(1)}`);
+
+    expect((await first).id).toBe(192);
+    expect((await second).id).toBe(193);
+    onSentLine(undefined);
     await client.disconnect({ signal: AbortSignal.timeout(1) });
   });
 });

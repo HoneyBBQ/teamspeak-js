@@ -61,13 +61,65 @@ describe("CommandTracker", () => {
     expect((await done).data).toEqual([{ clid: "7", client_nickname: "Seven" }]);
   });
 
-  it("answers with nothing when only other clients' rows arrived", async () => {
-    const t = ready();
-    const [rc, done] = t.register(responseSpec("getconnectioninfo"), undefined, "7");
-    t.buffer({ clid: "3", connection_ping: "1" }, "notifyconnectioninfo");
-    t.resolve(rc, null);
+  describe("getconnectioninfo", () => {
+    const spec = responseSpec("getconnectioninfo");
+    const row = (clid: string) => ({ clid, connection_ping: "1" });
 
-    expect((await done).data).toEqual([]);
+    // The recorded order on TeamSpeak 3, and on TeamSpeak 6 with one command
+    // in flight: the row, then the error.
+    it("takes the row that comes before the error", async () => {
+      const t = ready();
+      const [rc, done] = t.register(spec, "8");
+      t.offerCorrelated("notifyconnectioninfo", row("8"));
+      t.resolve(rc, null);
+      expect((await done).data).toEqual([row("8")]);
+    });
+
+    // Recorded on TeamSpeak 6 with four in flight: the error first, the row
+    // after. Position-based attribution answered NoData here.
+    it("waits for the row when the error comes first", async () => {
+      const t = ready();
+      const [rc, done] = t.register(spec, "8");
+      let settled = false;
+      void done.then(() => (settled = true));
+      t.resolve(rc, null);
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      t.offerCorrelated("notifyconnectioninfo", row("8"));
+      expect((await done).data).toEqual([row("8")]);
+    });
+
+    it("ignores rows for other clients, wherever they fall", async () => {
+      const t = ready();
+      const [rc, done] = t.register(spec, "8");
+      t.offerCorrelated("notifyconnectioninfo", row("3"));
+      t.resolve(rc, null);
+      t.offerCorrelated("notifyconnectioninfo", row("9"));
+      t.offerCorrelated("notifyconnectioninfo", row("8"));
+      expect((await done).data).toEqual([row("8")]);
+    });
+
+    // error 33, row 192, row 193, error 34, ... as recorded: each command gets
+    // its own client's row, whatever the interleaving.
+    it("keeps two in-flight commands for different clients apart", async () => {
+      const t = ready();
+      const [b, bDone] = t.register(spec, "192");
+      const [c, cDone] = t.register(spec, "193");
+      t.resolve(b, null);
+      t.offerCorrelated("notifyconnectioninfo", row("192"));
+      t.offerCorrelated("notifyconnectioninfo", row("193"));
+      t.resolve(c, null);
+      expect((await bDone).data).toEqual([row("192")]);
+      expect((await cDone).data).toEqual([row("193")]);
+    });
+
+    it("fails on the error without waiting for a row", async () => {
+      const t = ready();
+      const [rc, done] = t.register(spec, "8");
+      const err = new ServerError(512, "invalid clientID");
+      t.resolve(rc, err);
+      expect((await done).err).toBe(err);
+    });
   });
 
   it("takes a row without the echoed key, and every row when the request had none", async () => {

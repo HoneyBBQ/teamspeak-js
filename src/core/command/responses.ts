@@ -46,7 +46,10 @@ export interface ResponseSpec {
    */
   readonly echoKey?: string;
   /**
-   * Notifications that answer after the `error`, matched on a request field.
+   * Notifications that answer a command wherever they fall against its
+   * `error`, matched on a request field. A row that arrived before the `error`
+   * counts; if none has, the command waits for one, until its timeout or
+   * signal gives up.
    *
    * File transfer negotiation reports its key once the command has already
    * succeeded, echoing the `clientftfid` the request carried; that echo is the
@@ -106,7 +109,16 @@ export const RESPONSES: Readonly<Record<string, ResponseSpec>> = {
   clientsetserverquerylogin: inline("notifyclientserverqueryloginpassword"),
   clientpermlist: inline("notifyclientpermlist"),
   complainlist: inline("notifycomplainlist"),
-  getconnectioninfo: echoing("notifyconnectioninfo", "clid"),
+  // Matched on the echoed `clid`, wherever the row falls against the `error`:
+  // TeamSpeak 6 sent `error id=0` ahead of the `notifyconnectioninfo` row in
+  // about 3% of the commands (6 of 240) when four were in flight at once, never
+  // with one at a time (over 800 sequential commands, both servers); TeamSpeak
+  // 3 never did. Rows for the same client also arrive unprompted, when the
+  // target answers the server's `notifyconnectioninforequest`, so a row's
+  // position says nothing about which command it answers; the echo does.
+  getconnectioninfo: {
+    correlated: { notifications: ["notifyconnectioninfo"], key: "clid" },
+  },
   ftgetfileinfo: inline("notifyfileinfo"),
   ftgetfilelist: inline("notifyfilelist"),
   ftinitdownload: fileTransfer("notifystartdownload"),
