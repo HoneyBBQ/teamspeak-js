@@ -344,6 +344,10 @@ function readLoss(row: Record<string, string>, way: "server2client" | "client2se
  * {@link getConnectionInfo}, which is about the virtual server. `ip` and `port` are
  * present on both servers for the account measured; whether a permission
  * governs them is unmeasured.
+ *
+ * On the voice protocol the row that names the client is the answer, whether
+ * it comes before or after the command's `error`; if it has not come by then,
+ * the call waits for it until `options` give up.
  */
 export async function getClientConnectionInfo(
   client: CommandExecutor,

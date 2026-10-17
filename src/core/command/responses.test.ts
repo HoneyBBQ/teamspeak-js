@@ -17,13 +17,23 @@ describe("responseSpec", () => {
     ["apikeyadd", "notifyapikeyadd"],
     ["apikeylist", "notifyapikeylist"],
     ["permget", "notifypermget"],
-    ["getconnectioninfo", "notifyconnectioninfo"],
     ["clientgetvariables", "notifyclientupdated"],
     ["servergetvariables", "notifyserverupdated"],
     ["clientsetserverquerylogin", "notifyclientserverqueryloginpassword"],
   ])("answers %s with %s", (command, notification) => {
     expect(responseSpec(command)?.notifications).toEqual([notification]);
     expect(responseSpec(command)?.correlated).toBeUndefined();
+  });
+});
+
+describe("getconnectioninfo", () => {
+  // The row is matched on the client it names, wherever it falls against the
+  // command's error.
+  it("is answered by notifyconnectioninfo echoing the clid", () => {
+    expect(responseSpec("getconnectioninfo")?.correlated).toEqual({
+      notifications: ["notifyconnectioninfo"],
+      key: "clid",
+    });
   });
 });
 
@@ -48,7 +58,7 @@ describe("RESPONSES", () => {
   // key the answer echoes, is told from the unprompted row by that key.
   it("names the echoed key of the answers that also arrive unprompted", () => {
     expect(responseSpec("clientgetvariables")?.echoKey).toBe("clid");
-    expect(responseSpec("getconnectioninfo")?.echoKey).toBe("clid");
+    expect(responseSpec("getconnectioninfo")?.correlated?.key).toBe("clid");
     expect(responseSpec("channelgetdescription")?.echoKey).toBe("cid");
   });
 });
