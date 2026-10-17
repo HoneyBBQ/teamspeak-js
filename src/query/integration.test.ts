@@ -109,6 +109,7 @@ const SERVER_PASSWORD = process.env["TEAMSPEAK_SERVER_PASSWORD"] ?? "";
 const PASSWORD_CHANNEL = process.env["TEAMSPEAK_PASSWORD_CHANNEL"] ?? "";
 const PASSWORD_CHANNEL_PASSWORD = process.env["TEAMSPEAK_PASSWORD_CHANNEL_PASSWORD"] ?? "";
 
+const SERVER_FAMILY = process.env["TEAMSPEAK_QUERY_FAMILY"] ?? "";
 const QUERY_KIND = process.env["TEAMSPEAK_QUERY_KIND"];
 const QUERY_HOST = process.env["TEAMSPEAK_QUERY_HOST"] ?? "";
 const QUERY_PORT = Number(process.env["TEAMSPEAK_QUERY_PORT"] ?? "10011");
@@ -137,8 +138,8 @@ type Kind = "tcp" | "web" | "ssh";
 
 /** The transports this run can use, from what the fixture provisioned. */
 const KINDS: readonly Kind[] = [
-  ...(QUERY_KIND === "tcp" ? (["tcp"] as const) : []),
-  ...(QUERY_KIND === "web" ? (["web"] as const) : []),
+  ...(QUERY_KIND === "tcp" || QUERY_HOST !== "" ? (["tcp"] as const) : []),
+  ...(QUERY_KIND === "web" || (QUERY_URL !== "" && QUERY_API_KEY !== "") ? (["web"] as const) : []),
   ...(SSH_PORT > 0 ? (["ssh"] as const) : []),
 ];
 
@@ -305,7 +306,9 @@ describe.skipIf(SKIP)("Integration — ServerQuery client", () => {
     for (const [kind, client] of clients) {
       expect(client.status, kind).toBe(ClientStatus.Connected);
       // The server says which generation it is, so this is read, not assumed.
+      // The fixture read it too, from the version, without this client's help.
       expect(["ts3", "ts6"], kind).toContain(client.serverFamily);
+      if (SERVER_FAMILY !== "") expect(client.serverFamily, kind).toBe(SERVER_FAMILY);
 
       const version = await getVersion(client);
       console.log(`${kind}: version=${version.version} platform=${version.platform}`);
@@ -361,7 +364,11 @@ describe.skipIf(SKIP)("Integration — ServerQuery client", () => {
 
       const moved = new Promise<ClientMovedEvent>((resolve) =>
         client.on("clientMoved", (event) => {
-          if (event.clientID === joiner.clientID) resolve(event);
+          // The move out of the way above can still be on its way: a second
+          // query client sees it after this listener is attached.
+          if (event.clientID === joiner.clientID && event.targetChannelID === me.channelID) {
+            resolve(event);
+          }
         }),
       );
       await moveClient(joiner, joiner.clientID, me.channelID);
