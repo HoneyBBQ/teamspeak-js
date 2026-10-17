@@ -127,7 +127,11 @@ pnpm test:integration
 ```
 
 The fixture needs `python3`. Without its environment variables the live tests
-skip. For a TeamSpeak 6 server (`teamspeaksystems/teamspeak6-server`), which has
+skip. TeamSpeak 3 serves SSH and WebQuery too, once the container is started with
+`-e TS3SERVER_QUERY_PROTOCOLS=raw,ssh,http -e TS3SERVER_SERVERADMIN_PASSWORD=...`
+and `-p 10022:10022 -p 10080:10080`: give the fixture `TS3_QUERY_HTTP=127.0.0.1:10080`,
+`TS3_QUERY_SSH_PORT=10022`, `TS3_ADMIN_PW` and `TS3_QUERY_SSH_PASSWORD` (the password
+you set) as well as `TS3_QUERY_HOST`, and the suite runs over all three. For a TeamSpeak 6 server (`teamspeaksystems/teamspeak6-server`), which has
 no raw ServerQuery port, see `.github/workflows/ci.yml` for the environment it
 needs, and set `TS3_QUERY_HTTP` instead of `TS3_QUERY_HOST` when running the
 fixture. `pnpm test:integration:ts3`, `:ts6` and `:both` run the suite against

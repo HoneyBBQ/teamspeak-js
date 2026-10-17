@@ -4,7 +4,8 @@
  * ServerQuery is the administrative interface to a TeamSpeak server: the voice
  * protocol's commands, plus the ones only an administrator can run. This entry
  * runs the same typed commands as `@honeybbq/teamspeak`,
- * over raw TCP (10011), SSH (10022) or TeamSpeak 6's HTTP WebQuery (10080).
+ * over raw TCP (10011, TeamSpeak 3), SSH (10022) or WebQuery, the HTTP interface
+ * of TeamSpeak 3 (3.12 and later) and TeamSpeak 6 (10080).
  *
  * Only what belongs to ServerQuery is exported here. The typed commands, ids
  * and errors every client shares come from `@honeybbq/teamspeak`.

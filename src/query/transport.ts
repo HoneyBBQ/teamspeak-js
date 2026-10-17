@@ -2,9 +2,10 @@
  * The connection a ServerQuery client talks over.
  *
  * ServerQuery is a line protocol on three transports: raw TCP (10011), SSH
- * (10022) and, on TeamSpeak 6, an HTTP WebQuery (10080) that frames each
- * command as a request. The client depends on this interface only, so each
- * transport is a separate piece, and a test or a proxy can supply its own.
+ * (10022) and an HTTP WebQuery (10080) that frames each command as a request.
+ * WebQuery and SSH are served by TeamSpeak 3 (3.12 and 3.3 or later) as well as
+ * TeamSpeak 6. The client depends on this interface only, so each transport is
+ * a separate piece, and a test or a proxy can supply its own.
  */
 export interface QueryTransport {
   /**
