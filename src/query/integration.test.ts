@@ -510,6 +510,51 @@ describe.skipIf(SKIP)("Integration — ServerQuery client", () => {
     30_000,
   );
 
+  // The SSH transport writes an empty line to release a reply the server holds
+  // back. That rests on the server taking an empty line and sending nothing
+  // for it; this pins that, and that the session carries on normally after.
+  it.skipIf(!KINDS.includes("ssh"))(
+    "answers an empty line over SSH with nothing, and the next command normally",
+    async () => {
+      const transport = await connectSsh({
+        host: SSH_HOST,
+        port: SSH_PORT,
+        username: SSH_USER,
+        password: SSH_PASSWORD,
+        knownHosts: sshKnownHosts,
+        signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS),
+      });
+      const lines: string[] = [];
+      transport.onLine = (line) => lines.push(line);
+      const until = async (done: () => boolean): Promise<void> => {
+        const limit = Date.now() + 10_000;
+        while (!done()) {
+          if (Date.now() > limit) throw new Error(`no answer; saw ${JSON.stringify(lines)}`);
+          await new Promise((r) => setTimeout(r, 10));
+        }
+      };
+      try {
+        await transport.send("use 1");
+        await until(() => lines.some((l) => l.startsWith("error ")));
+        lines.length = 0;
+
+        await transport.send("");
+        await new Promise((r) => setTimeout(r, 1_000));
+        expect(lines).toEqual([]);
+
+        await transport.send("version");
+        await until(() => lines.some((l) => l.startsWith("error ")));
+        console.log("ssh empty line: lines after the next command", lines);
+        expect(lines).toHaveLength(2);
+        expect(lines[0]).toContain("version=");
+        expect(lines[1]).toMatch(/^error id=0 msg=ok/);
+      } finally {
+        await transport.close();
+      }
+    },
+    30_000,
+  );
+
   // The point of the check: a server that is not the one recorded is refused
   // before the login goes anywhere, whether it presents another key or the
   // address is not the recorded one at all.

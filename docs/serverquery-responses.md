@@ -39,6 +39,12 @@ Over SSH, TS6 answers everything TS3 does over raw TCP, with one exception:
 container restarts. It did so every time, three of three. TS3 answers the same
 command with a status row.
 
+Over SSH, TS6 may also hold the last line of a reply, usually
+`error id=0 msg=ok`, until the client writes again (about one command in a
+thousand under load, mostly with notifications registered). An empty line
+releases it and gets no answer of its own, so the SSH transport writes one when
+a command has waited 2 seconds, and once a second after.
+
 **WebQuery** frames each command as `POST /<server>/<command>` with the
 parameters as JSON, and answers JSON: `body` is the rows and `status` is the
 `error` line (`code`, `message`, and sometimes `extra_message`). The transport

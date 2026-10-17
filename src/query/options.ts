@@ -29,7 +29,11 @@ export type QueryTransportOptions =
       readonly connect?: TcpConnector | undefined;
     }
   | ({
-      /** A ServerQuery over SSH. */
+      /**
+       * A ServerQuery over SSH. On TeamSpeak 6 a server may hold back the end
+       * of a reply until the client writes again; this transport handles that
+       * itself, by writing an empty line while a command waits.
+       */
       readonly kind: "ssh";
     } & SshConnectOptions)
   | ({

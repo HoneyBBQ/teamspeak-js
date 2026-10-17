@@ -78,6 +78,14 @@ export interface QueryEventMap extends ServerEventMap, SessionEventMap {}
 /** How long a command waits for its answer unless told otherwise. */
 const DEFAULT_COMMAND_TIMEOUT_MS = 10_000;
 
+/**
+ * Over SSH, how long a command waits for its answer before the client writes an
+ * empty line to release a reply the server may be holding, and how often it
+ * writes one after that. See `#execNow`.
+ */
+const SSH_NUDGE_AFTER_MS = 2_000;
+const SSH_NUDGE_EVERY_MS = 1_000;
+
 /** How long each reconnection attempt may take. */
 const RECONNECT_ATTEMPT_TIMEOUT_MS = 30_000;
 
@@ -821,6 +829,8 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     if (this.#closed || this.#transport === null) throw new NotConnectedError();
 
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let nudger: ReturnType<typeof setTimeout> | undefined;
+    let nudgerStopped = false;
     let onAbort: (() => void) | undefined;
     const answered = new Promise<Array<Record<string, string>>>((resolve, reject) => {
       this.#pending = { command: parseCommand(line)?.name ?? "", rows: [], resolve, reject };
@@ -837,8 +847,25 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     answered.catch(() => {});
     const sending = { failed: false };
     let abandonedByUs = false;
-    const send = this.#transport.send(line).then(
-      () => {},
+    const transport = this.#transport;
+    const nudges = this.#options.transport.kind === "ssh";
+    const send = transport.send(line).then(
+      () => {
+        // On TeamSpeak 6 over SSH the server may hold back the last line of a
+        // reply, usually `error id=0 msg=ok`, until the client writes again;
+        // an empty line releases it and gets no answer of its own. This was
+        // measured on TeamSpeak 6 (about one command in a thousand under load,
+        // mostly with notifications registered), and only on SSH: raw TCP and
+        // WebQuery do not show it. So once the command has waited 2 seconds,
+        // and every second after, an empty line is written, until its answer
+        // arrives or it ends by timeout, cancel or close (`finally` below).
+        if (!nudges || nudgerStopped) return;
+        const nudge = (): void => {
+          nudger = setTimeout(nudge, SSH_NUDGE_EVERY_MS);
+          transport.send("").catch(() => {});
+        };
+        nudger = setTimeout(nudge, SSH_NUDGE_AFTER_MS);
+      },
       (error: unknown) => {
         // A send that fails after the command gave up will not be answered.
         if (abandonedByUs) this.#abandoned--;
@@ -851,6 +878,8 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
       return await answered;
     } finally {
       clearTimeout(timer);
+      nudgerStopped = true;
+      clearTimeout(nudger);
       if (onAbort) signal?.removeEventListener("abort", onAbort);
       if (this.#pending !== null) {
         this.#pending = null;
