@@ -141,28 +141,30 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     expect(sharedClient.clientID).toBeGreaterThan(0);
   });
 
-  it("reports the handshake failure and disconnects when the password is rejected", async () => {
-    // Opt-in: needs a server that actually has a password set. The rejected
-    // handshake still counts toward TS3's antiflood budget (about three rapid
-    // connects per IP), so with it enabled the suite needs four: raise
-    // virtualserver_antiflood_points_needed_ip_block on the test server or
-    // later tests are banned with id=3329.
-    if (!SERVER_HAS_PASSWORD) return;
+  // Opt-in: needs a server that actually has a password set, which the fixture
+  // provisions. The rejected handshake still counts toward TS3's antiflood
+  // budget (about three rapid connects per IP), so with it enabled the suite
+  // needs four: the fixture raises virtualserver_antiflood_points_needed_ip_block,
+  // without which later tests are banned with id=3329.
+  it.skipIf(!SERVER_HAS_PASSWORD)(
+    "reports the handshake failure and disconnects when the password is rejected",
+    async () => {
+      const rejected = new Client(generateIdentitySync(8), ADDR!, "ts-js-bad-password", {
+        serverPassword: "definitely-not-the-password",
+      });
+      const disconnected = new Promise<Error | undefined>((resolve) =>
+        rejected.on("disconnected", (e) => resolve(e.error)),
+      );
 
-    const rejected = new Client(generateIdentitySync(8), ADDR!, "ts-js-bad-password", {
-      serverPassword: "definitely-not-the-password",
-    });
-    const disconnected = new Promise<Error | undefined>((resolve) =>
-      rejected.on("disconnected", (e) => resolve(e.error)),
-    );
-
-    // The cause must be the server's rejection, not the caller's own timeout.
-    await expect(rejected.connect({ signal: AbortSignal.timeout(8_000) })).rejects.toMatchObject({
-      code: ErrorCode.ServerInvalidPassword,
-    });
-    expect(rejected.status).toBe(ClientStatus.Disconnected);
-    await expect(disconnected).resolves.toBeInstanceOf(Error);
-  }, 20_000);
+      // The cause must be the server's rejection, not the caller's own timeout.
+      await expect(rejected.connect({ signal: AbortSignal.timeout(8_000) })).rejects.toMatchObject({
+        code: ErrorCode.ServerInvalidPassword,
+      });
+      expect(rejected.status).toBe(ClientStatus.Disconnected);
+      await expect(disconnected).resolves.toBeInstanceOf(Error);
+    },
+    20_000,
+  );
 
   // The server acknowledges clientek under the public dummy key although
   // clientek completes crypto init, so that one acknowledgement must still be
@@ -243,7 +245,9 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     // the server's own rows into the response: duplicate cids plus a phantom
     // cid=0, every time, while the same call a second later was correct.
     const identity = generateIdentitySync(8);
-    const fresh = new Client(identity, ADDR!, "ts-js-welcome", {});
+    const fresh = new Client(identity, ADDR!, "ts-js-welcome", {
+      serverPassword: SERVER_PASSWORD,
+    });
     await connectWithRetries(fresh);
 
     const immediate = await listChannels(fresh);
@@ -306,20 +310,22 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     expect(here?.totalFamilyClients).toBeGreaterThanOrEqual(here?.totalClients ?? 1);
   }, 15_000);
 
-  it("joins the configured default channel when provided", async () => {
-    if (DEFAULT_CHANNEL === "") return;
+  it.skipIf(DEFAULT_CHANNEL === "")(
+    "joins the configured default channel",
+    async () => {
+      const [channels, clients] = await Promise.all([
+        listChannels(sharedClient),
+        listClients(sharedClient),
+      ]);
 
-    const [channels, clients] = await Promise.all([
-      listChannels(sharedClient),
-      listClients(sharedClient),
-    ]);
+      const self = clients.find((client) => client.id === sharedClient.clientID);
+      const currentChannel = channels.find((channel) => channel.id === self?.channelID);
 
-    const self = clients.find((client) => client.id === sharedClient.clientID);
-    const currentChannel = channels.find((channel) => channel.id === self?.channelID);
-
-    expect(self).toBeDefined();
-    expect(currentChannel?.name).toBe(DEFAULT_CHANNEL);
-  }, 15_000);
+      expect(self).toBeDefined();
+      expect(currentChannel?.name).toBe(DEFAULT_CHANNEL);
+    },
+    15_000,
+  );
 
   it("getChannelInfo returns the channel that was asked for", async () => {
     // channelinfo answers with pid and the settings but no cid — the channel is
@@ -536,20 +542,22 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     expect(info["client_platform"]).toBe(Windows_3_6_3_1701166057.platform);
   }, 30_000);
 
-  it("clientMove — joins a password-protected channel", async () => {
-    // Opt-in: needs a channel whose password the bot does not have permission
-    // to bypass. Without the base64(sha1(pw)) encoding the server answers 781.
-    if (PASSWORD_CHANNEL === "" || PASSWORD_CHANNEL_PASSWORD === "") return;
+  // Opt-in: needs a channel whose password the bot does not have permission
+  // to bypass. Without the base64(sha1(pw)) encoding the server answers 781.
+  it.skipIf(PASSWORD_CHANNEL === "" || PASSWORD_CHANNEL_PASSWORD === "")(
+    "clientMove — joins a password-protected channel",
+    async () => {
+      const channels = await listChannels(sharedClient);
 
-    const channels = await listChannels(sharedClient);
+      const target = channels.find((c) => c.name === PASSWORD_CHANNEL);
+      expect(target).toBeDefined();
 
-    const target = channels.find((c) => c.name === PASSWORD_CHANNEL);
-    expect(target).toBeDefined();
-
-    await moveClient(sharedClient, sharedClient.clientID, target!.id, {
-      password: PASSWORD_CHANNEL_PASSWORD,
-    });
-  }, 20_000);
+      await moveClient(sharedClient, sharedClient.clientID, target!.id, {
+        password: PASSWORD_CHANNEL_PASSWORD,
+      });
+    },
+    20_000,
+  );
 
   it("reconnects after a dropped connection", async () => {
     // The socket is dropped underneath the client, which is what a network
@@ -561,6 +569,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     // trying rather than give up on the first refusal.
     let socket: Socket | undefined;
     const recovering = new Client(generateIdentitySync(8), ADDR!, "ts-js-reconnect", {
+      serverPassword: SERVER_PASSWORD,
       defaultChannel: DEFAULT_CHANNEL,
       reconnect: { backoff: { initialDelayMs: 500, maxDelayMs: 4_000 } },
       socketFactory: (family) => {
@@ -603,6 +612,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     // A deliberate disconnect means the caller is done. Retrying would keep a
     // process alive that asked to stop.
     const client = new Client(generateIdentitySync(8), ADDR!, "ts-js-noreconnect", {
+      serverPassword: SERVER_PASSWORD,
       defaultChannel: DEFAULT_CHANNEL,
       reconnect: { backoff: { initialDelayMs: 200 } },
     });

@@ -8,11 +8,11 @@
 #   source "${TS3_FIXTURE_ENV:-${TMPDIR:-/tmp}/ts3-fixture.env}"
 #   pnpm test:integration
 #
-# Creates the channels the tests need (one password-protected), grants the
-# default server group the permissions they exercise, relaxes anti-flood so a
-# handful of rapid connections from one IP are not banned, and writes an env
-# file with the matching environment variables. The file goes to
-# $TS3_FIXTURE_ENV, by default ts3-fixture.env under $TMPDIR (or /tmp), never
+# Creates the channels the tests need (one password-protected), puts a password
+# on the server itself, grants the default server group the permissions they
+# exercise, relaxes anti-flood so a handful of rapid connections from one IP are
+# not banned, and writes an env file with the matching environment variables.
+# The file goes to $TS3_FIXTURE_ENV, by default ts3-fixture.env under $TMPDIR (or /tmp), never
 # into the working tree; the last line printed is the path to source.
 #
 # Every command is checked. The fixture used to print "fixture ready" even when
@@ -36,6 +36,11 @@ rm -f "$ENV_FILE"
 PASSWORD_CHANNEL="${TS3_PASSWORD_CHANNEL:-Secret}"
 PASSWORD_CHANNEL_PASSWORD="${TS3_PASSWORD_CHANNEL_PASSWORD:-hunter2}"
 DEFAULT_CHANNEL="${TS3_DEFAULT_CHANNEL:-Alpha}"
+# The server's own password. Every voice client then connects with it, so each
+# connect exercises the password handshake, and a client that sends none or the
+# wrong one is the rejection the suite checks for. ServerQuery logins do not
+# use it. No spaces or other characters a query command would have to escape.
+SERVER_PASSWORD="${TS3_SERVER_PASSWORD:-fixture-server-password}"
 
 # Which container holds the credentials.
 #
@@ -314,7 +319,7 @@ create_missing "$PASSWORD_CHANNEL" "channel_password=$PASSWORD_CHANNEL_PASSWORD"
 # flood relaxed above: this one rate-limits the voice clients the tests connect
 # as, that one rate-limits this script.
 run_commands <<COMMANDS
-serveredit virtualserver_antiflood_points_needed_command_block=65000 virtualserver_antiflood_points_needed_ip_block=65000 virtualserver_antiflood_points_tick_reduce=65000
+serveredit virtualserver_antiflood_points_needed_command_block=65000 virtualserver_antiflood_points_needed_ip_block=65000 virtualserver_antiflood_points_tick_reduce=65000 virtualserver_password=$SERVER_PASSWORD
 servergroupaddperm sgid=$DEFAULT_GROUP permsid=b_virtualserver_channel_list permvalue=1 permnegated=0 permskip=0
 servergroupaddperm sgid=$DEFAULT_GROUP permsid=b_virtualserver_client_list permvalue=1 permnegated=0 permskip=0
 servergroupaddperm sgid=$DEFAULT_GROUP permsid=b_virtualserver_info_view permvalue=1 permnegated=0 permskip=0
@@ -341,6 +346,14 @@ for name in "$DEFAULT_CHANNEL" "$PASSWORD_CHANNEL"; do
     exit 1
   fi
 done
+
+run_commands <<'PROBE'
+serverinfo
+PROBE
+if ! printf '%s' "$command_output" | grep -q 'virtualserver_flag_password=1'; then
+  echo "the server does not report a password after provisioning" >&2
+  exit 1
+fi
 
 # The voice port is configurable because a second server on the same host needs
 # a different one; CI maps the first to 9987 either way.
@@ -378,6 +391,8 @@ fi
 cat > "$ENV_FILE" <<ENVFILE
 # Integration suite environment from scripts/ts3-fixture.sh. Source it before running the suite.
 export TEAMSPEAK_ADDR=127.0.0.1:$VOICE_PORT
+export TEAMSPEAK_SERVER_PASSWORD=$SERVER_PASSWORD
+export TEAMSPEAK_SERVER_HAS_PASSWORD=1
 export TEAMSPEAK_DEFAULT_CHANNEL=$DEFAULT_CHANNEL
 export TEAMSPEAK_PASSWORD_CHANNEL=$PASSWORD_CHANNEL
 export TEAMSPEAK_PASSWORD_CHANNEL_PASSWORD=$PASSWORD_CHANNEL_PASSWORD

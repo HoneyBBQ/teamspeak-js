@@ -58,6 +58,7 @@ import type {
 
 const VOICE_ADDR = process.env["TEAMSPEAK_ADDR"];
 const DEFAULT_CHANNEL = process.env["TEAMSPEAK_DEFAULT_CHANNEL"] ?? "";
+const SERVER_PASSWORD = process.env["TEAMSPEAK_SERVER_PASSWORD"] ?? "";
 const PASSWORD_CHANNEL = process.env["TEAMSPEAK_PASSWORD_CHANNEL"] ?? "";
 const PASSWORD_CHANNEL_PASSWORD = process.env["TEAMSPEAK_PASSWORD_CHANNEL_PASSWORD"] ?? "";
 
@@ -243,6 +244,7 @@ describe.skipIf(SKIP)("Integration — ServerQuery client", () => {
   async function voiceClient(): Promise<Client> {
     if (voice !== undefined) return voice;
     const client = new Client(generateIdentitySync(8), VOICE_ADDR!, "ts-js-query-voice", {
+      serverPassword: SERVER_PASSWORD,
       defaultChannel: DEFAULT_CHANNEL,
     });
     await client.connect({ signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) });
@@ -352,6 +354,7 @@ describe.skipIf(SKIP)("Integration — ServerQuery client", () => {
       );
 
       const late = new Client(generateIdentitySync(8), VOICE_ADDR!, "ts-js-query-late", {
+        serverPassword: SERVER_PASSWORD,
         defaultChannel: DEFAULT_CHANNEL,
       });
       await late.connect({ signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) });
