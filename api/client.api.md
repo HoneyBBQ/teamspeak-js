@@ -7,7 +7,10 @@
 import { Channel } from 'node:diagnostics_channel';
 import type { ChannelGroupID } from '@honeybbq/teamspeak';
 import { ChannelID } from '@honeybbq/teamspeak';
+import type { ChannelSubscribedEvent } from '@honeybbq/teamspeak';
+import type { ChannelUnsubscribedEvent } from '@honeybbq/teamspeak';
 import type { ClientChannelGroupChangedEvent } from '@honeybbq/teamspeak';
+import type { ClientChatComposingEvent } from '@honeybbq/teamspeak';
 import { ClientID } from '@honeybbq/teamspeak';
 import type { ClientServerGroupAddedEvent } from '@honeybbq/teamspeak';
 import type { ClientServerGroupRemovedEvent } from '@honeybbq/teamspeak';
@@ -25,6 +28,7 @@ import type { FileUploadInfo } from '@honeybbq/teamspeak';
 import { IconID } from '@honeybbq/teamspeak';
 import { Listener } from '@honeybbq/teamspeak';
 import type { Logger } from '@honeybbq/teamspeak';
+import type { PluginCommandEvent } from '@honeybbq/teamspeak';
 import type { PokeEvent } from '@honeybbq/teamspeak';
 import { Readable } from 'node:stream';
 import type { ReconnectOptions } from '@honeybbq/teamspeak';
@@ -212,10 +216,14 @@ export function downloadFileData(host: string, info: FileDownloadInfo, dest: Wri
 
 // @public
 export interface EventMap extends ServerEventMap, SessionEventMap {
+    channelSubscribed: ChannelSubscribedEvent;
+    channelUnsubscribed: ChannelUnsubscribedEvent;
     clientChannelGroupChanged: ClientChannelGroupChangedEvent;
+    clientChatComposing: ClientChatComposingEvent;
     clientServerGroupAdded: ClientServerGroupAddedEvent;
     clientServerGroupRemoved: ClientServerGroupRemovedEvent;
     clientUpdated: ClientUpdatedEvent;
+    pluginCommand: PluginCommandEvent;
     poked: PokeEvent;
     voiceData: VoiceDataEvent;
 }
@@ -237,10 +245,21 @@ const eventNameValues: {
     readonly ClientEnter: "clientEnter";
     readonly ClientLeave: "clientLeave";
     readonly ClientMoved: "clientMoved";
+    readonly ChannelCreated: "channelCreated";
+    readonly ChannelEdited: "channelEdited";
+    readonly ChannelMoved: "channelMoved";
+    readonly ChannelDeleted: "channelDeleted";
+    readonly ChannelDescriptionChanged: "channelDescriptionChanged";
+    readonly ChannelPasswordChanged: "channelPasswordChanged";
+    readonly ServerEdited: "serverEdited";
     readonly ClientUpdated: "clientUpdated";
     readonly ClientServerGroupAdded: "clientServerGroupAdded";
     readonly ClientServerGroupRemoved: "clientServerGroupRemoved";
     readonly ClientChannelGroupChanged: "clientChannelGroupChanged";
+    readonly ChannelSubscribed: "channelSubscribed";
+    readonly ChannelUnsubscribed: "channelUnsubscribed";
+    readonly PluginCommand: "pluginCommand";
+    readonly ClientChatComposing: "clientChatComposing";
     readonly Poked: "poked";
     readonly VoiceData: "voiceData";
     readonly Notification: "notification";
@@ -498,7 +517,7 @@ export type ServerEvent = {
 }[ServerEventName];
 
 // @public
-export type ServerEventName = "textMessage" | "clientEnter" | "clientLeave" | "clientMoved" | "clientUpdated" | "clientServerGroupAdded" | "clientServerGroupRemoved" | "clientChannelGroupChanged" | "poked" | "voiceData" | "notification";
+export type ServerEventName = "textMessage" | "clientEnter" | "clientLeave" | "clientMoved" | "channelCreated" | "channelEdited" | "channelMoved" | "channelDeleted" | "channelDescriptionChanged" | "channelPasswordChanged" | "serverEdited" | "clientUpdated" | "clientServerGroupAdded" | "clientServerGroupRemoved" | "clientChannelGroupChanged" | "channelSubscribed" | "channelUnsubscribed" | "pluginCommand" | "clientChatComposing" | "poked" | "voiceData" | "notification";
 
 // @public
 export interface SessionEndInfo {
