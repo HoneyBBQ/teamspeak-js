@@ -27,6 +27,13 @@ export type QueryTransportOptions =
        * {@link TcpOptions.connect}.
        */
       readonly connect?: TcpConnector | undefined;
+      /**
+       * The query account to log in as, sent as a `login` command once the
+       * connection is open, and again on every reconnect. Left out, the
+       * session starts unauthenticated. SSH and WebQuery carry their
+       * credentials in their own arm.
+       */
+      readonly login?: { readonly name: string; readonly password: string } | undefined;
     }
   | ({
       /**
@@ -102,12 +109,6 @@ export interface QueryClientOptions {
   /** How to reach the server. Required: a client cannot connect without one. */
   readonly transport: QueryTransportOptions;
   /**
-   * The query account to log in as, sent as a `login` command after the
-   * transport is opened. Raw TCP only: SSH logs in as the session's account,
-   * and WebQuery's api key is the login, so giving this with either throws.
-   */
-  readonly login?: { readonly name: string; readonly password: string } | undefined;
-  /**
    * The virtual server to select with `use`, by id or by voice port. Over
    * WebQuery the transport answers `use` itself, by addressing that server in
    * its requests. Unset leaves the instance selected on raw TCP, where the
@@ -150,9 +151,6 @@ export const DEFAULT_EVENT_CATEGORIES: readonly QueryEventCategory[] = Object.fr
   "textprivate",
 ]);
 
-/** The kinds whose own handshake is the login, so there is no `login` to send. */
-const LOGIN_HANDLED_BY_TRANSPORT: ReadonlySet<ResolvedTransport["kind"]> = new Set(["ssh", "web"]);
-
 const CATEGORIES: ReadonlySet<string> = new Set([
   "server",
   "channel",
@@ -169,6 +167,7 @@ export type ResolvedTransport =
       readonly host: string;
       readonly port: number;
       readonly connect: TcpConnector | undefined;
+      readonly login: { readonly name: string; readonly password: string } | undefined;
     }
   | {
       readonly kind: "ssh";
@@ -187,7 +186,6 @@ export type ResolvedTransport =
 /** Options with their defaults filled and their fields copied. */
 export interface ResolvedQueryOptions {
   readonly transport: ResolvedTransport;
-  readonly login: { readonly name: string; readonly password: string } | undefined;
   readonly server: { readonly id: ServerID | number } | { readonly port: number } | undefined;
   readonly nickname: string | undefined;
   /** The categories the caller asked to register for; `events: false` leaves this empty. */
@@ -261,6 +259,11 @@ function transportOptions(transport: unknown): ResolvedTransport {
     throw new TypeError("transport is an object");
   }
   const options = transport as Record<string, unknown>;
+  if (options["login"] !== undefined && options["kind"] !== "tcp") {
+    throw new TypeError(
+      `transport.login belongs to the "tcp" transport; the ${String(options["kind"])} transport carries its own credentials`,
+    );
+  }
   switch (options["kind"]) {
     case "tcp": {
       const host = nonEmpty(options["host"], "transport.host");
@@ -269,11 +272,24 @@ function transportOptions(transport: unknown): ResolvedTransport {
       if (connect !== undefined && typeof connect !== "function") {
         throw new TypeError("transport.connect is a function");
       }
+      const login = options["login"];
+      if (login !== undefined) {
+        if (typeof login !== "object" || login === null) {
+          throw new TypeError("transport.login is { name, password }");
+        }
+        const { name, password } = login as Record<string, unknown>;
+        nonEmpty(name, "transport.login.name");
+        if (typeof password !== "string") {
+          throw new TypeError("transport.login.password is a string");
+        }
+      }
       return {
         kind: "tcp",
         host,
         port: raw < 0 ? 10011 : raw,
         connect: connect as TcpConnector | undefined,
+        login:
+          login === undefined ? undefined : { ...(login as { name: string; password: string }) },
       };
     }
     case "ssh": {
@@ -394,11 +410,14 @@ export function assertEventsSupported(resolved: ResolvedQueryOptions): void {
  * hearing about before a connection is attempted.
  */
 export function normalizeQueryOptions(options: QueryClientOptions): ResolvedQueryOptions {
-  const transport = transportOptions(options.transport);
-  const login = options.login;
-  if (login !== undefined && typeof login !== "object") {
-    throw new TypeError("login is { name, password }");
+  // Plain JavaScript can still pass the old top-level `login`; dropping it
+  // quietly would leave the caller unauthenticated and believing otherwise.
+  if ((options as { login?: unknown }).login !== undefined) {
+    throw new TypeError(
+      "login is no longer a client option: give it to the tcp transport, as transport.login",
+    );
   }
+  const transport = transportOptions(options.transport);
   const server = options.server;
   if (server !== undefined) {
     if (typeof server !== "object" || server === null) {
@@ -422,21 +441,8 @@ export function normalizeQueryOptions(options: QueryClientOptions): ResolvedQuer
   if (commandMiddleware !== undefined && !Array.isArray(commandMiddleware)) {
     throw new TypeError("commandMiddleware is an array");
   }
-  if (login !== undefined && LOGIN_HANDLED_BY_TRANSPORT.has(transport.kind)) {
-    // The SSH session is the query account already, and WebQuery's api key is
-    // the login; neither leaves a `login` to send, and the server refuses the
-    // command on both. A silently dropped option would leave the caller
-    // believing they had logged in.
-    throw new TypeError(
-      `login is not sent over the ${transport.kind} transport, which logs in by itself`,
-    );
-  }
-
   const resolved: ResolvedQueryOptions = {
     transport,
-    // Kept for `custom` too: its opener is the caller's, and most of them wrap
-    // one of the built-in transports, `tcp` among them.
-    login: login === undefined ? undefined : { ...login },
     server: server === undefined ? undefined : { ...server },
     nickname,
     eventCategories: eventCategories(options.events),

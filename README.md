@@ -537,11 +537,11 @@ the way the voice protocol cannot: the same typed commands the core exports,
 plus the ones only an administrator may run, over the three transports a
 ServerQuery speaks.
 
-| Transport | Where        | Server           | Login               | Notifications |
-| --------- | ------------ | ---------------- | ------------------- | ------------- |
-| `tcp`     | 10011        | TeamSpeak 3 only | the `login` command | yes           |
-| `ssh`     | 10022        | both             | the SSH login       | yes           |
-| `web`     | 10080 (HTTP) | both             | the api key         | **no**        |
+| Transport | Where        | Server           | Login             | Notifications |
+| --------- | ------------ | ---------------- | ----------------- | ------------- |
+| `tcp`     | 10011        | TeamSpeak 3 only | `transport.login` | yes           |
+| `ssh`     | 10022        | both             | the SSH login     | yes           |
+| `web`     | 10080 (HTTP) | both             | the api key       | **no**        |
 
 TeamSpeak 3 (3.12 and later for WebQuery, 3.3 and later for SSH) serves SSH and
 WebQuery as well as raw TCP, but only the raw port is on until
@@ -561,8 +561,11 @@ import { QueryClient } from "@honeybbq/teamspeak/query";
 import { listChannels } from "@honeybbq/teamspeak";
 
 const client = new QueryClient({
-  transport: { kind: "tcp", host: "ts.example.com" }, // 10011
-  login: { name: "serveradmin", password: process.env.QUERY_PASSWORD! },
+  transport: {
+    kind: "tcp", // 10011
+    host: "ts.example.com",
+    login: { name: "serveradmin", password: process.env.QUERY_PASSWORD! },
+  },
   server: { id: 1 },
   nickname: "bot",
   events: { categories: ["textserver", "textprivate"] },

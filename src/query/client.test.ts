@@ -31,6 +31,8 @@ class FakeTransport implements QueryTransport {
   onLine: ((line: string) => void) | null = null;
   onClose: ((error: Error | undefined) => void) | null = null;
   closed = false;
+  /** Set by {@link tcpClientOn}: ends the socket the bridge made last. */
+  dropStream: ((error: Error) => void) | undefined;
   /** Answer commands automatically, so a test can drive a whole connect(). */
   auto: ((line: string) => string[] | undefined) | undefined;
   #waiters: Array<() => void> = [];
@@ -59,6 +61,60 @@ class FakeTransport implements QueryTransport {
   receive(...lines: string[]): void {
     for (const line of lines) this.onLine?.(line);
   }
+}
+
+/**
+ * A client over the real `tcp` transport, with `login` in it, whose socket is
+ * a bridge to `fake`: what the client writes is recorded in `fake.sent`, and
+ * `fake` answers through its `auto`. `fake.dropStream` ends the current
+ * socket, as a connection that reset.
+ */
+function tcpClientOn(
+  fake: FakeTransport,
+  login: { name: string; password: string },
+  options: Partial<QueryClientOptions> = {},
+): QueryClient {
+  return new QueryClient({
+    ...options,
+    transport: {
+      kind: "tcp",
+      host: "ts.example.com",
+      login,
+      connect: () => {
+        let greeted = false;
+        const stream: Duplex = new Duplex({
+          read() {},
+          write(chunk: Buffer, _encoding, callback) {
+            // The server's banner comes before its first answer.
+            if (!greeted) stream.emit("data", Buffer.from("TS3\n\rWelcome\n\r"));
+            greeted = true;
+            for (const line of chunk.toString().split("\n")) {
+              const text = line.replace(/\r$/, "");
+              if (text !== "") void fake.send(text);
+              // A server answers `quit` by closing the connection.
+              if (text === "quit") {
+                fake.closed = true;
+                setImmediate(() => stream.destroy());
+              }
+            }
+            callback();
+          },
+          final(callback) {
+            fake.closed = true;
+            callback();
+          },
+          destroy(error, callback) {
+            fake.closed = true;
+            callback(error);
+          },
+        });
+        fake.closed = false;
+        fake.onLine = (line) => stream.emit("data", Buffer.from(`${line}\n\r`));
+        fake.dropStream = (error) => stream.destroy(error);
+        return stream;
+      },
+    },
+  });
 }
 
 /** A client over `transport`, opened through the `custom` escape hatch. */
@@ -171,14 +227,43 @@ describe("QueryClient options", () => {
     expect(
       () => new QueryClient({ transport: { kind: "web", url: "http://h", apiKey: "" } }),
     ).toThrow(TypeError);
-    // SSH logs in by itself, so a login with it is a contradiction.
+    // SSH and WebQuery log in by themselves, so a tcp login with them is a
+    // contradiction, and so is one on a transport that opens its own.
+    const withLogin = (transport: object): (() => unknown) => {
+      return () =>
+        new QueryClient({
+          transport: { ...transport, login: { name: "u", password: "p" } },
+        } as unknown as QueryClientOptions);
+    };
+    expect(
+      withLogin({ kind: "ssh", host: "h", username: "u", password: "p", hostKey: () => {} }),
+    ).toThrow(/transport\.login belongs to the "tcp" transport/);
+    expect(withLogin({ kind: "web", url: "http://h", apiKey: "k" })).toThrow(TypeError);
+    expect(withLogin({ kind: "custom", open: async () => new FakeTransport() })).toThrow(TypeError);
     expect(
       () =>
         new QueryClient({
-          transport: { kind: "ssh", host: "h", username: "u", password: "p", hostKey: () => {} },
-          login: { name: "u", password: "p" },
+          transport: { kind: "tcp", host: "h", login: "serveradmin" },
+        } as unknown as QueryClientOptions),
+    ).toThrow(/transport\.login is \{ name, password \}/);
+    expect(
+      () =>
+        new QueryClient({
+          transport: { kind: "tcp", host: "h", login: { name: "", password: "p" } },
         }),
-    ).toThrow(TypeError);
+    ).toThrow(/transport\.login\.name/);
+  });
+
+  // The login moved into the tcp transport. A plain-JavaScript caller still
+  // passing the old option must be told, not left unauthenticated.
+  it("refuses the old top-level `login`, naming where it went", () => {
+    expect(
+      () =>
+        new QueryClient({
+          transport: { kind: "tcp", host: "h" },
+          login: { name: "u", password: "p" },
+        } as unknown as QueryClientOptions),
+    ).toThrow(/transport\.login/);
   });
 
   // A guest connection is a decision that is made out loud: credentials that
@@ -258,11 +343,11 @@ describe("QueryClient lifecycle", () => {
   it("runs login, use, version, whoami and the registrations, in that order", async () => {
     const transport = new FakeTransport();
     autoOk(transport);
-    const client = clientOn(transport, {
-      login: { name: "serveradmin", password: "pw" },
-      server: { id: 1 },
-      nickname: "bot",
-    });
+    const client = tcpClientOn(
+      transport,
+      { name: "serveradmin", password: "pw" },
+      { server: { id: 1 }, nickname: "bot" },
+    );
 
     await client.connect();
 
@@ -316,7 +401,7 @@ describe("QueryClient lifecycle", () => {
     const transport = new FakeTransport();
     transport.auto = (line) =>
       line.startsWith("login") ? ["error id=520 msg=invalid\\sloginname"] : ["error id=0 msg=ok"];
-    const client = clientOn(transport, { login: { name: "u", password: "wrong" } });
+    const client = tcpClientOn(transport, { name: "u", password: "wrong" });
 
     await expect(client.connect()).rejects.toBeInstanceOf(ServerError);
     expect(client.status).toBe("disconnected");
@@ -841,11 +926,11 @@ describe("QueryClient reconnection", () => {
       }
       return ["error id=0 msg=ok"];
     };
-    const client = clientOn(transport, {
-      login: { name: "u", password: "wrong" },
-      events: false,
-      reconnect: { backoff: { initialDelayMs: 1 } },
-    });
+    const client = tcpClientOn(
+      transport,
+      { name: "u", password: "wrong" },
+      { events: false, reconnect: { backoff: { initialDelayMs: 1 } } },
+    );
 
     await expect(client.connect()).rejects.toBeInstanceOf(ServerError);
     await new Promise((r) => setTimeout(r, 30));
@@ -870,16 +955,16 @@ describe("QueryClient reconnection", () => {
       }
       return ["error id=0 msg=ok"];
     };
-    const client = clientOn(transport, {
-      login: { name: "u", password: "pw" },
-      events: false,
-      reconnect: { backoff: { initialDelayMs: 1, jitter: 0 } },
-    });
+    const client = tcpClientOn(
+      transport,
+      { name: "u", password: "pw" },
+      { events: false, reconnect: { backoff: { initialDelayMs: 1, jitter: 0 } } },
+    );
     const seen: Array<{ error: Error | undefined; willReconnect: boolean }> = [];
     client.on("disconnected", (e) => seen.push(e));
 
     await client.connect();
-    transport.onClose?.(new Error("reset"));
+    transport.dropStream?.(new Error("reset"));
     await waitFor(() => client.status === "disconnected" && seen.length > 0);
     await new Promise((r) => setTimeout(r, 50));
 

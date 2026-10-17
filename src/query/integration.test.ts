@@ -197,8 +197,12 @@ function optionsFor(kind: Kind): QueryClientOptions {
   switch (kind) {
     case "tcp":
       return {
-        transport: { kind: "tcp", host: QUERY_HOST, port: QUERY_PORT },
-        login: { name: LOGIN_NAME, password: LOGIN_PASSWORD },
+        transport: {
+          kind: "tcp",
+          host: QUERY_HOST,
+          port: QUERY_PORT,
+          login: { name: LOGIN_NAME, password: LOGIN_PASSWORD },
+        },
         server: { id: 1 },
         nickname: "ts-js-query",
       };

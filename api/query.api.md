@@ -91,10 +91,6 @@ export interface QueryClientOptions {
     readonly commandMiddleware?: readonly CommandMiddleware[] | undefined;
     readonly events?: QueryEventsOption | undefined;
     readonly logger?: Logger | undefined;
-    readonly login?: {
-        readonly name: string;
-        readonly password: string;
-    } | undefined;
     readonly nickname?: string | undefined;
     readonly reconnect?: ReconnectOptions | undefined;
     readonly server?: {
@@ -141,6 +137,10 @@ export type QueryTransportOptions = {
     readonly host: string;
     readonly port?: number | undefined;
     readonly connect?: TcpConnector | undefined;
+    readonly login?: {
+        readonly name: string;
+        readonly password: string;
+    } | undefined;
 } | ({
     readonly kind: "ssh";
 } & SshConnectOptions) | ({
