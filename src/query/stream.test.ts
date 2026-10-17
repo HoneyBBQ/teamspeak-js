@@ -1,7 +1,7 @@
 import { createServer } from "node:net";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { LineReader } from "./lines.js";
 import { StreamTransport, type QueryStream } from "./stream.js";
 import { connectTcp } from "./tcp.js";
@@ -11,6 +11,10 @@ import { QueryClient } from "./client.js";
 class FakeStream implements QueryStream {
   written: string[] = [];
   ended = false;
+  /** Whether the "server" ends the session when it is told to quit. */
+  answersQuit = true;
+  /** Fail every write, as a stream that is already gone does. */
+  failWrites = false;
   #listeners: {
     data: Array<(chunk: Uint8Array) => void>;
     error: Array<(e: Error) => void>;
@@ -18,8 +22,13 @@ class FakeStream implements QueryStream {
   } = { data: [], error: [], close: [] };
 
   write(data: string, callback: (error?: Error | null) => void): void {
+    if (this.failWrites) {
+      callback(new Error("write after end"));
+      return;
+    }
     this.written.push(data);
     callback();
+    if (data === "quit\n" && this.answersQuit) queueMicrotask(() => this.emitClose());
   }
   end(): void {
     this.ended = true;
@@ -99,9 +108,57 @@ describe("StreamTransport", () => {
     const second = new StreamTransport(quiet);
     second.onClose = (e) => seen.push(e);
     await second.close();
-    expect(quiet.ended).toBe(true);
+    expect(quiet.written).toEqual(["quit\n"]);
     expect(seen[1]).toBeUndefined();
     await expect(second.send("x")).rejects.toThrow("closed");
+  });
+
+  // A TeamSpeak 3 server can keep an SSH session whose client simply went
+  // away, so the session is ended the way the protocol says to.
+  it("says quit and lets the server end the session before it closes", async () => {
+    const stream = new FakeStream();
+    let released = 0;
+    const lines: string[] = [];
+    const transport = new StreamTransport(stream, () => released++);
+    transport.onLine = (line) => lines.push(line);
+    const closed: Array<Error | undefined> = [];
+    transport.onClose = (error) => closed.push(error);
+
+    await transport.close();
+
+    expect(stream.written).toEqual(["quit\n"]);
+    // The server's own close ended it: the stream was not also ended by hand.
+    expect(stream.ended).toBe(false);
+    expect(released).toBe(1);
+    expect(closed).toEqual([undefined]);
+  });
+
+  it("hands the client nothing the server says after quit", async () => {
+    const stream = new FakeStream();
+    stream.answersQuit = false;
+    const lines: string[] = [];
+    const transport = new StreamTransport(stream);
+    transport.onLine = (line) => lines.push(line);
+    stream.emitData(BANNER);
+
+    const closing = transport.close();
+    stream.emitData("error id=0 msg=ok\n\r");
+    stream.emitClose();
+    await closing;
+
+    expect(lines).toEqual([]);
+  });
+
+  it("closes without waiting when quit cannot be written", async () => {
+    const stream = new FakeStream();
+    stream.failWrites = true;
+    let released = 0;
+    const transport = new StreamTransport(stream, () => released++);
+
+    await transport.close();
+
+    expect(stream.ended).toBe(true);
+    expect(released).toBe(1);
   });
 
   it("runs the release hook once the stream is closed", async () => {
@@ -118,7 +175,9 @@ describe("StreamTransport", () => {
   // connection underneath open and the process unable to exit.
   it("releases what it sits on when the stream ends without reporting it", async () => {
     const stream = new FakeStream();
-    // The stream is ended but stays silent, as an SSH channel does.
+    // The stream is ended but stays silent, as an SSH channel does, and the
+    // server never answers `quit`.
+    stream.answersQuit = false;
     stream.end = () => {
       stream.ended = true;
     };
@@ -127,7 +186,14 @@ describe("StreamTransport", () => {
     const transport = new StreamTransport(stream, () => released++);
     transport.onClose = (error) => closed.push(error);
 
-    await transport.close();
+    vi.useFakeTimers();
+    try {
+      const closing = transport.close();
+      await vi.advanceTimersByTimeAsync(1_500);
+      await closing;
+    } finally {
+      vi.useRealTimers();
+    }
 
     expect(stream.ended).toBe(true);
     expect(released).toBe(1);

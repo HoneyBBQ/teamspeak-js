@@ -263,7 +263,6 @@ export interface SshSuppliedConnectionOptions {
 // @public
 export class StreamTransport implements QueryTransport {
     constructor(stream: QueryStream, onEnd?: () => void);
-    // (undocumented)
     close(): Promise<void>;
     // (undocumented)
     onClose: ((error: Error | undefined) => void) | null;
