@@ -1,6 +1,9 @@
 import type {
+  ChannelGroupID,
+  ChannelID,
   ClientChannelGroupChangedEvent,
   ClientID,
+  ServerGroupID,
   ClientServerGroupAddedEvent,
   ClientServerGroupRemovedEvent,
   ClientUpdatedEvent,
@@ -62,14 +65,90 @@ export interface EventMap extends ServerEventMap, SessionEventMap {
 }
 
 /**
- * Who `sendWhisper` sends to. The whisper framing the client writes carries
- * client ids only, so there is no field for channels yet; one can be added
- * without changing a call that names `clients`.
+ * Who `sendWhisper` sends to: clients, channels, or both. The packet's direct
+ * form carries the two lists together, so a single call may name both. Name at
+ * least one target in total; `sendGroupWhisper` is the call for server groups,
+ * channel groups and the other group targets.
  */
 export interface WhisperTargets {
-  /** The clients to whisper to: at least one and at most 32. */
+  /** The clients to whisper to: at most 32. */
   readonly clients?: readonly ClientID[] | undefined;
+  /** The channels to whisper to: at most 255. */
+  readonly channels?: readonly ChannelID[] | undefined;
 }
+
+/** The values of the table below, before freezing. */
+const groupWhisperTypeValues = {
+  /** The members of one server group; the target names the group. */
+  ServerGroup: 0,
+  /** The holders of one channel group; the target names the group. */
+  ChannelGroup: 1,
+  /** The clients that are channel commanders. Unmeasured: a test client was not one. */
+  ChannelCommander: 2,
+  /** Every client. */
+  AllClients: 3,
+} as const;
+/**
+ * Which clients a group whisper reaches (`GroupWhisperType` in the packet).
+ * Server group, channel group and all clients were measured on TeamSpeak 3
+ * and 6; channel commander was not.
+ */
+export const GroupWhisperType: typeof groupWhisperTypeValues = /* @__PURE__ */ Object.freeze(
+  groupWhisperTypeValues,
+);
+/** A group whisper type. */
+export type GroupWhisperType = (typeof GroupWhisperType)[keyof typeof GroupWhisperType];
+
+/** The values of the table below, before freezing. */
+const groupWhisperScopeValues = {
+  /** Every channel. */
+  AllChannels: 0,
+  /** The channel the sender is in. */
+  CurrentChannel: 1,
+  /** The parent of the sender's channel. Unmeasured. */
+  ParentChannel: 2,
+  /** Every ancestor of the sender's channel. Unmeasured. */
+  AllParentChannels: 3,
+  /** The sender's channel and its subchannels. Unmeasured. */
+  ChannelFamily: 4,
+  /** The sender's ancestors, its channel and its subchannels. Unmeasured. */
+  CompleteChannelFamily: 5,
+  /** The subchannels of the sender's channel. Unmeasured. */
+  Subchannels: 6,
+} as const;
+/**
+ * Which channels a group whisper reaches (`GroupWhisperTarget` in the
+ * packet). All channels and the current channel were measured on TeamSpeak 3
+ * and 6; the others carry the packet's names and were not.
+ */
+export const GroupWhisperScope: typeof groupWhisperScopeValues = /* @__PURE__ */ Object.freeze(
+  groupWhisperScopeValues,
+);
+/** A group whisper scope. */
+export type GroupWhisperScope = (typeof GroupWhisperScope)[keyof typeof GroupWhisperScope];
+
+/**
+ * Who `sendGroupWhisper` sends to. The shape follows the type, so a server
+ * group cannot be given a channel group's id and a type that takes no id
+ * cannot be given one.
+ */
+export type GroupWhisperTarget =
+  | {
+      readonly type: typeof GroupWhisperType.ServerGroup;
+      readonly scope: GroupWhisperScope;
+      /** The server group whose members are whispered to. */
+      readonly group: ServerGroupID;
+    }
+  | {
+      readonly type: typeof GroupWhisperType.ChannelGroup;
+      readonly scope: GroupWhisperScope;
+      /** The channel group whose holders are whispered to. */
+      readonly group: ChannelGroupID;
+    }
+  | {
+      readonly type: typeof GroupWhisperType.ChannelCommander | typeof GroupWhisperType.AllClients;
+      readonly scope: GroupWhisperScope;
+    };
 
 /** What `sendVoice` can be told. Reserved: it has no fields yet. */
 export interface VoiceOptions {}
@@ -302,4 +381,18 @@ export interface ClientOptions {
   readonly defaultChannel?: string | undefined;
   /** Password for `defaultChannel`, sent during the initial `clientinit` handshake. */
   readonly defaultChannelPassword?: string | undefined;
+  /**
+   * A privilege key to use while joining, sent as `client_default_token` in
+   * `clientinit`: the server adds the key's group when it accepts the join,
+   * and the key is spent. Sent on the first successful connection only, so a
+   * reconnection does not present a spent key again. Default: none.
+   */
+  readonly privilegeKey?: string | undefined;
+  /**
+   * Meta data to join with, sent as `client_meta_data` in `clientinit`: an
+   * opaque string other clients see in their record of this one. It is sent
+   * again on every reconnection; `updateClient({ metaData })` changes it
+   * while connected. Default: none.
+   */
+  readonly metaData?: string | undefined;
 }

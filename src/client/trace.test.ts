@@ -5,7 +5,9 @@ import { unknownServerCapabilities } from "./capabilities.js";
 import { generateIdentitySync } from "./crypto/identity.js";
 import { ConnectPhase, type ClientTrace } from "./trace.js";
 import { ConnectionTimeoutError, HandshakeError, InvalidAddressError } from "./errors.js";
-import { NotConnectedError, asChannelID } from "@honeybbq/teamspeak";
+import { NotConnectedError, asChannelGroupID, asChannelID } from "@honeybbq/teamspeak";
+import { parseCommand } from "../core/internal.js";
+import { GroupWhisperScope, GroupWhisperType } from "./types.js";
 import {
   FakeSocket,
   completeCryptoInit,
@@ -1114,5 +1116,105 @@ describe("the end of a session", () => {
     await client.disconnect().catch(() => {});
     expect(calls.filter((c) => c.name === "sessionEnd")).toHaveLength(1);
     expect(calls.find((c) => c.name === "sessionEnd")!.info["error"]).toBeInstanceOf(Error);
+  });
+});
+
+describe("the connect and leave options", () => {
+  it("drops the privilege key once joined and keeps the meta data", async () => {
+    const { client, sockets } = makeClient({ privilegeKey: "tok+/=", metaData: "m d" });
+    const connecting = client.connect();
+    await handshake(client, sockets);
+    await connecting;
+
+    expect(client.status).toBe("connected");
+    expect(clientInternals(client).initOptions.privilegeKey).toBe("");
+    expect(clientInternals(client).initOptions.metaData).toBe("m d");
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("says goodbye with the reason message it is given, escaped", async () => {
+    const lines: string[] = [];
+    onSentLine((_, text) => lines.push(text));
+    const { client, sockets } = makeClient();
+    const connecting = client.connect();
+    await handshake(client, sockets);
+    await connecting;
+    await client.disconnect({ reasonMessage: "back soon|bye", signal: AbortSignal.timeout(1) });
+    onSentLine(undefined);
+
+    expect(lines.find((l) => l.startsWith("clientdisconnect"))).toMatch(
+      /^clientdisconnect reasonid=8 reasonmsg=back\\ssoon\\pbye/,
+    );
+  });
+
+  it("keeps the Shutdown goodbye by default", async () => {
+    const lines: string[] = [];
+    onSentLine((_, text) => lines.push(text));
+    const { client, sockets } = makeClient();
+    const connecting = client.connect();
+    await handshake(client, sockets);
+    await connecting;
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+    onSentLine(undefined);
+
+    expect(lines.find((l) => l.startsWith("clientdisconnect"))).toMatch(
+      /^clientdisconnect reasonid=8 reasonmsg=Shutdown/,
+    );
+  });
+
+  it("refuses to whisper while not connected, in either form", () => {
+    const { client } = makeClient();
+    const audio = new Uint8Array([1]);
+    expect(() => client.sendWhisper(audio, { channels: [asChannelID(2n)] }, 5)).toThrow(
+      NotConnectedError,
+    );
+    expect(() =>
+      client.sendGroupWhisper(audio, { type: GroupWhisperType.AllClients, scope: 0 }, 5),
+    ).toThrow(NotConnectedError);
+  });
+
+  it("writes a group whisper with the id of the group it names", async () => {
+    const { client, sockets } = makeClient();
+    const connecting = client.connect();
+    await handshake(client, sockets);
+    await connecting;
+    sockets[0]!.sent.length = 0;
+    client.sendGroupWhisper(
+      new Uint8Array([0xee]),
+      {
+        type: GroupWhisperType.ChannelGroup,
+        scope: GroupWhisperScope.CurrentChannel,
+        group: asChannelGroupID(0x0102n),
+      },
+      5,
+    );
+    client.sendWhisper(new Uint8Array([0xee]), { channels: [asChannelID(0x0304n)] }, 5);
+
+    const [group, direct] = sockets[0]!.sent;
+    expect(group![8 + 4]).toBe(0xa1);
+    expect([...group!.subarray(8 + 5 + 3)]).toEqual([1, 1, 0, 0, 0, 0, 0, 0, 1, 2, 0xee]);
+    expect(direct![8 + 4]).toBe(0x81);
+    expect([...direct!.subarray(8 + 5 + 3)]).toEqual([1, 0, 0, 0, 0, 0, 0, 0, 3, 4, 0xee]);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+});
+
+describe("the connection info request", () => {
+  it("is answered with setconnectioninfo carrying the connection's own counters", async () => {
+    const lines: string[] = [];
+    onSentLine((_, text) => lines.push(text));
+    const { client, sockets } = makeClient();
+    const connecting = client.connect();
+    await handshake(client, sockets);
+    await connecting;
+    deliverSession(client, sockets[0]!, "notifyconnectioninforequest");
+    await until(() => lines.some((l) => l.startsWith("setconnectioninfo")));
+    onSentLine(undefined);
+
+    const answer = parseCommand(lines.find((l) => l.startsWith("setconnectioninfo"))!)!.params;
+    expect(Number(answer["connection_packets_received_control"])).toBeGreaterThan(0);
+    expect(Number(answer["connection_bytes_sent_control"])).toBeGreaterThan(0);
+    expect(answer).not.toHaveProperty("connection_ping");
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
   });
 });

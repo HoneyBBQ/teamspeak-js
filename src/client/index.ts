@@ -10,7 +10,7 @@
 
 // The client
 export { Client } from "./client.js";
-export { EventName } from "./types.js";
+export { EventName, GroupWhisperType, GroupWhisperScope } from "./types.js";
 
 export type {
   EventMap,
@@ -19,6 +19,7 @@ export type {
   ServerEventName,
   VoiceOptions,
   WhisperTargets,
+  GroupWhisperTarget,
   AddrResolver,
   ClientOptions,
   ResolvedAddr,

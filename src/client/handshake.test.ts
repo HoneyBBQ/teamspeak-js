@@ -64,6 +64,20 @@ describe("sendClientInit", () => {
     expect(params["client_default_channel_password"]).toBe(prepareClientPassword("channel secret"));
   });
 
+  it("sends no privilege key and no meta data by default", () => {
+    const { params } = captureClientInit();
+
+    expect(params["client_default_token"]).toBe("");
+    expect(params["client_meta_data"]).toBe("");
+  });
+
+  it("sends the privilege key and meta data it is given, escaped", () => {
+    const { params } = captureClientInit({ privilegeKey: "abc DEF+/=", metaData: '{"a": 1}' });
+
+    expect(params["client_default_token"]).toBe("abc DEF+/=");
+    expect(params["client_meta_data"]).toBe('{"a": 1}');
+  });
+
   it("preserves the clientinit parameter order", () => {
     const { raw } = captureClientInit({
       serverPassword: "server secret",

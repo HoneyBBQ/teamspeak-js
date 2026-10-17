@@ -2,6 +2,7 @@ import {
   type EventMap,
   type VoiceOptions,
   type WhisperTargets,
+  type GroupWhisperTarget,
   type ClientOptions,
   type DatagramSocket,
   type ResolvedAddr,
@@ -46,12 +47,14 @@ import { PacketType } from "./transport/packet.js";
 import type { Packet } from "./transport/packet.js";
 import { CommandTracker, appendReturnCode } from "./commands.js";
 import {
+  buildCommand,
   buildCommandChain,
   encodeRequest,
   parseServerError,
   resolveBackoffPolicy,
 } from "../core/internal.js";
 import { uploadFileData, downloadFileData, type FileTransferOptions } from "./transfer.js";
+import { buildSetConnectionInfo } from "./connection-info.js";
 import { buildEventChain } from "./events.js";
 import { processInit1 } from "./handshake/crypt-handshake.js";
 import {
@@ -87,6 +90,10 @@ export interface ClientInitOptions {
   readonly serverPasswordHash: string;
   readonly defaultChannel: string;
   readonly defaultChannelPasswordHash: string;
+  /** The privilege key (`client_default_token`), or `""`; dropped once a connection succeeds. */
+  readonly privilegeKey: string;
+  /** The meta data (`client_meta_data`), or `""`. */
+  readonly metaData: string;
   /** The platform, version and signature, copied so later changes to the option have no effect. */
   readonly version: ClientVersion;
 }
@@ -116,6 +123,8 @@ function normalizeClientInitOptions(options: ClientOptions): ClientInitOptions {
     serverPasswordHash: prepareClientPassword(options.serverPassword ?? ""),
     defaultChannel: options.defaultChannel ?? "",
     defaultChannelPasswordHash: prepareClientPassword(options.defaultChannelPassword ?? ""),
+    privilegeKey: options.privilegeKey ?? "",
+    metaData: options.metaData ?? "",
     version: normalizeClientVersion(options.version),
   };
 }
@@ -617,9 +626,21 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * Resolves once `disconnected` has been delivered to the listeners, so one
    * added after `await client.disconnect()` does not hear it. Does nothing on
    * a client that is not connected; called again while an earlier call is
-   * still saying goodbye, it waits for that one.
+   * still saying goodbye, it waits for that one (and its message is the first
+   * call's).
+   *
+   * `reasonMessage` is what the server tells the other clients who see this
+   * one leave, in `clientLeave`'s `reasonMessage` (`reasonmsg` of
+   * `clientdisconnect`, sent with `reasonid=8`, `Reason.Disconnect`: measured
+   * on TeamSpeak 3 and 6, the server drops the message without it);
+   * default `"Shutdown"`.
    */
-  async disconnect(options: { readonly signal?: AbortSignal | undefined } = {}): Promise<void> {
+  async disconnect(
+    options: {
+      readonly signal?: AbortSignal | undefined;
+      readonly reasonMessage?: string | undefined;
+    } = {},
+  ): Promise<void> {
     // Recorded before anything else: a dropped socket during the goodbye below
     // must not be mistaken for an outage worth retrying.
     this.#stopped = true;
@@ -636,7 +657,11 @@ export class Client implements CommandExecutor, AsyncDisposable {
     let left!: () => void;
     this.#attempt.rejectAfter(new NotConnectedError(), new Promise<void>((r) => (left = r)));
 
-    const leaving = this.#leave(wasConnected, options.signal).finally(left);
+    const leaving = this.#leave(
+      wasConnected,
+      options.signal,
+      options.reasonMessage ?? "Shutdown",
+    ).finally(left);
     this.#leaving = leaving;
     try {
       await leaving;
@@ -645,7 +670,11 @@ export class Client implements CommandExecutor, AsyncDisposable {
     }
   }
 
-  async #leave(wasConnected: boolean, signal: AbortSignal | undefined): Promise<void> {
+  async #leave(
+    wasConnected: boolean,
+    signal: AbortSignal | undefined,
+    reasonMessage: string,
+  ): Promise<void> {
     this.#logger.info("disconnecting from server");
 
     if (wasConnected) {
@@ -660,7 +689,10 @@ export class Client implements CommandExecutor, AsyncDisposable {
       });
       // On the internal path: the status already says Disconnected.
       const answered = this.#exec(
-        "clientdisconnect reasonmsg=Shutdown",
+        buildCommand("clientdisconnect", {
+          reasonid: String(Reason.Disconnect),
+          reasonmsg: reasonMessage,
+        }),
         { signal, timeoutMs: DISCONNECT_TIMEOUT_MS },
         true,
       ).then(
@@ -1007,13 +1039,32 @@ export class Client implements CommandExecutor, AsyncDisposable {
   }
 
   /**
-   * Send Opus voice directly to specific clients, bypassing channel routing.
-   * Throws a NotConnectedError unless the client is connected, and a
-   * RangeError for no target, more than 32, or an id that is not a client id.
+   * Send Opus voice directly to clients, to channels, or to both: the
+   * packet's direct form. Throws a NotConnectedError unless the client is
+   * connected, and a RangeError for no target at all, more than 32 clients,
+   * more than 255 channels, or an id the packet cannot hold. Whether a target
+   * hears it is the server's decision, from `i_client_whisper_power` against
+   * the target's `i_client_needed_whisper_power`.
    */
   sendWhisper(data: Uint8Array, targets: WhisperTargets, codec: Codec): void {
     if (!this.#canSend(false)) throw new NotConnectedError();
-    this.#handler.sendWhisperPacket(data, [...(targets.clients ?? [])], codec);
+    this.#handler.sendWhisperPacket(data, [...(targets.clients ?? [])], codec, [
+      ...(targets.channels ?? []),
+    ]);
+  }
+
+  /**
+   * Send Opus voice to a group of clients: a server group, a channel group,
+   * the channel commanders or everyone, within the channels the target's
+   * `scope` picks. The packet's group form; `sendWhisper` is the direct one.
+   * Throws a NotConnectedError unless the client is connected, and a
+   * RangeError for a type, scope or group id the packet cannot hold. Whether
+   * a client hears it is the server's decision, as for `sendWhisper`.
+   */
+  sendGroupWhisper(data: Uint8Array, target: GroupWhisperTarget, codec: Codec): void {
+    if (!this.#canSend(false)) throw new NotConnectedError();
+    const id = "group" in target ? target.group : 0n;
+    this.#handler.sendGroupWhisperPacket(data, target.type, target.scope, id, codec);
   }
 
   /**
@@ -1068,6 +1119,11 @@ export class Client implements CommandExecutor, AsyncDisposable {
     // or a failure has already ended.
     if (this.#status !== ClientStatus.Connecting || this.#attempt.settled) return;
     this.#status = ClientStatus.Connected;
+    // A privilege key is spent by the join that used it: a reconnection must
+    // not present it again.
+    if (this.#clientInitOptions.privilegeKey !== "") {
+      this.#clientInitOptions = { ...this.#clientInitOptions, privilegeKey: "" };
+    }
     // Settled before the hook runs, so that nothing it does can turn this
     // attempt into a failed one; connect() resumes only after the hook returns.
     this.#attempt.resolve();
@@ -1393,6 +1449,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
         this.#cmdTrack.buffer(cmd.params, cmd.name);
         this.#cmdTrack.offerCorrelated(cmd.name, cmd.params);
       }
+      if (cmd.name === "notifyconnectioninforequest") this.#answerConnectionInfoRequest();
       const result = handleNotification(cmd, this.#clid, this.#clients);
       this.#processNotificationResult(result);
       if (this.#listeners.get("notification")?.length || this.#eventMiddlewares.length > 0) {
@@ -1432,6 +1489,18 @@ export class Client implements CommandExecutor, AsyncDisposable {
         this.#cmdTrack.buffer(cmd.params, cmd.name);
         break;
     }
+  }
+
+  /**
+   * Someone asked the server for this client's connection info, and it asks
+   * us for the figures: answer with what this connection has measured. A
+   * failure is only logged, as the request is not one a caller made.
+   */
+  #answerConnectionInfoRequest(): void {
+    const line = buildSetConnectionInfo(this.#handler.trafficSnapshot(), this.#handler.roundTrip);
+    this.#execNoWait(line, undefined, false).catch((error: unknown) => {
+      this.#logger.debug("could not answer a connection info request", { error: String(error) });
+    });
   }
 
   #handleError(params: Record<string, string>): void {

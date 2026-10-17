@@ -19,6 +19,7 @@ import { abortable, abortReason } from "../abort.js";
 import { NotConnectedError, TeamspeakError } from "@honeybbq/teamspeak";
 import { GenerationWindow } from "./generation-window.js";
 import { Qlz } from "./quicklz.js";
+import { RoundTripEstimator, TrafficMeter, type TrafficSnapshot } from "./traffic.js";
 import { processInit1 } from "../handshake/crypt-handshake.js";
 
 const MAX_OUT_PACKET_SIZE = 500;
@@ -30,6 +31,7 @@ const HEADER_SIZE = 5;
 const TAG_SIZE = 8;
 const VOICE_HEADER_SIZE = 3;
 const WHISPER_HEADER_SIZE = 5;
+const GROUP_WHISPER_HEADER_SIZE = 13;
 const RESEND_BASE_INTERVAL_MS = 500;
 const RESEND_LOOP_INTERVAL_MS = 100;
 
@@ -104,6 +106,10 @@ export class PacketHandler {
   #stopPing: (() => void) | null = null;
   #stopResend: (() => void) | null = null;
   #lastMessageReceived = performance.now();
+  readonly #traffic = new TrafficMeter();
+  readonly #roundTrip = new RoundTripEstimator();
+  /** When each keepalive ping still waiting for its pong was sent, by packet id. */
+  readonly #pingsSent = new Map<number, number>();
 
   #packetCounter = new Uint16Array(9);
   #generationCounter = new Uint32Array(9);
@@ -252,6 +258,10 @@ export class PacketHandler {
     // Ping loop
     const pingTimer = setInterval(() => {
       if (this.#crypt.cryptoInitComplete) {
+        const id = this.#packetCounter[PacketType.Ping]!;
+        this.#pingsSent.set(id, performance.now());
+        // A pong that never came must not pile up.
+        if (this.#pingsSent.size > 16) this.#pingsSent.delete(this.#pingsSent.keys().next().value!);
         this.sendPacket(PacketType.Ping, new Uint8Array(0), PacketFlags.Unencrypted);
       }
     }, PING_INTERVAL_MS);
@@ -313,47 +323,115 @@ export class PacketHandler {
     this.#write(final);
   }
 
-  /** Send an unencrypted TeamSpeak voice whisper packet to up to 32 clients. */
-  sendWhisperPacket(data: Uint8Array, targetClientIds: number[], codec: number): void {
-    if (targetClientIds.length === 0) throw new RangeError("a whisper needs at least one target");
-    if (targetClientIds.length > 32) throw new RangeError("a whisper has at most 32 targets");
+  /**
+   * Send an unencrypted voice whisper packet in its direct form (the
+   * new-protocol flag unset): up to 255 channel ids and up to 32 client ids,
+   * at least one of the two.
+   */
+  sendWhisperPacket(
+    data: Uint8Array,
+    targetClientIds: readonly number[],
+    codec: number,
+    targetChannelIds: readonly bigint[] = [],
+  ): void {
+    if (targetClientIds.length === 0 && targetChannelIds.length === 0) {
+      throw new RangeError("a whisper needs at least one target");
+    }
+    if (targetClientIds.length > 32)
+      throw new RangeError("a whisper has at most 32 client targets");
+    if (targetChannelIds.length > 255) {
+      throw new RangeError("a whisper has at most 255 channel targets");
+    }
     if (targetClientIds.some((id) => !Number.isInteger(id) || id < 0 || id > 0xffff)) {
       throw new RangeError("invalid whisper target");
     }
+    if (targetChannelIds.some((id) => id < 0n || id > 0xffff_ffff_ffff_ffffn)) {
+      throw new RangeError("invalid whisper channel target");
+    }
 
+    const idsLen = targetChannelIds.length * 8 + targetClientIds.length * 2;
+    const payload = new Uint8Array(WHISPER_HEADER_SIZE + idsLen + data.length);
+    const view = new DataView(payload.buffer);
+    payload[2] = codec;
+    payload[3] = targetChannelIds.length;
+    payload[4] = targetClientIds.length;
+    let at = WHISPER_HEADER_SIZE;
+    for (const id of targetChannelIds) {
+      view.setBigUint64(at, id, false);
+      at += 8;
+    }
+    for (const id of targetClientIds) {
+      view.setUint16(at, id, false);
+      at += 2;
+    }
+    payload.set(data, at);
+    this.#sendWhisperPayload(payload, 0);
+  }
+
+  /**
+   * Send an unencrypted voice whisper packet in its group form (the
+   * new-protocol flag set): a group type, a target scope and one u64 id, which
+   * is 0 where the type has none.
+   */
+  sendGroupWhisperPacket(
+    data: Uint8Array,
+    groupType: number,
+    scope: number,
+    id: bigint,
+    codec: number,
+  ): void {
+    if (!Number.isInteger(groupType) || groupType < 0 || groupType > 0xff) {
+      throw new RangeError("invalid group whisper type");
+    }
+    if (!Number.isInteger(scope) || scope < 0 || scope > 0xff) {
+      throw new RangeError("invalid group whisper scope");
+    }
+    if (id < 0n || id > 0xffff_ffff_ffff_ffffn) throw new RangeError("invalid group whisper id");
+
+    const payload = new Uint8Array(GROUP_WHISPER_HEADER_SIZE + data.length);
+    const view = new DataView(payload.buffer);
+    payload[2] = codec;
+    payload[3] = groupType;
+    payload[4] = scope;
+    view.setBigUint64(5, id, false);
+    payload.set(data, GROUP_WHISPER_HEADER_SIZE);
+    this.#sendWhisperPayload(payload, PacketFlags.NewProtocol);
+  }
+
+  /** Number a whisper payload (bytes 0..1 are the voice id) and write it. */
+  #sendWhisperPayload(payload: Uint8Array, flags: number): void {
     const pID = this.#packetCounter[PacketType.VoiceWhisper]!;
     const pGen = this.#generationCounter[PacketType.VoiceWhisper]!;
     this.#packetCounter[PacketType.VoiceWhisper] = (pID + 1) & 0xffff;
     if (this.#packetCounter[PacketType.VoiceWhisper] === 0) {
       this.#generationCounter[PacketType.VoiceWhisper] = (pGen + 1) >>> 0;
     }
-
-    const payloadLen = WHISPER_HEADER_SIZE + targetClientIds.length * 2 + data.length;
-    const whisperPayload = new Uint8Array(payloadLen);
-    const view = new DataView(whisperPayload.buffer);
-    view.setUint16(0, pID, false);
-    whisperPayload[2] = codec;
-    whisperPayload[3] = 0;
-    whisperPayload[4] = targetClientIds.length;
-    for (let index = 0; index < targetClientIds.length; index++) {
-      view.setUint16(WHISPER_HEADER_SIZE + index * 2, targetClientIds[index]!, false);
-    }
-    whisperPayload.set(data, WHISPER_HEADER_SIZE + targetClientIds.length * 2);
+    new DataView(payload.buffer).setUint16(0, pID, false);
 
     const packet: Packet = {
-      typeFlagged: PacketType.VoiceWhisper | PacketFlags.Unencrypted,
+      typeFlagged: PacketType.VoiceWhisper | PacketFlags.Unencrypted | flags,
       id: pID,
       clientID: this.#clientID,
       generationID: pGen,
-      data: whisperPayload,
+      data: payload,
       receivedAt: 0,
     };
     const header = buildC2SHeader(packet);
-    const final = new Uint8Array(TAG_SIZE + HEADER_SIZE + payloadLen);
+    const final = new Uint8Array(TAG_SIZE + HEADER_SIZE + payload.length);
     final.set(this.#crypt.fakeSignature, 0);
     final.set(header, TAG_SIZE);
-    final.set(whisperPayload, TAG_SIZE + HEADER_SIZE);
+    final.set(payload, TAG_SIZE + HEADER_SIZE);
     this.#write(final);
+  }
+
+  /** What this connection has carried so far, per direction and class. */
+  trafficSnapshot(): TrafficSnapshot {
+    return this.#traffic.snapshot(performance.now());
+  }
+
+  /** The keepalive round-trip time, or null before the first pong. */
+  get roundTrip(): { readonly meanMs: number; readonly deviationMs: number } | null {
+    return this.#roundTrip.get();
   }
 
   /** How many packets have been sent again for want of an acknowledgement. */
@@ -455,6 +533,13 @@ export class PacketHandler {
 
   #write(data: Uint8Array): void {
     if (!this.#conn) return;
+    if (data.length > TAG_SIZE + HEADER_SIZE - 1) {
+      this.#traffic.recordSent(
+        data[TAG_SIZE + HEADER_SIZE - 1]! & 0x0f,
+        data.length,
+        performance.now(),
+      );
+    }
     try {
       this.#conn.send(data, (err) => {
         if (err) this.#logger.warn("udp send error", err);
@@ -482,6 +567,7 @@ export class PacketHandler {
     const ciphertext = raw.slice(TAG_SIZE + 3);
 
     const parsed = parseS2CHeader(header);
+    this.#traffic.recordReceived(parsed.typeFlagged & 0x0f, raw.length, performance.now());
     // Init1 belongs to the start of the handshake; once crypto init has
     // completed, another one can only restart a session that is already set up.
     const parsedType: PacketType = parsed.typeFlagged & 0x0f;
@@ -503,6 +589,15 @@ export class PacketHandler {
     this.#lastMessageReceived = performance.now();
 
     const pType = packetType(p);
+
+    if (pType === PacketType.Pong && p.data.length >= 2) {
+      const acked = new DataView(p.data.buffer, p.data.byteOffset).getUint16(0, false);
+      const sentAt = this.#pingsSent.get(acked);
+      if (sentAt !== undefined) {
+        this.#pingsSent.delete(acked);
+        this.#roundTrip.add(p.receivedAt - sentAt);
+      }
+    }
 
     if (pType === PacketType.Ping) {
       this.#sendPong(p.id, decrypted.dummyUsed);

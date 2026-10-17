@@ -140,11 +140,11 @@ function buildClientInitCommand(client: ClientInternals): string {
     ["client_default_channel", initOptions.defaultChannel],
     ["client_default_channel_password", initOptions.defaultChannelPasswordHash],
     ["client_server_password", initOptions.serverPasswordHash],
-    ["client_meta_data", ""],
+    ["client_meta_data", initOptions.metaData],
     ["client_version_sign", initOptions.version.sign],
     ["client_key_offset", String(client.crypt.identity.offset)],
     ["client_nickname_phonetic", ""],
-    ["client_default_token", ""],
+    ["client_default_token", initOptions.privilegeKey],
     ["hwid", hwid],
   ]);
 }
