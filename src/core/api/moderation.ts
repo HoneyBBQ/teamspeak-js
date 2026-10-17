@@ -175,7 +175,10 @@ export interface BanFields {
   readonly name?: string | undefined;
   /** The unique identifier to ban (`uid`). */
   readonly uid?: UID | undefined;
-  /** The myTeamSpeak id to ban (`mytsid`); TS6 only, and a 44-character base64 value (the server refuses others with 1538). */
+  /** The myTeamSpeak id to ban (`mytsid`); TS6 only, and a 44-character base64 value (the server refuses others with 1538).
+   *
+   * The literal `empty` is accepted and stored as it is, and it bans every
+   * client without a myTeamSpeak id: never send it to ban one client. */
   readonly mytsid?: string | undefined;
   /** The nickname to record as the last one the ban caught (`lastnickname`). */
   readonly lastNickname?: string | undefined;

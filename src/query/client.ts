@@ -435,6 +435,10 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
    *
    * Public because a caller driving the client by hand needs it: `connect()`
    * runs it from the `login` option, and this is the same `login` command.
+   *
+   * On TeamSpeak 3 a failed login gets the caller's IP address banned for 600
+   * seconds, so a retry loop on a wrong password locks itself out of every
+   * connection from that address.
    */
   async login(name: string, password: string, options: CommandOptions = {}): Promise<void> {
     await this.exec(

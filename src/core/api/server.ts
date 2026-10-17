@@ -610,6 +610,9 @@ export async function deleteServerGroupPermission(
  *
  * Instance-wide, so it needs `b_permission_modify_power_ignore`, which a
  * virtual server's Server Admin does not hold: a voice client gets error 2568.
+ *
+ * The server requires `permnegated` and `permskip`, so both are always sent:
+ * `options.negated` and `options.skip`, each false when unset.
  */
 export async function addServerGroupPermissionByType(
   client: CommandExecutor,

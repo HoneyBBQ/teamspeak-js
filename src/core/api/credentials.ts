@@ -252,7 +252,8 @@ export interface QueryLoginAddOptions extends CommandOptions {
    * The client to enable the login for (`cldbid`; 0 is unset). With a virtual
    * server selected it is required, and names a client already in that
    * server's database: a login is attached to one. With none selected the
-   * login is the instance's own, and the server makes the client.
+   * login is the instance's own, and the server makes the client. Left out
+   * while a server is selected, the server refuses it with 1539.
    */
   readonly databaseID?: ClientDBID | undefined;
 }
