@@ -84,7 +84,8 @@ interface WebAnswer {
 }
 
 /**
- * A {@link QueryTransport} over WebQuery, TeamSpeak 6's HTTP interface.
+ * A {@link QueryTransport} over WebQuery, the HTTP interface of TeamSpeak 3
+ * (3.12 and later) and TeamSpeak 6.
  *
  * Each command line becomes one request, `POST /<server>/<command>` with the
  * parameters as JSON, and the JSON answer is turned back into what a raw
