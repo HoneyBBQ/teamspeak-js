@@ -19,7 +19,6 @@ import {
   big,
   num,
   bool,
-  icon,
   date,
 } from "./command.js";
 import type { Params, PermissionEntry, WireNames } from "./command.js";
@@ -39,6 +38,7 @@ import {
   asPermissionID,
   asServerGroupID,
 } from "../command/ids.js";
+import { parseChannelGroup } from "./group-rows.js";
 import { PermissionTarget, PrivilegeKeyType } from "../enums.js";
 import type { GroupType } from "../enums.js";
 import type { Permission } from "../permission.js";
@@ -68,19 +68,6 @@ export interface ChannelGroup {
   /** The power needed to remove a member. */
   readonly memberRemovePower: number;
 }
-
-const parseChannelGroup = (row: Record<string, string>): ChannelGroup => ({
-  id: asChannelGroupID(big(row, "cgid")),
-  name: str(row, "name"),
-  type: num(row, "type"),
-  iconID: icon(row, "iconid"),
-  savedInDatabase: bool(row, "savedb"),
-  sortID: num(row, "sortid"),
-  nameMode: num(row, "namemode"),
-  modifyPower: num(row, "n_modifyp"),
-  memberAddPower: num(row, "n_member_addp"),
-  memberRemovePower: num(row, "n_member_removep"),
-});
 
 /** Every channel group. */
 export async function listChannelGroups(

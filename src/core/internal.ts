@@ -14,6 +14,7 @@ export { buildCommand, buildCommandOrdered } from "./command/command.js";
 export type { Command } from "./command/command.js";
 export { clientFields, parseClient, parseClientChanges } from "./api/parse.js";
 export { channelFields, parseChannel, parseChannelChanges } from "./api/command.js";
+export { parseServerGroup, parseChannelGroup } from "./api/group-rows.js";
 export { handleNotification } from "./notifications.js";
 export type { NotificationResult } from "./notifications.js";
 export { parseIconID } from "./command/ids.js";

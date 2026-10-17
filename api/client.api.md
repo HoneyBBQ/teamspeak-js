@@ -6,7 +6,8 @@
 
 import { Channel } from '@honeybbq/teamspeak';
 import { Channel as Channel_2 } from 'node:diagnostics_channel';
-import type { ChannelGroupID } from '@honeybbq/teamspeak';
+import { ChannelGroup } from '@honeybbq/teamspeak';
+import { ChannelGroupID } from '@honeybbq/teamspeak';
 import { ChannelID } from '@honeybbq/teamspeak';
 import type { ChannelSubscribedEvent } from '@honeybbq/teamspeak';
 import type { ChannelUnsubscribedEvent } from '@honeybbq/teamspeak';
@@ -36,7 +37,8 @@ import { Readable } from 'node:stream';
 import type { ReconnectOptions } from '@honeybbq/teamspeak';
 import type { ServerEventMap } from '@honeybbq/teamspeak';
 import { ServerFamily } from '@honeybbq/teamspeak';
-import type { ServerGroupID } from '@honeybbq/teamspeak';
+import { ServerGroup } from '@honeybbq/teamspeak';
+import { ServerGroupID } from '@honeybbq/teamspeak';
 import { ServerID } from '@honeybbq/teamspeak';
 import type { SessionEventMap } from '@honeybbq/teamspeak';
 import { TeamspeakError } from '@honeybbq/teamspeak';
@@ -238,6 +240,7 @@ export interface EventMap extends ServerEventMap, SessionEventMap {
     clientUpdated: ClientUpdatedEvent;
     pluginCommand: PluginCommandEvent;
     poked: PokeEvent;
+    viewChanged: ViewChangedEvent;
     viewReady: ViewReadyEvent;
     voiceData: VoiceDataEvent;
 }
@@ -275,6 +278,7 @@ const eventNameValues: {
     readonly PluginCommand: "pluginCommand";
     readonly ClientChatComposing: "clientChatComposing";
     readonly ViewReady: "viewReady";
+    readonly ViewChanged: "viewChanged";
     readonly Poked: "poked";
     readonly VoiceData: "voiceData";
     readonly Notification: "notification";
@@ -355,6 +359,9 @@ export function generateIdentitySync(targetLevel: number): Identity;
 
 // @public
 export function getChannelDescription(client: Client, cid: ChannelID, options?: CommandOptions): Promise<string>;
+
+// @public
+export function getServerVariables(client: Client, options?: CommandOptions): Promise<Readonly<Record<string, string>>>;
 
 // Warning: (ae-forgotten-export) The symbol "groupWhisperScopeValues" needs to be exported by the entry point index.d.ts
 //
@@ -543,14 +550,18 @@ export type ServerEventName = "textMessage" | "clientEnter" | "clientLeave" | "c
 // @public
 export interface ServerView {
     channel(id: ChannelID): Channel | undefined;
+    readonly channelGroups: ReadonlyMap<ChannelGroupID, ChannelGroup>;
     readonly channels: ReadonlyMap<ChannelID, Channel>;
     children(parent?: ChannelID): readonly Channel[];
     client(id: ClientID): ClientEntry | undefined;
     readonly clients: ReadonlyMap<ClientID, ClientEntry>;
     clientsIn(id: ChannelID): readonly ClientEntry[];
+    readonly groupsLoaded: boolean;
     path(id: ChannelID): readonly Channel[];
     readonly revision: number;
     readonly self: ClientEntry | undefined;
+    readonly server: Readonly<Record<string, string>>;
+    readonly serverGroups: ReadonlyMap<ServerGroupID, ServerGroup>;
     readonly status: ViewStatus;
     whenReady(options?: {
         readonly signal?: AbortSignal | undefined;
@@ -617,6 +628,11 @@ export function verifyChannelPassword(client: Client, cid: ChannelID, password: 
 
 // @public
 export function verifyServerPassword(client: Client, password: string, options?: CommandOptions): Promise<boolean>;
+
+// @public
+export interface ViewChangedEvent {
+    readonly revision: number;
+}
 
 // @public
 export interface ViewReadyEvent {

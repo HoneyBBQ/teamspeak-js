@@ -16,9 +16,20 @@ import {
   NotConnectedError,
   asChannelID,
   asClientID,
+  asServerGroupID,
+  listServerGroups,
   type Logger,
   type ServerGroupID,
 } from "@honeybbq/teamspeak";
+import { getServerVariables } from "./api/voice.js";
+import {
+  ts3Groups,
+  ts3ServerInit,
+  ts3ServerVariables,
+  ts6Groups,
+  ts6ServerInit,
+  ts6ServerVariables,
+} from "./testing/group-recordings.js";
 import type { ClientOptions } from "./types.js";
 
 const identity = generateIdentitySync(0);
@@ -56,6 +67,19 @@ function nextId(socket: FakeSocket): number {
 function send(client: Client, socket: FakeSocket, ...lines: string[]): void {
   const crypt = clientInternals(client).crypt;
   for (const text of lines) {
+    if (text.length > 3_000) {
+      // A datagram holds 4 KiB; the server fragments a longer command and the
+      // client hands it on whole, which is what arrives here.
+      clientInternals(client).handlePacket({
+        typeFlagged: 0x02,
+        id: 0,
+        clientID: 0,
+        generationID: 0,
+        data: line(text),
+        receivedAt: performance.now(),
+      });
+      continue;
+    }
     socket.deliver(sessionPacket(crypt, 2, 0x20, nextId(socket), line(text)));
   }
 }
@@ -609,6 +633,475 @@ describe("the view under random notifications", () => {
         }
       }
       for (const entry of view.clients.values()) expect(view.client(entry.id)).toBe(entry);
+    }
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+});
+
+const groupRecordings = {
+  ts3: {
+    welcome: ts3Welcome,
+    self: ts3SelfID,
+    groups: ts3Groups,
+    init: ts3ServerInit,
+    vars: ts3ServerVariables,
+  },
+  ts6: {
+    welcome: ts6Welcome,
+    self: ts6SelfID,
+    groups: ts6Groups,
+    init: ts6ServerInit,
+    vars: ts6ServerVariables,
+  },
+};
+
+/** Properties as a command line holds them. */
+const encoded = (properties: Readonly<Record<string, string>>): string =>
+  Object.entries(properties)
+    .map(([key, value]) => `${key}=${value.replaceAll(" ", "\\s").replaceAll("/", "\\/")}`)
+    .join(" ");
+
+/** The ids and names a recorded list line holds. */
+function listed(text: string): Array<[bigint, string]> {
+  return text
+    .split("|")
+    .map((row) => [BigInt(/(?:sgid|cgid)=(\d+)/.exec(row)![1]!), /name=(\S+)/.exec(row)![1]!]);
+}
+
+/** The first `n` rows of a list line, as the server would have sent a shorter list. */
+const firstRows = (text: string, n: number): string => {
+  const [name, ...rest] = text.split(" ");
+  const rows = [name, ...rest].join(" ").split("|");
+  return rows.slice(0, n).join("|");
+};
+
+const shown = (map: ReadonlyMap<bigint, { readonly name: string }>): Array<[bigint, string]> =>
+  [...map].map(([id, group]) => [id, group.name.replaceAll(" ", "\\s")]);
+
+describe.each(["ts3", "ts6"] as const)("the groups and server of a %s view", (family) => {
+  const { welcome, groups, init, vars } = groupRecordings[family];
+  const finished = welcome.indexOf("channellistfinished");
+
+  /** A client that has had the welcome up to `channellistfinished`, with the recorded properties. */
+  async function started(): Promise<{
+    client: Client;
+    socket: FakeSocket;
+    viewChanged: number[];
+    seen: string[];
+  }> {
+    const { client, sockets } = makeClient();
+    const { connecting } = await open(client, sockets);
+    const entries = encoded(init);
+    const viewChanged: number[] = [];
+    const seen: string[] = [];
+    client.on("viewChanged", (event) => viewChanged.push(event.revision));
+    client.on("viewReady", () => seen.push("viewReady"));
+    client.on("viewChanged", () => seen.push("viewChanged"));
+    send(
+      client,
+      sockets[0]!,
+      `initserver ${entries} aclid=${groupRecordings[family].self} acn=watcher client_server_password=secret client_key_offset=3`,
+      ...welcome.slice(1, finished + 1),
+    );
+    await connecting;
+    await settle();
+    return { client, socket: sockets[0]!, viewChanged, seen };
+  }
+
+  it("is ready before the groups, which a viewChanged then reports", async () => {
+    const { client, socket, viewChanged, seen } = await started();
+    const view = client.view;
+    expect(view.status).toBe("live");
+    expect(view.groupsLoaded).toBe(false);
+    expect(view.serverGroups.size).toBe(0);
+    expect(view.channelGroups.size).toBe(0);
+    expect(seen[0]).toBe("viewReady");
+    const ready = view.revision;
+
+    send(client, socket, groups.channelGroups8);
+    await settle();
+    expect(view.groupsLoaded).toBe(false);
+    send(client, socket, groups.serverGroups8);
+    await settle();
+    expect(view.groupsLoaded).toBe(true);
+    expect(shown(view.channelGroups)).toEqual(listed(groups.channelGroups8));
+    expect(shown(view.serverGroups)).toEqual(listed(groups.serverGroups8));
+    expect(view.serverGroups.get(asServerGroupID(8n))).toMatchObject({ name: "Guest", type: 1 });
+    expect(view.revision).toBeGreaterThan(ready);
+    expect(viewChanged).toHaveLength(2);
+    expect(viewChanged.at(-1)).toBe(view.revision);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("reports the groups once when the lists share a turn with the typed events", async () => {
+    const { client, socket, viewChanged, seen } = await started();
+    seen.length = 0;
+    const events: string[] = [];
+    client.on("clientEnter", () => events.push("clientEnter"));
+    client.on("viewChanged", () => events.push("viewChanged"));
+    send(
+      client,
+      socket,
+      groups.channelGroups8,
+      welcome
+        .find((l) => l.startsWith("notifycliententerview"))!
+        .replace("clid=18", "clid=40")
+        .replace("clid=2 ", "clid=40 "),
+      groups.serverGroups8,
+    );
+    await settle();
+    expect(viewChanged).toHaveLength(1);
+    expect(viewChanged[0]).toBe(client.view.revision);
+    expect(events.at(-1)).toBe("viewChanged");
+    expect(events.filter((e) => e === "viewChanged")).toHaveLength(1);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("leaves the revision and the maps alone for an identical list", async () => {
+    const { client, socket, viewChanged } = await started();
+    send(client, socket, groups.channelGroups8, groups.serverGroups8);
+    await settle();
+    const view = client.view;
+    const before = {
+      revision: view.revision,
+      server: view.serverGroups,
+      channel: view.channelGroups,
+    };
+    const count = viewChanged.length;
+    send(client, socket, groups.serverGroups8, groups.channelGroups8);
+    await settle();
+    expect(view.revision).toBe(before.revision);
+    expect(view.serverGroups).toBe(before.server);
+    expect(view.channelGroups).toBe(before.channel);
+    expect(viewChanged).toHaveLength(count);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("replaces the set with each list: 62 in a row, then rename, copy and delete", async () => {
+    const { client, socket } = await started();
+    const view = client.view;
+    send(client, socket, groups.channelGroups8, groups.serverGroups8);
+    await settle();
+    const big = listed(groups.serverGroupsBig);
+    expect(big.length).toBeGreaterThan(62);
+    const kept: Array<ReadonlyMap<ServerGroupID, unknown>> = [];
+    for (let n = 9; n <= 70 && n <= big.length; n++) {
+      const before = view.revision;
+      send(client, socket, firstRows(groups.serverGroupsBig, n));
+      await settle();
+      expect(view.serverGroups.size).toBe(n);
+      expect(view.revision).toBe(before + 1);
+      expect([...view.serverGroups.keys()]).toEqual(big.slice(0, n).map(([id]) => id));
+      kept.push(view.serverGroups);
+    }
+    // A map read earlier is as it was.
+    expect(kept[0]!.size).toBe(9);
+
+    send(client, socket, groups.channelGroupsBig, groups.serverGroupsBig);
+    await settle();
+    expect(shown(view.serverGroups)).toEqual(big);
+    expect(shown(view.channelGroups)).toEqual(listed(groups.channelGroupsBig));
+    for (const recorded of [
+      groups.serverGroupsRenamed,
+      groups.serverGroupsCopied,
+      groups.serverGroupsDeleted,
+    ]) {
+      const before = view.revision;
+      send(client, socket, recorded);
+      await settle();
+      expect(shown(view.serverGroups)).toEqual(listed(recorded));
+      expect(view.revision).toBe(before + 1);
+    }
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("takes a one-row list as a one-group set, skips a row without an id and keeps the last of a repeated id", async () => {
+    const { client, socket } = await started();
+    const view = client.view;
+    send(client, socket, groups.channelGroups8, groups.serverGroups8);
+    await settle();
+    const row = (id: string, name: string): string =>
+      `sgid=${id} name=${name} type=1 iconid=0 savedb=0 sortid=0 namemode=0 n_modifyp=75 n_member_addp=0 n_member_removep=0`;
+    send(client, socket, `notifyservergrouplist ${row("3", "Only")}`);
+    await settle();
+    expect([...view.serverGroups.keys()]).toEqual([3n]);
+    send(
+      client,
+      socket,
+      `notifyservergrouplist ${row("4", "A")}|name=NoId type=1|${row("4", "B")}|${row("2", "C")}`,
+    );
+    await settle();
+    expect(shown(view.serverGroups)).toEqual([
+      [4n, "B"],
+      [2n, "C"],
+    ]);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("answers a caller's listServerGroups as well as taking the list", async () => {
+    const { client, socket } = await started();
+    send(client, socket, groups.channelGroups8, groups.serverGroups8);
+    await settle();
+    const sent = socket.sent.length;
+    const asked = listServerGroups(client, { timeoutMs: 2_000 });
+    await until(() => socket.sent.length > sent);
+    send(client, socket, groups.serverGroupsBig);
+    for (let rc = 1; rc < 40; rc++) send(client, socket, `error id=0 msg=ok return_code=${rc}`);
+    const answer = await asked;
+    expect(answer.map((g) => g.id)).toEqual(listed(groups.serverGroupsBig).map(([id]) => id));
+    expect(shown(client.view.serverGroups)).toEqual(listed(groups.serverGroupsBig));
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("returns the whole answer of getServerVariables and merges it into the view", async () => {
+    const { client, socket } = await started();
+    const sent = socket.sent.length;
+    const asked = getServerVariables(client, { timeoutMs: 2_000 });
+    await until(() => socket.sent.length > sent);
+    const row = encoded(vars);
+    send(client, socket, `notifyserverupdated ${row}`);
+    for (let rc = 1; rc < 40; rc++) send(client, socket, `error id=0 msg=ok return_code=${rc}`);
+    const answer = await asked;
+    expect(answer).toEqual(vars);
+    expect(answer).toHaveProperty("virtualserver_uptime");
+    expect(client.view.server).not.toHaveProperty("virtualserver_uptime");
+    expect(client.view.server["virtualserver_maxclients"]).toBe(vars["virtualserver_maxclients"]);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("keeps the lists when stale, ignores them then, and clears them on the next connect", async () => {
+    const { client, socket, viewChanged } = await started();
+    send(client, socket, groups.channelGroups8, groups.serverGroups8);
+    await settle();
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+    expect(client.view.status).toBe("stale");
+    await settle();
+    expect(viewChanged.at(-1)).toBe(client.view.revision);
+    expect(client.view.groupsLoaded).toBe(true);
+    expect(client.view.serverGroups.size).toBe(8);
+    expect(client.view.server["virtualserver_name"]).toBe(init["virtualserver_name"]);
+    const stale = client.view.revision;
+    send(client, socket, groups.serverGroupsBig);
+    expect(client.view.serverGroups.size).toBe(8);
+    expect(client.view.revision).toBe(stale);
+
+    const second = client.connect();
+    second.catch(() => {});
+    await settle();
+    expect(client.view.status).toBe("loading");
+    expect(client.view.groupsLoaded).toBe(false);
+    expect(client.view.serverGroups.size).toBe(0);
+    expect(client.view.channelGroups.size).toBe(0);
+    expect(client.view.server).toEqual({});
+    await client.disconnect({ signal: AbortSignal.timeout(1) }).catch(() => {});
+  });
+
+  it("seeds the server from initserver with its virtualserver_ keys only", async () => {
+    const { client } = await started();
+    expect(client.view.server).toEqual(init);
+    expect(Object.keys(client.view.server).every((key) => key.startsWith("virtualserver_"))).toBe(
+      true,
+    );
+    expect(JSON.stringify(client.view.server)).not.toContain("secret");
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("patches the server from serverEdited, and not for an empty edit", async () => {
+    const { client, socket, viewChanged } = await started();
+    const view = client.view;
+    const before = { server: view.server, revision: view.revision };
+    const count = viewChanged.length;
+    send(client, socket, "notifyserveredited invokerid=5 invokername=admin invokeruid=x");
+    await settle();
+    expect(view.server).toBe(before.server);
+    expect(view.revision).toBe(before.revision);
+    expect(viewChanged).toHaveLength(count);
+
+    send(
+      client,
+      socket,
+      "notifyserveredited invokerid=5 invokername=admin invokeruid=x virtualserver_name=Renamed",
+    );
+    await settle();
+    expect(view.server["virtualserver_name"]).toBe("Renamed");
+    expect(view.server).not.toBe(before.server);
+    expect(before.server["virtualserver_name"]).toBe(init["virtualserver_name"]);
+    expect(view.revision).toBe(before.revision + 1);
+    expect(viewChanged.at(-1)).toBe(view.revision);
+
+    // The same value again moves nothing.
+    const again = view.revision;
+    send(client, socket, "notifyserveredited virtualserver_name=Renamed");
+    await settle();
+    expect(view.revision).toBe(again);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("merges a notifyserverupdated without the counters, and keeps what it lacks", async () => {
+    const { client, socket } = await started();
+    const view = client.view;
+    send(client, socket, `notifyserverupdated ${encoded(vars)} virtualserver_future_key=7`);
+    await settle();
+    const counters = [
+      "clientsonline",
+      "queryclientsonline",
+      "channelsonline",
+      "uptime",
+      "client_connections",
+      "query_client_connections",
+      "month_bytes_downloaded",
+      "month_bytes_uploaded",
+      "total_bytes_downloaded",
+      "total_bytes_uploaded",
+      "total_packetloss_speech",
+      "total_packetloss_keepalive",
+      "total_packetloss_control",
+      "total_packetloss_total",
+      "total_ping",
+    ];
+    // The recording carries all 15, and none is held.
+    for (const name of counters) {
+      expect(vars).toHaveProperty(`virtualserver_${name}`);
+      expect(view.server).not.toHaveProperty(`virtualserver_${name}`);
+    }
+    expect(view.server["virtualserver_port"]).toBe(vars["virtualserver_port"]);
+    expect(view.server["virtualserver_future_key"]).toBe("7");
+    // Init-only keys survive the merge.
+    expect(view.server["virtualserver_platform"]).toBe(init["virtualserver_platform"]);
+    expect(view.server["virtualserver_maxclients"]).toBe(vars["virtualserver_maxclients"]);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("sends viewChanged once for the packets of a turn, none while loading, none for a repeat", async () => {
+    const { client, sockets } = makeClient();
+    const changed: number[] = [];
+    client.on("viewChanged", (event) => changed.push(event.revision));
+    const { connecting } = await open(client, sockets);
+    send(client, sockets[0]!, ...welcome.slice(0, finished));
+    await connecting;
+    await settle();
+    expect(changed).toEqual([]);
+    send(client, sockets[0]!, "channellistfinished");
+    await settle();
+    // viewReady carried this revision.
+    expect(changed).toEqual([]);
+
+    const order: string[] = [];
+    client.on("channelCreated", () => order.push("channelCreated"));
+    client.on("viewChanged", () => order.push("viewChanged"));
+    send(client, sockets[0]!, ...recordings[family].events.slice(0, 3), groups.serverGroups8);
+    await settle();
+    expect(order).toEqual(["channelCreated", "channelCreated", "channelCreated", "viewChanged"]);
+    expect(changed).toEqual([client.view.revision]);
+
+    send(client, sockets[0]!, groups.serverGroups8);
+    await settle();
+    expect(changed).toHaveLength(1);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+    await settle();
+    expect(changed).toHaveLength(2);
+    expect(changed.at(-1)).toBe(client.view.revision);
+  });
+
+  it("names what a channel delete and a client leave removed", async () => {
+    const { client, socket } = await live(family);
+    const view = client.view;
+    const deleted: unknown[] = [];
+    const left: unknown[] = [];
+    client.on("channelDeleted", (event) => deleted.push(event));
+    client.on("clientLeave", (event) => left.push(event));
+
+    const channel = view.channel(cid(6))!;
+    const other = view.clientsIn(cid(2)).find((c) => c.id !== recordings[family].self)!;
+    send(client, socket, "notifychanneldeleted cid=6 invokerid=1 invokername=x invokeruid=y");
+    send(
+      client,
+      socket,
+      `notifyclientleftview cfid=2 ctid=0 reasonid=8 reasonmsg=bye clid=${other.id}`,
+    );
+    // A client never announced, and a channel never held.
+    send(client, socket, "notifyclientleftview cfid=2 ctid=0 reasonid=8 clid=999");
+    send(client, socket, "notifychanneldeleted cid=99 invokerid=1");
+    await settle();
+    expect(deleted).toHaveLength(2);
+    expect(left).toHaveLength(2);
+    expect((deleted[0] as { previous?: unknown }).previous).toBe(channel);
+    expect(
+      (deleted[0] as { previous: { order: bigint; totalClients: unknown } }).previous.order,
+    ).toBe(5n);
+    expect(deleted[1]).not.toHaveProperty("previous");
+    expect((left[0] as { previous?: unknown }).previous).toMatchObject({ id: other.id });
+    expect(left[1]).not.toHaveProperty("previous");
+    expect(view.channel(cid(6))).toBeUndefined();
+    expect(view.client(other.id)).toBeUndefined();
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("gives a force-deleted parent's children first, each with its own record", async () => {
+    const { client, socket } = await live(family);
+    const deleted: Array<{ channelID: bigint; previous?: { name: string } | undefined }> = [];
+    client.on("channelDeleted", (event) => deleted.push(event));
+    send(client, socket, "notifychanneldeleted cid=5 invokerid=1");
+    send(client, socket, "notifychanneldeleted cid=2 invokerid=1");
+    await settle();
+    expect(deleted.map((e) => [e.channelID, e.previous?.name])).toEqual([
+      [5n, "Alpha-1"],
+      [2n, "Alpha"],
+    ]);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("gives no previous for a channel event while the view is loading", async () => {
+    const { client, sockets } = makeClient();
+    const { connecting } = await open(client, sockets);
+    const deleted: unknown[] = [];
+    client.on("channelDeleted", (event) => deleted.push(event));
+    send(client, sockets[0]!, ...welcome.slice(0, 3), "notifychanneldeleted cid=2 invokerid=1");
+    await connecting;
+    await settle();
+    expect(deleted).toHaveLength(1);
+    expect(deleted[0]).not.toHaveProperty("previous");
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  /** A live client after the recorded welcome. */
+  async function live(name: "ts3" | "ts6"): Promise<{ client: Client; socket: FakeSocket }> {
+    const { client, sockets } = makeClient();
+    const { connecting } = await open(client, sockets);
+    send(client, sockets[0]!, ...groupRecordings[name].welcome);
+    await connecting;
+    await client.view.whenReady();
+    await settle();
+    return { client, socket: sockets[0]! };
+  }
+});
+
+describe("the view of random group and server notifications", () => {
+  it("never throws, and holds the last list", async () => {
+    const { client, sockets } = makeClient();
+    const { connecting } = await open(client, sockets);
+    send(client, sockets[0]!, ...ts3Welcome);
+    await connecting;
+    await client.view.whenReady();
+    const view = client.view;
+    const row = fc.record({
+      id: fc.oneof(fc.integer({ min: 0, max: 20 }).map(String), fc.constantFrom("", "x", "-1")),
+      name: fc.constantFrom("a", "b", "c", ""),
+    });
+    const lines: Array<Array<{ id: string; name: string }>> = fc.sample(
+      fc.array(row, { maxLength: 8 }),
+      { numRuns: 80, seed: 5 },
+    );
+    for (const rows of lines) {
+      const text = `notifyservergrouplist ${rows.map((r) => `sgid=${r.id} name=${r.name || "n"}`).join("|")}`;
+      expect(() =>
+        send(client, sockets[0]!, text, "notifyserveredited virtualserver_name=a"),
+      ).not.toThrow();
+      await settle();
+      const expected = new Set(
+        rows.filter((r) => /^[1-9]\d*$/.test(r.id)).map((r) => BigInt(r.id)),
+      );
+      expect(new Set(view.serverGroups.keys())).toEqual(expected);
     }
     await client.disconnect({ signal: AbortSignal.timeout(1) });
   });

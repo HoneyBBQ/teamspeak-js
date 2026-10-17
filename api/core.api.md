@@ -308,6 +308,7 @@ export interface ChannelCreateOptions extends ChannelSettings {
 // @public
 export interface ChannelDeletedEvent extends Invoked {
     readonly channelID: ChannelID;
+    readonly previous?: Channel | undefined;
 }
 
 // @public
@@ -607,6 +608,7 @@ export interface ClientLeaveEvent {
     readonly invokerID: ClientID;
     readonly invokerName: string;
     readonly invokerUID: UID;
+    readonly previous?: ClientEntry | undefined;
     readonly reason: number;
     readonly reasonMessage: string;
 }

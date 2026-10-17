@@ -8,7 +8,7 @@
  */
 
 import type { Client } from "../client.js";
-import { ErrorCode, ServerError } from "@honeybbq/teamspeak";
+import { ErrorCode, NoDataError, ServerError } from "@honeybbq/teamspeak";
 import type { ChannelID, ClientID, CommandOptions } from "@honeybbq/teamspeak";
 
 /**
@@ -30,6 +30,30 @@ export async function getChannelDescription(
   // and the first row is then not the answer.
   const answer = rows.find((row) => row["cid"] === String(cid) && "channel_description" in row);
   return answer?.["channel_description"] ?? "";
+}
+
+/**
+ * The virtual server's properties as the server sends them on request, which
+ * is a different set from `getServerInfo`'s: it has the settings, limits and
+ * counters (clients online, uptime, traffic) and lacks the identity ones such as
+ * the unique identifier. It is the whole row, counters included.
+ *
+ * The client's `view.server` takes every answer in, whoever asked, less the
+ * counters, so this is also how to bring it up to date after an edit the
+ * server did not spell out. The answer goes to the asker alone.
+ *
+ * @experimental New in 1.x and may change in a minor release.
+ */
+export async function getServerVariables(
+  client: Client,
+  options?: CommandOptions,
+): Promise<Readonly<Record<string, string>>> {
+  const rows = await client.send({ command: "servergetvariables" }, options);
+  const answer = rows.find((row) =>
+    Object.keys(row).some((key) => key.startsWith("virtualserver_")),
+  );
+  if (answer === undefined) throw new NoDataError("servergetvariables");
+  return answer;
 }
 
 /**
