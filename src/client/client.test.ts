@@ -146,6 +146,79 @@ describe("Client events for changes to clients", () => {
   });
 });
 
+describe("Client events for channels, the server and plugins", () => {
+  async function feed(client: Client, ...lines: string[]): Promise<void> {
+    for (const line of lines) clientInternals(client).handler.onPacket?.(commandPacket(line));
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+
+  it("delivers each, through event middleware, and the catch-all after it", async () => {
+    const names: string[] = [];
+    const client = new Client(generateIdentitySync(0), "127.0.0.1:9987", "Bot", {
+      eventMiddleware: [
+        (next) => (event) => {
+          names.push(event.name);
+          next(event);
+        },
+      ],
+    });
+    clientInternals(client).clid = 5;
+    completeCryptoInit(clientInternals(client).crypt);
+    const seen: string[] = [];
+    for (const name of [
+      "channelCreated",
+      "channelEdited",
+      "channelMoved",
+      "channelDeleted",
+      "channelDescriptionChanged",
+      "channelPasswordChanged",
+      "serverEdited",
+      "channelSubscribed",
+      "channelUnsubscribed",
+      "pluginCommand",
+      "clientChatComposing",
+    ] as const) {
+      client.on(name, () => seen.push(name));
+    }
+
+    await feed(
+      client,
+      "notifychannelcreated cid=9 cpid=0 channel_name=x invokerid=2 invokername=A invokeruid=a",
+      "notifychanneledited cid=9 reasonid=10 invokerid=2 invokername=A invokeruid=a channel_topic=t",
+      "notifychannelmoved cid=9 cpid=0 order=0 reasonid=1 invokerid=2 invokername=A invokeruid=a",
+      "notifychanneldeleted invokerid=0 invokername=Server cid=9",
+      "notifychanneldescriptionchanged cid=9",
+      "notifychannelpasswordchanged cid=9",
+      "notifyserveredited invokerid=2 invokername=A invokeruid=a virtualserver_name=n",
+      "notifychannelsubscribed cid=9 es=1",
+      "notifychannelunsubscribed cid=9",
+      "notifyplugincmd name=p data=d invokerid=5 invokername=Bot invokeruid=u",
+      "notifyclientchatcomposing clid=9 cluid=u",
+    );
+
+    expect(seen).toHaveLength(11);
+    // Each typed event is followed by its notification, in the middleware too.
+    expect(names.filter((n) => n !== "notification")).toEqual(seen);
+    expect(names.filter((n) => n === "notification")).toHaveLength(11);
+    expect(names.slice(0, 2)).toEqual(["channelCreated", "notification"]);
+  });
+
+  it("gives the answer to a description fetch to the catch-all only", async () => {
+    const client = connectedClient("Bot", 5);
+    const seen: string[] = [];
+    client.on("channelEdited", (e) => seen.push(`edited:${String(e.channelID)}`));
+    client.on("notification", (e) => seen.push(`${e.name}:${e.params["channel_description"]}`));
+
+    await feed(
+      client,
+      "notifychanneledited cid=9 channel_description=text reasonid=9",
+      "notifychanneledited cid=9 reasonid=10 invokerid=2 invokername=A invokeruid=a channel_topic=t",
+    );
+
+    expect(seen).toEqual(["notifychanneledited:text", "edited:9", "notifychanneledited:undefined"]);
+  });
+});
+
 const silentSockets: Socket[] = [];
 afterEach(() => {
   for (const socket of silentSockets.splice(0)) socket.close();

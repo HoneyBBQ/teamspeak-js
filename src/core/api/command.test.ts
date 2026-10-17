@@ -1055,5 +1055,46 @@ describe("getClientConnectionInfo", () => {
     expect(info.ip).toBeUndefined();
     expect(info.port).toBeUndefined();
     expect(info.pingMs).toBe(0);
+
+describe("plugin commands and the typing indicator", () => {
+  it("addresses the channel, the server, or one client", async () => {
+    const { client, execCommand } = fakeClient();
+    const { sendPluginCommand } = await import("./clients.js");
+
+    await sendPluginCommand(client, "plug", "hello", "channel");
+    await sendPluginCommand(client, "plug", "hello", "server");
+    await sendPluginCommand(client, "plug", "hello", { clientID: asClientID(9) });
+
+    expect(execCommand.mock.calls.map((c) => c[0])).toEqual([
+      "plugincmd name=plug data=hello targetmode=0",
+      "plugincmd name=plug data=hello targetmode=1",
+      "plugincmd name=plug data=hello targetmode=2 target=9",
+    ]);
+  });
+
+  it("escapes the name and sends an empty payload as empty", async () => {
+    const { client, execCommand } = fakeClient();
+    const { sendPluginCommand } = await import("./clients.js");
+
+    await sendPluginCommand(client, "b2 plug", "a b|c/d", "channel");
+    await sendPluginCommand(client, "plug", "", "channel");
+
+    expect(execCommand.mock.calls.map((c) => c[0])).toEqual([
+      "plugincmd name=b2\\splug data=a\\sb\\pc\\/d targetmode=0",
+      "plugincmd name=plug data= targetmode=0",
+    ]);
+  });
+
+  it("sends the typing indicator and the end of a chat to one client", async () => {
+    const { client, execCommand } = fakeClient();
+    const { sendChatComposing, closePrivateChat } = await import("./clients.js");
+
+    await sendChatComposing(client, asClientID(9));
+    await closePrivateChat(client, asClientID(9));
+
+    expect(execCommand.mock.calls.map((c) => c[0])).toEqual([
+      "clientchatcomposing clid=9",
+      "clientchatclosed clid=9",
+    ]);
   });
 });

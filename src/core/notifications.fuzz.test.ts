@@ -17,6 +17,17 @@ const NAMES = [
   "notifyservergroupclientadded",
   "notifyservergroupclientdeleted",
   "notifyclientchannelgroupchanged",
+  "notifychannelcreated",
+  "notifychanneledited",
+  "notifychannelmoved",
+  "notifychanneldeleted",
+  "notifychanneldescriptionchanged",
+  "notifychannelpasswordchanged",
+  "notifyserveredited",
+  "notifychannelsubscribed",
+  "notifychannelunsubscribed",
+  "notifyplugincmd",
+  "notifyclientchatcomposing",
   "notifyunknown",
 ] as const;
 
@@ -51,6 +62,15 @@ const KEYS = [
   "client_input_muted",
   "client_icon_id",
   "client_talk_request",
+  "cpid",
+  "order",
+  "data",
+  "channel_name",
+  "channel_flag_password",
+  "channel_codec_quality",
+  "channel_delete_delay",
+  "virtualserver_name",
+  "virtualserver_welcomemessage",
 ] as const;
 
 /**

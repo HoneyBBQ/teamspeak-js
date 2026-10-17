@@ -249,7 +249,7 @@ describe("QueryClient lifecycle", () => {
       "servernotifyregister event=textserver",
       "servernotifyregister event=textchannel",
       "servernotifyregister event=textprivate",
-      "clientlist -uid -groups",
+      "clientlist -uid -groups -away -voice",
     ]);
     expect(client.status).toBe("connected");
     expect(client.serverFamily).toBe("ts3");
@@ -264,13 +264,16 @@ describe("QueryClient lifecycle", () => {
       "servernotifyregister event=textprivate",
       "servernotifyregister event=bans",
     ]);
+    // The channel and server events come from those categories, so leaving
+    // them out registers for neither.
+    expect(transport.sent.some((l) => /event=(channel|server)\b/.test(l))).toBe(false);
 
     const quiet = new FakeTransport();
     autoOk(quiet);
     const silent = clientOn(quiet, { events: false });
     await silent.connect();
     expect(quiet.sent.filter((l) => l.startsWith("servernotifyregister"))).toEqual([]);
-    expect(quiet.sent).not.toContain("clientlist -uid -groups");
+    expect(quiet.sent).not.toContain("clientlist -uid -groups -away -voice");
   });
 
   it("reads the family from the server's version", async () => {

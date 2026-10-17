@@ -85,6 +85,124 @@ async function connected(options: Partial<QueryClientOptions> = {}): Promise<{
   return { client, transport };
 }
 
+describe("QueryClient events for channels and the server", () => {
+  // The payloads are the ones TeamSpeak 3 and TeamSpeak 6 sent a query client.
+  const lines = {
+    channelCreated:
+      "notifychannelcreated cid=246 cpid=0 channel_name=b2m-full channel_topic=tp channel_order=3 channel_flag_permanent=1 invokerid=460 invokername=b2-adm invokeruid=serveradmin",
+    channelEdited:
+      "notifychanneledited cid=246 reasonid=10 invokerid=460 invokername=b2-adm invokeruid=serveradmin channel_codec_quality=5",
+    channelMoved:
+      "notifychannelmoved cid=7 cpid=2 order=0 reasonid=1 invokerid=11 invokername=b2-adm2 invokeruid=serveradmin",
+    channelDeleted: "notifychanneldeleted invokerid=0 invokername=Server cid=246",
+    channelDescriptionChanged: "notifychanneldescriptionchanged cid=246",
+    channelPasswordChanged: "notifychannelpasswordchanged cid=246",
+    serverEdited:
+      "notifyserveredited reasonid=10 invokerid=460 invokername=b2-adm invokeruid=serveradmin virtualserver_name=b2\\sname",
+  } as const;
+
+  it("delivers each as the core's event, and the catch-all after it", async () => {
+    const { client, transport } = await connected();
+    const order: string[] = [];
+    const payloads = new Map<string, unknown>();
+    for (const name of Object.keys(lines) as Array<keyof typeof lines>) {
+      client.on(name, (e) => {
+        order.push(name);
+        payloads.set(name, e);
+      });
+    }
+    client.on("notification", (e: NotificationEvent) => order.push(`notification:${e.name}`));
+
+    for (const line of Object.values(lines)) transport.receive(line);
+
+    expect(order).toEqual([
+      "channelCreated",
+      "notification:notifychannelcreated",
+      "channelEdited",
+      "notification:notifychanneledited",
+      "channelMoved",
+      "notification:notifychannelmoved",
+      "channelDeleted",
+      "notification:notifychanneldeleted",
+      "channelDescriptionChanged",
+      "notification:notifychanneldescriptionchanged",
+      "channelPasswordChanged",
+      "notification:notifychannelpasswordchanged",
+      "serverEdited",
+      "notification:notifyserveredited",
+    ]);
+    expect(payloads.get("channelCreated")).toMatchObject({
+      channelID: 246n,
+      parentID: 0n,
+      changes: { name: "b2m-full", topic: "tp", order: 3n, isPermanent: true },
+    });
+    expect(payloads.get("channelEdited")).toMatchObject({
+      reason: Reason.ChannelEdit,
+      changes: { codecQuality: 5 },
+    });
+    expect(payloads.get("channelDeleted")).toMatchObject({
+      invokerID: 0,
+      invokerName: "Server",
+    });
+    expect(payloads.get("serverEdited")).toMatchObject({
+      changes: { virtualserver_name: "b2 name" },
+      invokerName: "b2-adm",
+    });
+  });
+
+  it("gives a description fetch's answer to the catch-all only", async () => {
+    const { client, transport } = await connected();
+    const edits: string[] = [];
+    const names: string[] = [];
+    client.on("channelEdited", (e) => edits.push(String(e.channelID)));
+    client.on("notification", (e: NotificationEvent) => names.push(e.name));
+
+    transport.receive("notifychanneledited cid=7 channel_description=initial\\sdesc reasonid=9");
+    transport.receive(lines.channelEdited);
+
+    expect(edits).toEqual(["246"]);
+    expect(names).toEqual(["notifychanneledited", "notifychanneledited"]);
+  });
+
+  it("offers none of the voice client's events, and still carries their notifications", async () => {
+    const { client, transport } = await connected();
+    const names: string[] = [];
+    client.on("notification", (e: NotificationEvent) => names.push(e.name));
+
+    transport.receive(
+      "notifyclientupdated clid=4 client_away=1",
+      "notifyplugincmd name=p data=d invokerid=4 invokername=x invokeruid=u",
+      "notifychannelsubscribed cid=3 es=1",
+      "notifyclientchatcomposing clid=4 cluid=u",
+    );
+
+    expect(names).toEqual([
+      "notifyclientupdated",
+      "notifyplugincmd",
+      "notifychannelsubscribed",
+      "notifyclientchatcomposing",
+    ]);
+    // @ts-expect-error a query client has no pluginCommand event
+    expect(() => client.on("pluginCommand", () => {})).not.toThrow();
+  });
+
+  it("learns the clients with their away and mute state", async () => {
+    const transport = new FakeTransport();
+    transport.clientList = [
+      "clid=5 cid=1 client_nickname=Alice client_unique_identifier=u client_type=0 client_away=1 client_input_muted=1",
+      "error id=0 msg=ok",
+    ];
+    const client = clientOn(transport);
+    await client.connect();
+    const seen: TextMessageEvent[] = [];
+    client.on("textMessage", (e) => seen.push(e));
+
+    expect(transport.sent).toContain("clientlist -uid -groups -away -voice");
+    transport.receive("notifytextmessage targetmode=1 msg=hi invokerid=5 invokername=Alice");
+    expect(seen[0]?.invokerUID).toBe("u");
+  });
+});
+
 describe("QueryClient events", () => {
   it("delivers a text message as the core's event", async () => {
     const { client, transport } = await connected();
@@ -353,6 +471,17 @@ describe("QueryClient events", () => {
     expect(() => client.on("textMessage", () => {})).toThrow(TypeError);
     expect(() => client.on("notification", () => {})).toThrow(TypeError);
     expect(() => client.events("clientMoved")).toThrow(TypeError);
+    for (const name of [
+      "channelCreated",
+      "channelEdited",
+      "channelMoved",
+      "channelDeleted",
+      "channelDescriptionChanged",
+      "channelPasswordChanged",
+      "serverEdited",
+    ] as const) {
+      expect(() => client.on(name, () => {}), name).toThrow(TypeError);
+    }
     // The session events come from the client's own lifecycle, not the server.
     expect(() => client.on("connected", () => {})).not.toThrow();
     expect(() => client.on("disconnected", () => {})).not.toThrow();

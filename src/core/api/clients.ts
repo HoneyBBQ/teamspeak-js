@@ -24,7 +24,7 @@ import {
   num,
   date,
 } from "./command.js";
-import type { PagingOptions, PermissionEntry, WireNames } from "./command.js";
+import type { PagingOptions, Params, PermissionEntry, WireNames } from "./command.js";
 import type { CommandExecutor, CommandOptions } from "../command/request.js";
 import type {
   ChannelGroupID,
@@ -454,6 +454,82 @@ export async function pokeClient(
     ],
     options,
   );
+}
+
+/**
+ * Who receives a plugin command: `"channel"` for the clients in the sender's
+ * channel, `"server"` for every client on the server, or one client by id.
+ */
+export type PluginCommandTarget = "channel" | "server" | { readonly clientID: ClientID };
+
+/** The `targetmode` of `plugincmd`, by what it addresses. */
+const pluginTargetModes = { channel: 0, server: 1, client: 2 } as const;
+
+/**
+ * Send a plugin command: a named payload that other clients' plugins agree on
+ * and the server relays without reading. The receiving client gets it as the
+ * `pluginCommand` event.
+ *
+ * Measured on TeamSpeak 3 and 6, who receives it:
+ *
+ * - `"channel"`: the clients in the sender's channel, and the sender. A client
+ *   in another channel gets nothing, subscribed to this one or not.
+ * - `"server"`: every client on the server, and the sender.
+ * - `{ clientID }`: that client only; the sender receives it just when it
+ *   names itself. An id no client has is refused with `ErrorCode.ClientInvalidID`.
+ *
+ * `data` may be empty, and is delivered empty. A ServerQuery connection cannot
+ * send plugin commands: the server refuses with 516, invalid client type.
+ * The server has a fourth mode, 3, which was seen to reach the same clients as
+ * the whole server, so it is not offered.
+ */
+export async function sendPluginCommand(
+  client: CommandExecutor,
+  name: string,
+  data: string,
+  target: PluginCommandTarget,
+  options?: CommandOptions,
+): Promise<void> {
+  const addressed: Params =
+    target === "channel"
+      ? [["targetmode", pluginTargetModes.channel]]
+      : target === "server"
+        ? [["targetmode", pluginTargetModes.server]]
+        : [
+            ["targetmode", pluginTargetModes.client],
+            ["target", target.clientID],
+          ];
+  await exec(client, "plugincmd", [["name", name], ["data", data], ...addressed], options);
+}
+
+/**
+ * Tell a client that we are typing a private message to it, which it receives
+ * as the `clientChatComposing` event. Only that client is told, whatever
+ * channel it is in; naming ourselves tells ourselves. An id no client has is
+ * refused with `ErrorCode.ClientInvalidID`. A ServerQuery connection cannot send
+ * it: the server answers 256, command not found.
+ */
+export async function sendChatComposing(
+  client: CommandExecutor,
+  clid: ClientID,
+  options?: CommandOptions,
+): Promise<void> {
+  await exec(client, "clientchatcomposing", [["clid", clid]], options);
+}
+
+/**
+ * Tell a client that we closed our private chat with it. It is only delivered
+ * to a client we have sent a private message to; for any other the server
+ * accepts the command and sends nothing. The client receives it as a
+ * `notification` named `NotificationName.ClientChatClosed`, since it has no
+ * typed event. A ServerQuery connection cannot send it.
+ */
+export async function closePrivateChat(
+  client: CommandExecutor,
+  clid: ClientID,
+  options?: CommandOptions,
+): Promise<void> {
+  await exec(client, "clientchatclosed", [["clid", clid]], options);
 }
 
 /**
