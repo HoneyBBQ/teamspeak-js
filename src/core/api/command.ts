@@ -363,6 +363,52 @@ const durationMs = (row: Record<string, string>, key: string, unitMs: number): n
 
 export { str, big, num, uint, U16, U32, bool, icon, date, durationMs };
 
+// ---- Read tables ------------------------------------------------------------
+
+/**
+ * How one record field is read from a row: the wire keys that carry it, in
+ * the order they are tried, and how to read the one that is there. An `always`
+ * field is read even from a row without it, as the default `read` gives; the
+ * others are left out, so a field is `undefined` when the row lacked it.
+ */
+export interface FieldSpec<T> {
+  /** The wire keys that name the field; the first one the row has is read. */
+  readonly keys: readonly [string, ...string[]];
+  /** Reads the field from the row, given the key that was found (or the first, for an absent `always` field). */
+  readonly read: (row: Record<string, string>, key: string) => T;
+  /** Whether a full record reads the field from a row that lacks it. */
+  readonly always?: true;
+}
+
+/**
+ * Read the fields of `table` from a row into a new object.
+ *
+ * With `onlyPresent`, a field is read only when the row carries one of its
+ * keys, and a value that reads as `undefined` is left out: what comes back
+ * holds exactly the keys the row named, which is what a change needs, since
+ * an explicit `undefined` would erase a field when merged. Without it, the
+ * `always` fields are read whether or not the row has them, as a full record
+ * does.
+ */
+export function readFields(
+  table: Readonly<Record<string, FieldSpec<unknown>>>,
+  row: Record<string, string>,
+  onlyPresent: boolean,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [name, spec] of Object.entries(table)) {
+    const key = spec.keys.find((k) => row[k] !== undefined);
+    const full = spec.always === true && !onlyPresent;
+    if (key === undefined) {
+      if (full) out[name] = spec.read(row, spec.keys[0]);
+      continue;
+    }
+    const value = spec.read(row, key);
+    if (value !== undefined || full) out[name] = value;
+  }
+  return out;
+}
+
 // ---- Shared shapes ----------------------------------------------------------
 
 /**
@@ -498,34 +544,124 @@ export interface Channel {
    * `channellist` does not carry it, so `listChannels` leaves it empty.
    */
   readonly uid: ChannelUID;
+
+  // Everything below is `undefined` when the row did not carry its key, never
+  // a default. `channellist` carries none of it, so `listChannels` leaves it
+  // undefined; `getChannelInfo` fills it in, and a created or edited
+  // notification names the ones that changed.
+
+  /** How many packets of voice are sent at once, 1 to 10 (`channel_codec_latency_factor`). */
+  readonly codecLatencyFactor?: number | undefined;
+  /** Whether voice in the channel travels unencrypted (`channel_codec_is_unencrypted`). */
+  readonly isUnencrypted?: boolean | undefined;
+  /** Whether `maxClients` is ignored (`channel_flag_maxclients_unlimited`). */
+  readonly isMaxClientsUnlimited?: boolean | undefined;
+  /** Whether `maxFamilyClients` is ignored (`channel_flag_maxfamilyclients_unlimited`). */
+  readonly isMaxFamilyClientsUnlimited?: boolean | undefined;
+  /** Whether the family limit is taken from the parent (`channel_flag_maxfamilyclients_inherited`). */
+  readonly isMaxFamilyClientsInherited?: boolean | undefined;
+  /**
+   * How long a temporary channel survives its last client leaving, in
+   * milliseconds (`channel_delete_delay`, which the wire carries in seconds).
+   */
+  readonly deleteDelayMs?: number | undefined;
+  /** How the name is pronounced, for text-to-speech (`channel_name_phonetic`). */
+  readonly namePhonetic?: string | undefined;
+  /** Whether only clients with talk power may speak (`channel_forced_silence`). */
+  readonly isForcedSilence?: boolean | undefined;
+  /** The URL of the channel's banner image (`channel_banner_gfx_url`). */
+  readonly bannerURL?: string | undefined;
+  /** How the banner is scaled (`channel_banner_mode`). */
+  readonly bannerMode?: number | undefined;
 }
+
+/**
+ * A change to a channel: only the properties a notification named, by the
+ * names of {@link Channel}. A key is present exactly when the notification
+ * carried it, and a property it did not carry is not "unknown" but, for a
+ * created channel, the server's default.
+ */
+export type ChannelChanges = {
+  readonly [K in Exclude<keyof Channel, "id">]?: Channel[K];
+};
+
+/**
+ * The channel with `changes` applied, as a new object; `channel` is not
+ * touched. Keys `changes` lacks keep their value, and a key holding
+ * `undefined` is skipped, so no property is erased by a change that did not
+ * carry it.
+ */
+export function applyChannelChanges(channel: Channel, changes: ChannelChanges): Channel {
+  const next: Record<string, unknown> = { ...channel };
+  for (const [key, value] of Object.entries(changes)) {
+    if (value !== undefined) next[key] = value;
+  }
+  return next as unknown as Channel;
+}
+
+/** The wire key of every channel field but `id`, and how each is read; one table for rows and for changes. */
+export const channelFields: {
+  readonly [K in Exclude<keyof Channel, "id">]-?: FieldSpec<Channel[K]>;
+} = {
+  parentID: {
+    keys: ["pid", "cpid"],
+    read: (row) => asChannelID(big(row, "pid") || big(row, "cpid")),
+    always: true,
+  },
+  name: { keys: ["channel_name"], read: str, always: true },
+  topic: { keys: ["channel_topic"], read: str, always: true },
+  description: { keys: ["channel_description"], read: str, always: true },
+  order: { keys: ["channel_order"], read: (row, key) => asChannelID(big(row, key)), always: true },
+  hasPassword: { keys: ["channel_flag_password"], read: bool, always: true },
+  isDefault: { keys: ["channel_flag_default"], read: bool, always: true },
+  isPermanent: { keys: ["channel_flag_permanent"], read: bool, always: true },
+  isSemiPermanent: { keys: ["channel_flag_semi_permanent"], read: bool, always: true },
+  codec: { keys: ["channel_codec"], read: num, always: true },
+  codecQuality: { keys: ["channel_codec_quality"], read: num, always: true },
+  maxClients: { keys: ["channel_maxclients"], read: num, always: true },
+  maxFamilyClients: { keys: ["channel_maxfamilyclients"], read: num, always: true },
+  totalClients: { keys: ["total_clients"], read: optNum, always: true },
+  totalFamilyClients: { keys: ["total_clients_family"], read: optNum, always: true },
+  neededSubscribePower: { keys: ["channel_needed_subscribe_power"], read: optNum, always: true },
+  neededTalkPower: { keys: ["channel_needed_talk_power"], read: num, always: true },
+  iconID: { keys: ["channel_icon_id"], read: icon, always: true },
+  uid: {
+    keys: ["channel_unique_identifier"],
+    read: (row, key) => asChannelUID(str(row, key)),
+    always: true,
+  },
+  codecLatencyFactor: { keys: ["channel_codec_latency_factor"], read: num },
+  isUnencrypted: { keys: ["channel_codec_is_unencrypted"], read: bool },
+  isMaxClientsUnlimited: { keys: ["channel_flag_maxclients_unlimited"], read: bool },
+  isMaxFamilyClientsUnlimited: { keys: ["channel_flag_maxfamilyclients_unlimited"], read: bool },
+  isMaxFamilyClientsInherited: { keys: ["channel_flag_maxfamilyclients_inherited"], read: bool },
+  deleteDelayMs: {
+    keys: ["channel_delete_delay"],
+    read: (row, key) => durationMs(row, key, SECOND),
+  },
+  namePhonetic: { keys: ["channel_name_phonetic"], read: str },
+  isForcedSilence: { keys: ["channel_forced_silence"], read: bool },
+  bannerURL: { keys: ["channel_banner_gfx_url"], read: str },
+  bannerMode: { keys: ["channel_banner_mode"], read: num },
+};
 
 function parseChannel(row: Record<string, string>): Channel {
   return {
     id: asChannelID(big(row, "cid")),
-    parentID: asChannelID(big(row, "pid") || big(row, "cpid")),
-    name: str(row, "channel_name"),
-    topic: str(row, "channel_topic"),
-    description: str(row, "channel_description"),
-    order: asChannelID(big(row, "channel_order")),
-    hasPassword: bool(row, "channel_flag_password"),
-    isDefault: bool(row, "channel_flag_default"),
-    isPermanent: bool(row, "channel_flag_permanent"),
-    isSemiPermanent: bool(row, "channel_flag_semi_permanent"),
-    codec: num(row, "channel_codec"),
-    codecQuality: num(row, "channel_codec_quality"),
-    maxClients: num(row, "channel_maxclients"),
-    maxFamilyClients: num(row, "channel_maxfamilyclients"),
-    totalClients: optNum(row, "total_clients"),
-    totalFamilyClients: optNum(row, "total_clients_family"),
-    neededSubscribePower: optNum(row, "channel_needed_subscribe_power"),
-    neededTalkPower: num(row, "channel_needed_talk_power"),
-    iconID: icon(row, "channel_icon_id"),
-    uid: asChannelUID(str(row, "channel_unique_identifier")),
-  };
+    ...readFields(channelFields, row, false),
+  } as unknown as Channel;
 }
 
-export { parseChannel };
+/**
+ * Read the properties a channel notification named, and only those. The
+ * channel's id is not among them: a notification carries it as `cid`, which
+ * the event holds as its own field.
+ */
+function parseChannelChanges(row: Record<string, string>): ChannelChanges {
+  return readFields(channelFields, row, true);
+}
+
+export { parseChannel, parseChannelChanges };
 
 /** One entry of a permission list. */
 export interface PermissionEntry {

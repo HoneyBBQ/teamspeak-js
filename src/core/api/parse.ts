@@ -4,16 +4,30 @@
  * `./internal`.
  */
 
-import { str, big, num, uint, U16, bool, date, durationMs, MILLISECOND } from "./command.js";
+import {
+  str,
+  big,
+  num,
+  uint,
+  U16,
+  bool,
+  icon,
+  date,
+  durationMs,
+  readFields,
+  MILLISECOND,
+} from "./command.js";
+import type { FieldSpec } from "./command.js";
 import type { ServerGroupID } from "../command/ids.js";
 import {
   asChannelID,
   asChannelGroupID,
+  asClientDBID,
   asClientID,
   asServerGroupID,
   asUID,
 } from "../command/ids.js";
-import type { ClientEntry } from "./clients.js";
+import type { ClientChanges, ClientEntry } from "./clients.js";
 
 /** A comma-separated list of server group ids; anything that is not one is skipped. */
 export function parseServerGroups(raw: string): ServerGroupID[] {
@@ -25,28 +39,101 @@ export function parseServerGroups(raw: string): ServerGroupID[] {
     );
 }
 
+const text = (key: string): FieldSpec<string> => ({ keys: [key], read: str });
+const flag = (key: string): FieldSpec<boolean> => ({ keys: [key], read: bool });
+
+/**
+ * The wire key of every client field but `id`, and how each is read: the one
+ * table `parseClient` and `parseClientChanges` share, so a row, a listing and
+ * a change cannot disagree about a name. `always` marks the fields a full
+ * record has had from the start, which read as a default from a row without
+ * them; every other field is left out when the row lacks it.
+ */
+export const clientFields: {
+  readonly [K in Exclude<keyof ClientEntry, "id">]-?: FieldSpec<ClientEntry[K]>;
+} = {
+  nickname: { keys: ["client_nickname"], read: str, always: true },
+  uid: { keys: ["client_unique_identifier"], read: (r, k) => asUID(str(r, k)), always: true },
+  // A listing names the channel `cid`, an enter notification `ctid`.
+  channelID: { keys: ["cid", "ctid"], read: (r, k) => asChannelID(big(r, k)), always: true },
+  type: { keys: ["client_type"], read: num, always: true },
+  serverGroups: {
+    keys: ["client_servergroups"],
+    read: (r, k) => parseServerGroups(r[k] ?? ""),
+    always: true,
+  },
+  isAway: { keys: ["client_away"], read: bool, always: true },
+  isRecording: { keys: ["client_is_recording"], read: bool, always: true },
+  isTalker: { keys: ["client_is_talker"], read: bool, always: true },
+  channelGroupID: {
+    keys: ["client_channel_group_id"],
+    read: (r, k) => asChannelGroupID(big(r, k)),
+    always: true,
+  },
+  createdAt: { keys: ["client_created"], read: date, always: true },
+  lastConnectedAt: { keys: ["client_lastconnected"], read: date, always: true },
+  idleTimeMs: {
+    keys: ["client_idle_time"],
+    read: (r, k) => (r[k] === undefined ? undefined : durationMs(r, k, MILLISECOND)),
+    always: true,
+  },
+  databaseID: { keys: ["client_database_id"], read: (r, k) => asClientDBID(big(r, k)) },
+  awayMessage: text("client_away_message"),
+  isInputMuted: flag("client_input_muted"),
+  isOutputMuted: flag("client_output_muted"),
+  isOutputOnlyMuted: flag("client_outputonly_muted"),
+  hasInputHardware: flag("client_input_hardware"),
+  hasOutputHardware: flag("client_output_hardware"),
+  isChannelCommander: flag("client_is_channel_commander"),
+  isPrioritySpeaker: flag("client_is_priority_speaker"),
+  talkPower: { keys: ["client_talk_power"], read: num },
+  // The wire value is when the request was made; any non-zero is a request.
+  isRequestingTalk: flag("client_talk_request"),
+  talkRequestMessage: text("client_talk_request_msg"),
+  description: text("client_description"),
+  metaData: text("client_meta_data"),
+  avatar: text("client_flag_avatar"),
+  iconID: { keys: ["client_icon_id"], read: icon },
+  nicknamePhonetic: text("client_nickname_phonetic"),
+  unreadMessages: { keys: ["client_unread_messages"], read: num },
+  neededServerQueryViewPower: { keys: ["client_needed_serverquery_view_power"], read: num },
+  channelGroupInheritedChannelID: {
+    keys: ["client_channel_group_inherited_channel_id"],
+    read: (r, k) => asChannelID(big(r, k)),
+  },
+  country: text("client_country"),
+  version: text("client_version"),
+  platform: text("client_platform"),
+  ip: text("connection_client_ip"),
+  badges: text("client_badges"),
+  signedBadges: text("client_signed_badges"),
+  myTeamSpeakID: text("client_myteamspeak_id"),
+  myTeamSpeakAvatar: text("client_myteamspeak_avatar"),
+  integrations: text("client_integrations"),
+  userTag: text("client_user_tag"),
+  isStreaming: flag("client_is_streaming"),
+};
+
 /**
  * Read a client from a `clientlist` row, or from a `notifycliententerview`,
  * which names its channel `ctid` where the list says `cid`. Reached by the
  * client module through `./internal`.
+ *
+ * The fields a client record has always had read as a default from a row
+ * without them; the later ones are `undefined` instead.
  */
 export function parseClient(row: Record<string, string>): ClientEntry {
   return {
     id: asClientID(uint(row, "clid", U16)),
-    nickname: str(row, "client_nickname"),
-    uid: asUID(str(row, "client_unique_identifier")),
-    channelID: asChannelID(big(row, row["cid"] === undefined ? "ctid" : "cid")),
-    type: num(row, "client_type"),
-    serverGroups: parseServerGroups(row["client_servergroups"] ?? ""),
-    isAway: bool(row, "client_away"),
-    isRecording: bool(row, "client_is_recording"),
-    isTalker: bool(row, "client_is_talker"),
-    channelGroupID: asChannelGroupID(big(row, "client_channel_group_id")),
-    createdAt: date(row, "client_created"),
-    lastConnectedAt: date(row, "client_lastconnected"),
-    idleTimeMs:
-      row["client_idle_time"] === undefined
-        ? undefined
-        : durationMs(row, "client_idle_time", MILLISECOND),
-  };
+    ...readFields(clientFields, row, false),
+  } as unknown as ClientEntry;
+}
+
+/**
+ * Read the properties a `notifyclientupdated` row named, and only those: the
+ * result holds exactly the keys the row carried, none of them `undefined`.
+ * The client's id is not among them; the row's `clid` is.
+ */
+export function parseClientChanges(row: Record<string, string>): ClientChanges {
+  return readFields(clientFields, row, true);
 }

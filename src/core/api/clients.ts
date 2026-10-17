@@ -31,6 +31,7 @@ import type {
   ChannelID,
   ClientDBID,
   ClientID,
+  IconID,
   ServerGroupID,
   UID,
 } from "../command/ids.js";
@@ -74,6 +75,109 @@ export interface ClientEntry {
    * (`client_idle_time`), with `times`; undefined without it.
    */
   readonly idleTimeMs: number | undefined;
+
+  // Everything below is `undefined` when the row did not carry its key, never
+  // a default: a muted client and one whose mute state is unknown are
+  // different, and `false` would claim the first. Which list flag brings a
+  // field is said on it; "no flag" means only a client coming into view (or a
+  // notification) has it, so a client learned from `listClients` never does.
+
+  /** The client's database id (`client_database_id`); every list brings it. */
+  readonly databaseID?: ClientDBID | undefined;
+  /** The away message (`client_away_message`), with `away`. */
+  readonly awayMessage?: string | undefined;
+  /** Whether the microphone is muted (`client_input_muted`), with `voice`. */
+  readonly isInputMuted?: boolean | undefined;
+  /** Whether the speakers are muted (`client_output_muted`), with `voice`. */
+  readonly isOutputMuted?: boolean | undefined;
+  /** Whether the client's output-only mute is set (`client_outputonly_muted`); no flag. */
+  readonly isOutputOnlyMuted?: boolean | undefined;
+  /** Whether the client has a working microphone (`client_input_hardware`), with `voice`. */
+  readonly hasInputHardware?: boolean | undefined;
+  /** Whether the client has working speakers (`client_output_hardware`), with `voice`. */
+  readonly hasOutputHardware?: boolean | undefined;
+  /** Whether the client speaks as channel commander (`client_is_channel_commander`), with `voice`. */
+  readonly isChannelCommander?: boolean | undefined;
+  /** Whether the client is a priority speaker (`client_is_priority_speaker`), with `voice`. */
+  readonly isPrioritySpeaker?: boolean | undefined;
+  /** The client's talk power in its channel (`client_talk_power`), with `voice`. */
+  readonly talkPower?: number | undefined;
+  /**
+   * Whether the client is requesting to talk. The wire value is the time of
+   * the request (`client_talk_request`); any non-zero value is true. No flag.
+   */
+  readonly isRequestingTalk?: boolean | undefined;
+  /** The message sent with a talk request (`client_talk_request_msg`); no flag. */
+  readonly talkRequestMessage?: string | undefined;
+  /** The client's description (`client_description`); no flag. */
+  readonly description?: string | undefined;
+  /** The client's meta data, an opaque string a client may set (`client_meta_data`); no flag. */
+  readonly metaData?: string | undefined;
+  /** The MD5 of the client's avatar (`client_flag_avatar`); "" for none; no flag. */
+  readonly avatar?: string | undefined;
+  /** The client's icon (`client_icon_id`); undefined for none as well as for absent; no flag. */
+  readonly iconID?: IconID | undefined;
+  /** How the nickname is pronounced (`client_nickname_phonetic`); no flag. */
+  readonly nicknamePhonetic?: string | undefined;
+  /** How many offline messages the client has not read (`client_unread_messages`); no flag. */
+  readonly unreadMessages?: number | undefined;
+  /**
+   * The ServerQuery view power the client needs to see this client
+   * (`client_needed_serverquery_view_power`); no flag. The server sends it
+   * with every change of groups, so a changed group list carries it.
+   */
+  readonly neededServerQueryViewPower?: number | undefined;
+  /**
+   * The channel the client's channel group is inherited from
+   * (`client_channel_group_inherited_channel_id`), with `groups`.
+   */
+  readonly channelGroupInheritedChannelID?: ChannelID | undefined;
+  /** The client's country code (`client_country`), with `country`. */
+  readonly country?: string | undefined;
+  /** The client's version string (`client_version`), with `info`; not carried on coming into view. */
+  readonly version?: string | undefined;
+  /** The client's platform (`client_platform`), with `info`; not carried on coming into view. */
+  readonly platform?: string | undefined;
+  /** The client's address (`connection_client_ip`), with `ip`; not carried on coming into view. */
+  readonly ip?: string | undefined;
+  /** The client's badges (`client_badges`), with `badges`. */
+  readonly badges?: string | undefined;
+  /** The client's signed badges, as the server sends them (`client_signed_badges`); no flag. */
+  readonly signedBadges?: string | undefined;
+  /** The client's MyTeamSpeak id (`client_myteamspeak_id`); no flag. */
+  readonly myTeamSpeakID?: string | undefined;
+  /** The client's MyTeamSpeak avatar (`client_myteamspeak_avatar`); no flag. */
+  readonly myTeamSpeakAvatar?: string | undefined;
+  /** The client's integrations, as the server sends them (`client_integrations`); no flag. */
+  readonly integrations?: string | undefined;
+  /** The client's user tag (`client_user_tag`); TeamSpeak 6 only, no flag. */
+  readonly userTag?: string | undefined;
+  /** Whether the client is streaming (`client_is_streaming`); TeamSpeak 6 only, no flag. */
+  readonly isStreaming?: boolean | undefined;
+}
+
+/**
+ * A change to a client: only the properties a notification named, by the names
+ * of {@link ClientEntry}. A key is present exactly when the notification
+ * carried it, so `"isAway" in changes` says it changed and `changes.isAway ===
+ * false` says it is no longer away. A list, such as `serverGroups`, is the
+ * whole new list.
+ */
+export type ClientChanges = {
+  readonly [K in Exclude<keyof ClientEntry, "id">]?: ClientEntry[K];
+};
+
+/**
+ * The client with `changes` applied, as a new object; `entry` is not touched.
+ * Keys `changes` lacks keep their value, and a key holding `undefined` is
+ * skipped, so no property is erased by a change that did not carry it.
+ */
+export function applyClientChanges(entry: ClientEntry, changes: ClientChanges): ClientEntry {
+  const next: Record<string, unknown> = { ...entry };
+  for (const [key, value] of Object.entries(changes)) {
+    if (value !== undefined) next[key] = value;
+  }
+  return next as unknown as ClientEntry;
 }
 
 /**
