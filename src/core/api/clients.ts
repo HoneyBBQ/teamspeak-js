@@ -159,9 +159,9 @@ export interface ClientEntry {
 /**
  * A change to a client: only the properties a notification named, by the names
  * of {@link ClientEntry}. A key is present exactly when the notification
- * carried it, so `"isAway" in changes` says it changed and `changes.isAway ===
- * false` says it is no longer away. A list, such as `serverGroups`, is the
- * whole new list.
+ * carried it, so `"isAway" in changes` says it changed, and an `isAway` of
+ * `false` says the client is no longer away. A list, such as `serverGroups`,
+ * is the whole new list.
  */
 export type ClientChanges = {
   readonly [K in Exclude<keyof ClientEntry, "id">]?: ClientEntry[K];
