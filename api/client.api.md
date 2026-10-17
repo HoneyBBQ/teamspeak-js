@@ -68,6 +68,9 @@ interface AttemptInfo {
 }
 
 // @public
+export type AvatarTransferOptions = Pick<FileTransferOptions, "signal" | "trace">;
+
+// @public
 export class Client implements CommandExecutor, AsyncDisposable {
     [Symbol.asyncDispose](): Promise<void>;
     constructor(identity: Identity, addr: string, nickname: string, options?: ClientOptions);
@@ -88,6 +91,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     execNoWait(command: string, options?: {
         readonly signal?: AbortSignal | undefined;
     }): Promise<void>;
+    get host(): string;
     on<K extends keyof EventMap>(event: K, listener: Listener<EventMap, K>): Unsubscribe;
     once<K extends keyof EventMap>(event: K, listener: Listener<EventMap, K>): Unsubscribe;
     send(request: CommandRequest, options?: CommandOptions): Promise<Record<string, string>[]>;
@@ -212,7 +216,13 @@ export interface DisconnectStartInfo {
 }
 
 // @public
+export function downloadAvatar(client: Client, uid: UID | string, options?: AvatarTransferOptions): Promise<Uint8Array | undefined>;
+
+// @public
 export function downloadFileData(host: string, info: FileDownloadInfo, dest: Writable, options?: FileTransferOptions): Promise<void>;
+
+// @public
+export function downloadIcon(client: Client, id: IconID, options?: AvatarTransferOptions): Promise<Uint8Array | undefined>;
 
 // @public
 export interface EventMap extends ServerEventMap, SessionEventMap {
@@ -461,6 +471,9 @@ export interface ReconnectStoppedInfo {
 }
 
 // @public
+export function removeAvatar(client: Client, options?: AvatarTransferOptions): Promise<boolean>;
+
+// @public
 export class RemovedError extends TeamspeakError {
     constructor(reason: number, reasonMessage: string, invokerName: string);
     readonly invokerName: string;
@@ -563,7 +576,13 @@ export function unsubscribeAllChannels(client: Client, options?: CommandOptions)
 export function unsubscribeChannel(client: Client, cid: ChannelID, options?: CommandOptions): Promise<void>;
 
 // @public
+export function uploadAvatar(client: Client, data: Uint8Array, options?: AvatarTransferOptions): Promise<string>;
+
+// @public
 export function uploadFileData(host: string, info: FileUploadInfo, data: Readable, options?: FileTransferOptions): Promise<void>;
+
+// @public
+export function uploadIcon(client: Client, data: Uint8Array, options?: AvatarTransferOptions): Promise<IconID>;
 
 // @public
 export function verifyChannelPassword(client: Client, cid: ChannelID, password: string, options?: CommandOptions): Promise<boolean>;

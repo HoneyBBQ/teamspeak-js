@@ -170,6 +170,9 @@ export const asServerID: (v: bigint | number) => ServerID;
 export const asUID: (v: string) => UID;
 
 // @public
+export function avatarFileName(uid: UID | string): string;
+
+// @public
 export function backoffDelay(policy: Readonly<BackoffPolicy>, attempt: number): number;
 
 // @public
@@ -1522,9 +1525,15 @@ const hostMessageModeValues: {
 };
 
 // @public
+export function iconFileName(id: IconID): string;
+
+// @public
 export type IconID = number & {
     readonly __brand: "IconID";
 };
+
+// @public
+export function iconIDOf(data: Uint8Array): IconID;
 
 // @public
 export function initFileDownload(client: CommandExecutor, cid: ChannelID, path: string, options?: FileDownloadOptions): Promise<FileDownloadInfo>;
@@ -2758,6 +2767,9 @@ export interface ReconnectOptions {
 export function removeClientFromServerGroup(client: CommandExecutor, sgid: ServerGroupID, cldbid: ClientDBID, options?: CommandOptions): Promise<void>;
 
 // @public
+export function removeIcon(client: CommandExecutor, id: IconID, options?: CommandOptions): Promise<void>;
+
+// @public
 export function renameChannelGroup(client: CommandExecutor, cgid: ChannelGroupID, name: string, options?: CommandOptions): Promise<void>;
 
 // @public
@@ -2958,13 +2970,28 @@ export interface SessionEventMap {
 }
 
 // @public
+export function setChannelGroupIcon(client: CommandExecutor, cgid: ChannelGroupID, icon: IconID | undefined, options?: CommandOptions): Promise<void>;
+
+// @public
+export function setChannelIcon(client: CommandExecutor, cid: ChannelID, icon: IconID | undefined, options?: CommandOptions): Promise<void>;
+
+// @public
 export function setClientChannelGroup(client: CommandExecutor, cgid: ChannelGroupID, cid: ChannelID, cldbid: ClientDBID, options?: CommandOptions): Promise<void>;
+
+// @public
+export function setClientIcon(client: CommandExecutor, cldbid: ClientDBID, icon: IconID | undefined, options?: CommandOptions): Promise<void>;
 
 // @public
 export function setCustomProperty(client: CommandExecutor, cldbid: ClientDBID, ident: string, value: string, options?: CommandOptions): Promise<void>;
 
 // @public
 export function setQueryLogin(client: CommandExecutor, name: string, options?: CommandOptions): Promise<string>;
+
+// @public
+export function setServerGroupIcon(client: CommandExecutor, sgid: ServerGroupID, icon: IconID | undefined, options?: CommandOptions): Promise<void>;
+
+// @public
+export function setServerIcon(client: CommandExecutor, icon: IconID | undefined, options?: CommandOptions): Promise<void>;
 
 // @public
 export function startServer(client: CommandExecutor, sid: ServerID, options?: CommandOptions): Promise<void>;

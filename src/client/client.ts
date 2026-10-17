@@ -1034,6 +1034,15 @@ export class Client implements CommandExecutor, AsyncDisposable {
     return this.#identity.uid(this.#capabilities.uidAlgorithm);
   }
 
+  /**
+   * The host this client connects to, as it was given, without the port: where
+   * the file transfer port is, for `uploadFileData` and the avatar and icon
+   * helpers.
+   */
+  get host(): string {
+    return splitHostPort(this.#addr).host;
+  }
+
   /** The channel this client is in, as it last learned; 0 before connecting. */
   get channelID(): ChannelID {
     return this.#clients.get(this.#clid)?.channelID ?? asChannelID(0n);

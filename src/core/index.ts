@@ -144,6 +144,8 @@ export * from "./api/server.js";
 export * from "./api/groups.js";
 export * from "./api/moderation.js";
 export * from "./api/files.js";
+export * from "./api/avatars.js";
+export * from "./api/icons.js";
 export * from "./api/credentials.js";
 export * from "./api/instance.js";
 export { applyChannelChanges } from "./api/command.js";
