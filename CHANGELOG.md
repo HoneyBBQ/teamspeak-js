@@ -4,6 +4,14 @@ Until 1.0.0-beta.4 this package was published as `@honeybbq/teamspeak-core`, and
 `@honeybbq/teamspeak-client` was a second package. The sections below, down to
 the last version heading, are the core's history; the client's is at the bottom.
 
+## 1.0.0-beta.8
+
+### Patch Changes
+
+- [#63](https://github.com/HoneyBBQ/teamspeak-js/pull/63) [`26cd3ef`](https://github.com/HoneyBBQ/teamspeak-js/commit/26cd3ef26c196341ed936da1e8b818e229629223) - A ServerQuery client now recognises when it is kicked from a channel, and emits `kicked` for it, whether or not the `nickname` option is set and while an older session with the same nickname is still on the server.
+
+  It used to find its own client id by matching `nickname` against the client list. With no `nickname` it never learned the id, so `kicked` never fired. When a session that had just disconnected was still listed under the same nickname, it took that one for itself, and the kick went unreported. It now asks the server with `whoami` while connecting, which adds one command to the connect.
+
 ## 1.0.0-beta.7
 
 ### Minor Changes
