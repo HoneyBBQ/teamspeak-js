@@ -33,13 +33,36 @@ import {
   ClientStatus,
   Reason,
   TextMessageTarget,
+  addAPIKey,
+  addBan,
+  addQueryLogin,
   createChannel,
+  createServerSnapshot,
+  deleteAPIKey,
+  deleteBan,
+  deleteCustomProperty,
+  deleteQueryLogin,
+  findBans,
+  findClients,
+  findCustomProperty,
+  getOwnPermission,
   getVersion,
   kickClient,
+  listAPIKeys,
+  listBans,
   listChannels,
+  listClientDatabase,
+  listCustomProperties,
+  listQueryLogins,
+  listServers,
   moveClient,
+  permissionByName,
   sendChannelMessage,
+  setCustomProperty,
   whoAmI,
+  asServerID,
+  asUID,
+  type BanID,
   type ChannelID,
 } from "@honeybbq/teamspeak";
 import { Client } from "../client/client.js";
@@ -485,6 +508,198 @@ describe.skipIf(SKIP)("Integration — ServerQuery client", () => {
     },
     30_000,
   );
+
+  // The commands below are measured on TS3 and TS6 over every transport, and
+  // each test leaves nothing behind. One test per transport, so a transport that
+  // lacks a command skips just its own.
+  describe.each(KINDS)("typed administration over %s", (kind) => {
+    const connected = (): QueryClient => clients.get(kind)!;
+
+    it("creates, lists and deletes an API key", async () => {
+      const client = connected();
+      const key = await addAPIKey(client, "read", { lifetimeDays: 1 });
+      try {
+        expect(key.key).not.toBe("");
+        expect(key.scope).toBe("read");
+        expect(key.expiresAt).toBeDefined();
+        const listed = (await listAPIKeys(client)).find((entry) => entry.id === key.id);
+        expect(listed).toMatchObject({ scope: "read", ownerDatabaseID: key.ownerDatabaseID });
+      } finally {
+        await deleteAPIKey(client, key.id);
+      }
+      expect((await listAPIKeys(client)).some((entry) => entry.id === key.id)).toBe(false);
+      await expect(deleteAPIKey(client, key.id)).rejects.toMatchObject({ code: 5123 });
+    }, 30_000);
+
+    it("sets, lists, finds and deletes a custom property", async () => {
+      const client = connected();
+      const { databaseID } = await whoAmI(client);
+      const ident = `ts_js_${Date.now()}`;
+      try {
+        await setCustomProperty(client, databaseID, ident, "hello world|x");
+        expect(await listCustomProperties(client, databaseID)).toContainEqual({
+          ident,
+          value: "hello world|x",
+        });
+        expect(await findCustomProperty(client, ident, "%world%")).toEqual([
+          { databaseID, ident, value: "hello world|x" },
+        ]);
+        expect(await findCustomProperty(client, ident, "nomatch")).toEqual([]);
+      } finally {
+        await deleteCustomProperty(client, databaseID, ident);
+      }
+      expect(await findCustomProperty(client, ident, "%")).toEqual([]);
+    }, 30_000);
+
+    it("enables a query login for a client, lists it and removes it", async (ctx) => {
+      const client = connected();
+      // A login belongs to a client record, and the records here are the voice
+      // clients the other tests connected; one is borrowed and left as it was.
+      const target = (await listClientDatabase(client, { limit: 50 })).find(
+        (entry) => entry.uid !== "" && entry.uid !== "ServerQuery" && entry.uid !== "serveradmin",
+      );
+      if (target === undefined) {
+        ctx.skip("the server has no voice client record to attach a login to");
+        return;
+      }
+      const name = `tsjs${Date.now() % 1_000_000}`;
+      const login = await addQueryLogin(client, name, { databaseID: target.databaseID });
+      try {
+        expect(login.password).not.toBe("");
+        expect(login).toMatchObject({ databaseID: target.databaseID, name });
+        const listed = await listQueryLogins(client, { pattern: `${name}%` });
+        expect(listed.map((entry) => entry.name)).toEqual([name]);
+      } finally {
+        await deleteQueryLogin(client, target.databaseID);
+      }
+      expect(await listQueryLogins(client, { pattern: `${name}%` })).toEqual([]);
+    }, 30_000);
+
+    it("reads one of its own permissions", async () => {
+      const permission = await getOwnPermission(connected(), permissionByName("b_client_ban_list"));
+      expect(permission).toMatchObject({ name: "b_client_ban_list", value: 1 });
+      expect(permission.id).toBeGreaterThan(0);
+    }, 30_000);
+
+    it("pages the ban list, bans by uid with a last nickname, and finds the ban", async (ctx) => {
+      const client = connected();
+      const uid = asUID(`tsjs${Date.now()}=`);
+      const ids: BanID[] = [];
+      try {
+        const first = await addBan(client, { uid, lastNickname: "tsjs-nick", durationMs: 60_000 });
+        ids.push(first!);
+        const second = await addBan(client, {
+          uid: asUID(`${uid}2`),
+          lastNickname: "tsjs-nick2",
+          durationMs: 60_000,
+        });
+        ids.push(second!);
+
+        const all = await listBans(client);
+        const page = await listBans(client, { start: all.length - 1, limit: 1 });
+        expect(page).toHaveLength(1);
+        expect(page[0]?.id).toBe(all[all.length - 1]?.id);
+        expect(await listBans(client, { start: all.length })).toEqual([]);
+
+        const mine = all.find((ban) => ban.id === first);
+        expect(mine).toMatchObject({ uid, lastNickname: "tsjs-nick" });
+        expect(mine?.mytsid, "TS3 sends none, TS6 an empty one").toBe("");
+
+        if (client.serverFamily !== "ts6" || kind === "web") {
+          // TS3 has no banfind, and WebQuery answers it as an unknown command.
+          await expect(findBans(client, { uid })).rejects.toBeDefined();
+          ctx.skip("banfind is not served here");
+          return;
+        }
+        expect((await findBans(client, { uid })).map((ban) => ban.id)).toEqual([first]);
+        expect(await findBans(client, { uid: asUID("tsjs-absent=") })).toEqual([]);
+      } finally {
+        for (const id of ids) await deleteBan(client, id).catch(() => {});
+      }
+    }, 30_000);
+
+    it("bans by myTeamSpeak id", async (ctx) => {
+      const client = connected();
+      if (client.serverFamily !== "ts6") {
+        ctx.skip("TS3 has no myTeamSpeak id");
+        return;
+      }
+      // 44 characters of base64: the only form the server accepts.
+      const mytsid = `${"A".repeat(42)}${String.fromCharCode(65 + (Date.now() % 26))}=`;
+      const id = await addBan(client, { mytsid, durationMs: 60_000 });
+      try {
+        expect((await listBans(client)).find((ban) => ban.id === id)?.mytsid).toBe(mytsid);
+      } finally {
+        await deleteBan(client, id!);
+      }
+    }, 30_000);
+
+    it("reports a found client's channel on TS6, and ignores the flags on TS3", async () => {
+      const client = connected();
+      const me = await whoAmI(client);
+      const matches = await findClients(client, me.nickname, { channelID: true, channelUID: true });
+      // The pattern matches by substring, so other clients may be among them.
+      const match = matches.find((entry) => entry.id === me.clientID);
+      expect(match).toBeDefined();
+      if (client.serverFamily === "ts6") {
+        expect(match?.channelID).toBe(me.channelID);
+        expect(match?.channelUID).not.toBe("");
+      } else {
+        expect(match?.channelID).toBeUndefined();
+      }
+    }, 30_000);
+
+    it("lists the virtual servers", async () => {
+      const client = connected();
+      const servers = await listServers(client, { uid: true });
+      const mine = servers.find((server) => server.id === asServerID(1));
+      expect(mine).toMatchObject({ status: expect.stringContaining("online") as string });
+      expect(mine?.port).toBeGreaterThan(0);
+      expect(mine?.uid).not.toBe("");
+      const [short] = await listServers(client, { short: true });
+      expect(short).toMatchObject({ name: "", clientsOnline: undefined });
+    }, 30_000);
+
+    it("takes a snapshot, with and without a password", async () => {
+      const client = connected();
+      const plain = await createServerSnapshot(client);
+      expect(plain.version).toBe(3);
+      expect(plain.salt).toBe("");
+      expect(plain.data.length).toBeGreaterThan(100);
+      const encrypted = await createServerSnapshot(client, { password: "tsjs password" });
+      expect(encrypted.salt).not.toBe("");
+      expect(encrypted.data).not.toBe(plain.data);
+    }, 30_000);
+
+    it("logs out and unregisters notifications on a connection of its own", async (ctx) => {
+      if (kind === "web") {
+        // The api key is the login and nothing is registered: both are refused
+        // as outside the key's scope.
+        await expect(connected().logout()).rejects.toMatchObject({ code: NOT_IN_API_KEY_SCOPE });
+        await expect(connected().unregisterNotifications()).rejects.toMatchObject({
+          code: NOT_IN_API_KEY_SCOPE,
+        });
+        ctx.skip("WebQuery has neither a login to end nor events to unregister");
+        return;
+      }
+      const own = new QueryClient(optionsFor(kind));
+      await connectWithRetries(own);
+      try {
+        await own.unregisterNotifications("server");
+        await own.unregisterNotifications();
+        expect((await whoAmI(own)).serverID).toBe(1n);
+
+        await own.logout();
+        // Logging out deselects the virtual server as well.
+        expect((await whoAmI(own)).serverID).toBe(0n);
+        await expect(listChannels(own)).rejects.toMatchObject({
+          code: expect.any(Number) as number,
+        });
+      } finally {
+        await own.disconnect();
+      }
+    }, 60_000);
+  });
 
   it.skipIf(KINDS.length < 2)(
     "reports the same channels over every transport it can use",

@@ -334,6 +334,8 @@ servergroupaddperm sgid=$DEFAULT_GROUP permsid=i_ft_file_upload_power permvalue=
 servergroupaddperm sgid=$DEFAULT_GROUP permsid=i_ft_file_download_power permvalue=100 permnegated=0 permskip=0
 servergroupaddperm sgid=$DEFAULT_GROUP permsid=i_ft_file_browse_power permvalue=100 permnegated=0 permskip=0
 servergroupaddperm sgid=$DEFAULT_GROUP permsid=i_ft_file_delete_power permvalue=100 permnegated=0 permskip=0
+servergroupaddperm sgid=$DEFAULT_GROUP permsid=b_client_permissionoverview_own permvalue=1 permnegated=0 permskip=0
+servergroupaddperm sgid=$DEFAULT_GROUP permsid=b_client_offline_textmessage_send permvalue=1 permnegated=0 permskip=0
 COMMANDS
 
 # Read back what the tests will read. Provisioning that quietly did nothing is

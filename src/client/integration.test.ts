@@ -35,7 +35,16 @@ import {
   initFileUpload,
   listFiles,
 } from "@honeybbq/teamspeak";
-import { sendPrivateMessage, whoAmI } from "@honeybbq/teamspeak";
+import {
+  deleteMessage,
+  getMessage,
+  getOwnPermission,
+  listMessages,
+  permissionByName,
+  sendOfflineMessage,
+  sendPrivateMessage,
+  whoAmI,
+} from "@honeybbq/teamspeak";
 import { ErrorCode, getServerInfo, listServerGroups } from "@honeybbq/teamspeak";
 import { asChannelID, asClientDBID, asClientID, asUID } from "@honeybbq/teamspeak";
 import type { ClientEnterEvent } from "@honeybbq/teamspeak";
@@ -411,6 +420,45 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
       name: nickname,
     });
     expect(await getClientIDs(sharedClient, uid)).toContainEqual({ id: ownID, nickname });
+  }, 20_000);
+
+  // Offline messages are the one thing here that cannot be undone by the
+  // sender, so the client writes to its own inbox and clears it again.
+  it("sendOfflineMessage — leaves a message the recipient can read and delete", async () => {
+    const subject = `ts-js-${Date.now()}`;
+    await sendOfflineMessage(sharedClient, sharedClient.uid, subject, "hello there");
+    const sent = (await listMessages(sharedClient)).find((m) => m.subject === subject);
+    try {
+      expect(sent).toBeDefined();
+      expect(sent?.uid).toBe(sharedClient.uid);
+      expect(sent?.isRead).toBe(false);
+      expect((await getMessage(sharedClient, sent!.id)).message).toBe("hello there");
+    } finally {
+      if (sent !== undefined) await deleteMessage(sharedClient, sent.id);
+    }
+    expect((await listMessages(sharedClient)).some((m) => m.subject === subject)).toBe(false);
+  }, 20_000);
+
+  // The fixture grants the default group `b_client_permissionoverview_own`; a
+  // server without it answers 2568, which is its own test below.
+  it("getOwnPermission — reads a permission the connection holds", async () => {
+    const permission = await getOwnPermission(
+      sharedClient,
+      permissionByName("b_client_permissionoverview_own"),
+    );
+    expect(permission).toMatchObject({ name: "b_client_permissionoverview_own", value: 1 });
+    expect(permission.id).toBeGreaterThan(0);
+  }, 20_000);
+
+  // Their answers arrive as notifications, so before they were mapped a raw
+  // exec returned no rows at all.
+  it("exec — returns the rows of the commands that answer with a notification", async () => {
+    const own = sharedClient.clientID;
+    const variables = await sharedClient.exec("servergetvariables");
+    expect(variables[0]?.["virtualserver_maxclients"]).toBeDefined();
+
+    const mine = await sharedClient.exec(`clientgetvariables clid=${own}`);
+    expect(mine[0]).toMatchObject({ clid: String(own) });
   }, 20_000);
 
   it("listServerGroups — includes the server's default group", async () => {
