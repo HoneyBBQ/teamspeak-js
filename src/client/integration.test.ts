@@ -39,6 +39,20 @@ import { sendPrivateMessage, whoAmI } from "@honeybbq/teamspeak";
 import { ErrorCode, getServerInfo, listServerGroups } from "@honeybbq/teamspeak";
 import { asChannelID, asClientDBID, asClientID, asUID } from "@honeybbq/teamspeak";
 import type { ClientEnterEvent } from "@honeybbq/teamspeak";
+import {
+  addClientToServerGroup,
+  createServerGroup,
+  deleteServerGroup,
+  listChannelGroups,
+  removeClientFromServerGroup,
+  setClientChannelGroup,
+  updateClient,
+  GroupType,
+} from "@honeybbq/teamspeak";
+import type { ClientID, ServerGroupID } from "@honeybbq/teamspeak";
+import { QueryClient } from "../query/client.js";
+import type { QueryClientOptions } from "../query/options.js";
+import type { EventMap } from "./types.js";
 import { Windows_3_6_3_1701166057 } from "../versions/index.js";
 
 const ADDR = process.env["TEAMSPEAK_ADDR"];
@@ -779,4 +793,222 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
       expect((outcome as { code?: string }).code).toBe("ECONNREFUSED");
     }
   }, 10_000);
+});
+
+// ---- Live state: events about other clients ------------------------------------
+//
+// The subject (a peer) changes; the bystander (the shared client) watches, as
+// a second client would in a real channel. Group changes need an administrator,
+// which a voice client of the default group is not, so a query connection acts;
+// without a query endpoint those cases skip.
+
+const QUERY_KIND = process.env["TEAMSPEAK_QUERY_KIND"];
+const HAS_ADMIN = QUERY_KIND === "tcp" || QUERY_KIND === "web";
+const EVENT_MS = 8_000;
+
+/** The query connection that acts as the administrator, from the fixture's environment. */
+function adminOptions(): QueryClientOptions {
+  if (QUERY_KIND === "web") {
+    return {
+      transport: {
+        kind: "web",
+        url: process.env["TEAMSPEAK_QUERY_URL"] ?? "",
+        apiKey: process.env["TEAMSPEAK_QUERY_API_KEY"] ?? "",
+      },
+      server: { id: 1 },
+    };
+  }
+  return {
+    transport: {
+      kind: "tcp",
+      host: process.env["TEAMSPEAK_QUERY_HOST"] ?? "127.0.0.1",
+      port: Number(process.env["TEAMSPEAK_QUERY_PORT"] ?? "10011"),
+    },
+    login: {
+      name: process.env["TEAMSPEAK_QUERY_LOGIN_NAME"] ?? "",
+      password: process.env["TEAMSPEAK_QUERY_LOGIN_PASSWORD"] ?? "",
+    },
+    server: { id: 1 },
+    nickname: "ts-js-live-admin",
+  };
+}
+
+/** Resolve with the first event of `name` that `match` accepts; reject when none arrives. */
+function nextEvent<K extends keyof EventMap>(
+  client: Client,
+  name: K,
+  match: (payload: EventMap[K]) => boolean,
+): Promise<EventMap[K]> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      off();
+      reject(new Error(`no ${name} event arrived`));
+    }, EVENT_MS);
+    const off = (client.on as (n: K, l: (p: EventMap[K]) => void) => () => void)(
+      name,
+      (payload) => {
+        if (!match(payload)) return;
+        clearTimeout(timer);
+        off();
+        resolve(payload);
+      },
+    );
+  });
+}
+
+describe.skipIf(SKIP)("Integration — events about other clients", () => {
+  let admin: QueryClient | undefined;
+  let subject: Client;
+  let subjectID: ClientID;
+  const bystander = () => sharedClient;
+
+  beforeAll(async () => {
+    subject = peers.get("ts-js-peer") ?? (await connectPeer("ts-js-peer"));
+    subjectID = asClientID(subject.clientID);
+    // The bystander must have seen the subject enter, which it does as it is
+    // in the same channel; wait for the roster rather than assume it.
+    for (let i = 0; i < 50 && !clientInternals(bystander()).clients.has(subjectID); i++) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    if (HAS_ADMIN) {
+      admin = new QueryClient(adminOptions());
+      await admin.connect({ signal: AbortSignal.timeout(15_000) });
+    }
+  }, 60_000);
+
+  afterAll(async () => {
+    await admin?.disconnect().catch(() => {});
+  });
+
+  it("clientUpdated — an away and mute change carries exactly the changed keys", async () => {
+    const changed = nextEvent(
+      bystander(),
+      "clientUpdated",
+      (e) => e.clientID === subjectID && "isAway" in e.changes,
+    );
+    await updateClient(subject, { isAway: true, awayMessage: "brb", isInputMuted: true });
+    const away = await changed;
+    console.log("away update keys:", Object.keys(away.changes));
+    expect(Object.keys(away.changes).sort()).toEqual(["awayMessage", "isAway", "isInputMuted"]);
+    expect(away.changes.isAway).toBe(true);
+    expect(away.changes.awayMessage).toBe("brb");
+    expect(away.invokerID).toBe(0);
+    expect(clientInternals(bystander()).clients.get(subjectID)?.isAway).toBe(true);
+
+    const reverted = nextEvent(
+      bystander(),
+      "clientUpdated",
+      (e) => e.clientID === subjectID && "isAway" in e.changes,
+    );
+    await updateClient(subject, { isAway: false, awayMessage: "", isInputMuted: false });
+    const back = await reverted;
+    console.log("revert update keys:", Object.keys(back.changes));
+    expect(back.changes.isAway).toBe(false);
+    expect("isAway" in back.changes).toBe(true);
+    expect(clientInternals(bystander()).clients.get(subjectID)?.isAway).toBe(false);
+  }, 30_000);
+
+  it.skipIf(!HAS_ADMIN)(
+    "server group change — both events arrive, and a later message carries the new groups (needs a query endpoint)",
+    async () => {
+      const a = admin!;
+      const listed = await listClients(a);
+      const row = listed.find((c) => c.id === subjectID);
+      expect(row).toBeDefined();
+      const dbid = await getClientDBIDByUID(a, row!.uid);
+      const messageGroups = async (text: string): Promise<readonly ServerGroupID[] | undefined> => {
+        const got = nextEvent(bystander(), "textMessage", (e) => e.message === text);
+        await sendPrivateMessage(subject, asClientID(bystander().clientID), text);
+        return (await got).invokerGroups;
+      };
+
+      const sgid = await createServerGroup(a, `ts-js-live-${Date.now()}`, GroupType.Regular);
+      let added = false;
+      try {
+        const before = await messageGroups("groups before");
+        expect(before).not.toContain(sgid);
+
+        const groupAdded = nextEvent(
+          bystander(),
+          "clientServerGroupAdded",
+          (e) => e.clientID === subjectID,
+        );
+        const updated = nextEvent(
+          bystander(),
+          "clientUpdated",
+          (e) => e.clientID === subjectID && e.changes.serverGroups?.includes(sgid) === true,
+        );
+        const ownAdded = nextEvent(subject, "clientServerGroupAdded", (e) => e.groupID === sgid);
+        await addClientToServerGroup(a, sgid, dbid);
+        added = true;
+        const [event, update] = await Promise.all([groupAdded, updated]);
+        await ownAdded;
+        console.log("added:", event, "update keys:", Object.keys(update.changes));
+        expect(event.groupID).toBe(sgid);
+        expect(event.uid).toBe(row!.uid);
+        expect(event.nickname).toBe(row!.nickname);
+        expect(update.changes.serverGroups).toContain(sgid);
+
+        // The regression: this came back with the groups from when the client entered.
+        expect(await messageGroups("groups after add")).toContain(sgid);
+
+        const groupRemoved = nextEvent(
+          bystander(),
+          "clientServerGroupRemoved",
+          (e) => e.clientID === subjectID,
+        );
+        const updatedAfter = nextEvent(
+          bystander(),
+          "clientUpdated",
+          (e) => e.clientID === subjectID && e.changes.serverGroups?.includes(sgid) === false,
+        );
+        await removeClientFromServerGroup(a, sgid, dbid);
+        added = false;
+        expect((await groupRemoved).groupID).toBe(sgid);
+        await updatedAfter;
+        expect(await messageGroups("groups after remove")).not.toContain(sgid);
+      } finally {
+        if (added) await removeClientFromServerGroup(a, sgid, dbid).catch(() => {});
+        await deleteServerGroup(a, sgid, { force: true }).catch(() => {});
+      }
+    },
+    45_000,
+  );
+
+  it.skipIf(!HAS_ADMIN)(
+    "setClientChannelGroup — reports the change and refreshes the cached channel group (needs a query endpoint)",
+    async () => {
+      const a = admin!;
+      const known = clientInternals(bystander()).clients.get(subjectID)!;
+      const row = (await listClients(a)).find((c) => c.id === subjectID)!;
+      const dbid = await getClientDBIDByUID(a, row.uid);
+      const original = known.channelGroupID;
+      const groups = await listChannelGroups(a);
+      const other = groups.find((g) => g.type === GroupType.Regular && g.id !== original);
+      expect(other).toBeDefined();
+
+      const changed = nextEvent(
+        bystander(),
+        "clientChannelGroupChanged",
+        (e) => e.clientID === subjectID && e.channelGroupID === other!.id,
+      );
+      await setClientChannelGroup(a, other!.id, known.channelID, dbid);
+      try {
+        const event = await changed;
+        console.log("channel group changed:", event);
+        expect(event.channelID).toBe(known.channelID);
+        expect(clientInternals(bystander()).clients.get(subjectID)?.channelGroupID).toBe(other!.id);
+      } finally {
+        const restored = nextEvent(
+          bystander(),
+          "clientChannelGroupChanged",
+          (e) => e.clientID === subjectID && e.channelGroupID === original,
+        ).catch(() => undefined);
+        await setClientChannelGroup(a, original, known.channelID, dbid).catch(() => {});
+        await restored;
+      }
+      expect(clientInternals(bystander()).clients.get(subjectID)?.channelGroupID).toBe(original);
+    },
+    30_000,
+  );
 });

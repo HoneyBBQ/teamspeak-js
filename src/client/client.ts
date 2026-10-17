@@ -135,6 +135,8 @@ export interface ClientInternals {
   readonly initOptions: ClientInitOptions;
   nickname: string;
   clid: number;
+  /** The clients this one knows of, as its events and `invokerGroups` read them. */
+  readonly clients: ReadonlyMap<number, ClientEnterEvent>;
   capabilities: ServerCapabilities;
   /** Mark the attempt in progress connected. */
   markConnected(initServer?: Readonly<Record<string, string>>): void;
@@ -443,6 +445,9 @@ export class Client implements CommandExecutor, AsyncDisposable {
       },
       set clid(value) {
         self.#clid = value;
+      },
+      get clients() {
+        return self.#clients;
       },
       get capabilities() {
         return self.#capabilities;
