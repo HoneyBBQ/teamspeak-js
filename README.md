@@ -124,17 +124,21 @@ client.on(EventName.TextMessage, (message) => console.log(message.message));
 client.on("textMessage", (message) => console.log(message.message)); // the same
 ```
 
-| Method                        | Description                                   |
-| ----------------------------- | --------------------------------------------- |
-| `on("connected", handler)`    | Fires when fully connected (`ConnectedEvent`) |
-| `on("disconnected", handler)` | Fires on disconnect (`DisconnectedEvent`)     |
-| `on("textMessage", handler)`  | Fires on text messages                        |
-| `on("clientEnter", handler)`  | Fires when a client joins                     |
-| `on("clientLeave", handler)`  | Fires when a client leaves                    |
-| `on("clientMoved", handler)`  | Fires when a client moves channels            |
-| `on("kicked", handler)`       | Fires when the bot is kicked                  |
-| `on("poked", handler)`        | Fires when poked by a client                  |
-| `on("voiceData", handler)`    | Fires on incoming voice data                  |
+| Method                                     | Description                                                    |
+| ------------------------------------------ | -------------------------------------------------------------- |
+| `on("connected", handler)`                 | Fires when fully connected (`ConnectedEvent`)                  |
+| `on("disconnected", handler)`              | Fires on disconnect (`DisconnectedEvent`)                      |
+| `on("textMessage", handler)`               | Fires on text messages                                         |
+| `on("clientEnter", handler)`               | Fires when a client joins                                      |
+| `on("clientLeave", handler)`               | Fires when a client leaves                                     |
+| `on("clientMoved", handler)`               | Fires when a client moves channels                             |
+| `on("clientUpdated", handler)`             | Fires when a client's properties change (`ClientUpdatedEvent`) |
+| `on("clientServerGroupAdded", handler)`    | Fires when a client joins a server group                       |
+| `on("clientServerGroupRemoved", handler)`  | Fires when a client leaves a server group                      |
+| `on("clientChannelGroupChanged", handler)` | Fires when a client's channel group changes                    |
+| `on("kicked", handler)`                    | Fires when the bot is kicked                                   |
+| `on("poked", handler)`                     | Fires when poked by a client                                   |
+| `on("voiceData", handler)`                 | Fires on incoming voice data                                   |
 
 `on()` and `once()` return a function that removes the listener, which is also
 a `Disposable` (`using listener = client.on(...)`). Listeners run one at a

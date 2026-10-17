@@ -13,6 +13,10 @@ const NAMES = [
   "notifyclientmoved",
   "notifytextmessage",
   "notifyclientpoke",
+  "notifyclientupdated",
+  "notifyservergroupclientadded",
+  "notifyservergroupclientdeleted",
+  "notifyclientchannelgroupchanged",
   "notifyunknown",
 ] as const;
 
@@ -37,6 +41,16 @@ const KEYS = [
   "invokername",
   "invokeruid",
   "reasonmsg",
+  "sgid",
+  "cgid",
+  "cgi",
+  "cluid",
+  "name",
+  "client_talk_power",
+  "client_away_message",
+  "client_input_muted",
+  "client_icon_id",
+  "client_talk_request",
 ] as const;
 
 /**

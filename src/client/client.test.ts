@@ -98,6 +98,54 @@ describe("Client self identification on notifycliententerview", () => {
   });
 });
 
+describe("Client events for changes to clients", () => {
+  /** Feed a packet, then let the queued events run. */
+  async function feed(client: Client, ...lines: string[]): Promise<void> {
+    for (const line of lines) clientInternals(client).handler.onPacket?.(commandPacket(line));
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+
+  it("takes the server's rename of this client from its own clientUpdated", async () => {
+    const client = connectedClient("Bot", 5);
+
+    await feed(client, "notifyclientupdated clid=5 client_nickname=Robot");
+    expect(clientInternals(client).nickname).toBe("Robot");
+
+    await feed(client, "notifyclientupdated clid=9 client_nickname=Other");
+    expect(clientInternals(client).nickname).toBe("Robot");
+  });
+
+  it("delivers clientUpdated before the catch-all, and a following message with the new groups", async () => {
+    const client = connectedClient("Bot", 5);
+    const seen: string[] = [];
+    client.on("clientUpdated", (e) =>
+      seen.push(`updated:${e.changes.serverGroups!.map(String).join(",")}`),
+    );
+    client.on("clientServerGroupAdded", (e) => seen.push(`added:${String(e.groupID)}`));
+    client.on("textMessage", (e) => seen.push(`text:${e.invokerGroups!.map(String).join(",")}`));
+    client.on("notification", (e) => seen.push(e.name));
+
+    await feed(
+      client,
+      "notifycliententerview clid=9 ctid=1 client_nickname=Bob client_servergroups=6",
+      // The group event first, as one client sees it.
+      "notifyservergroupclientadded sgid=8 clid=9 name=Bob cluid=u invokerid=2 invokername=Adm invokeruid=a",
+      "notifyclientupdated clid=9 client_servergroups=6,8",
+      "notifytextmessage targetmode=2 msg=hi invokerid=9 invokername=Bob",
+    );
+
+    expect(seen).toEqual([
+      "notifycliententerview",
+      "added:8",
+      "notifyservergroupclientadded",
+      "updated:6,8",
+      "notifyclientupdated",
+      "text:6,8",
+      "notifytextmessage",
+    ]);
+  });
+});
+
 const silentSockets: Socket[] = [];
 afterEach(() => {
   for (const socket of silentSockets.splice(0)) socket.close();

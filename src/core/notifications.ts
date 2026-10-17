@@ -11,14 +11,26 @@
  * client can decide, such as whether a client that left view was itself.
  */
 
-import { asChannelID, asClientID, asUID } from "./command/ids.js";
-import { parseClient } from "./api/parse.js";
+import {
+  asChannelGroupID,
+  asChannelID,
+  asClientID,
+  asServerGroupID,
+  asUID,
+} from "./command/ids.js";
+import { parseClient, parseClientChanges } from "./api/parse.js";
+import { applyClientChanges } from "./api/clients.js";
 import { parseInt10, parseUint16, parseUint64 } from "./helpers.js";
 import type { Command } from "./command/command.js";
 import type {
   ClientEnterEvent,
+  ClientChannelGroupChangedEvent,
   ClientLeaveEvent,
   ClientMovedEvent,
+  ClientServerGroupAddedEvent,
+  ClientServerGroupRemovedEvent,
+  ClientUpdatedEvent,
+  Invoked,
   PokeEvent,
   TextMessageEvent,
 } from "./events.js";
@@ -30,14 +42,23 @@ export type NotificationResult =
   | { kind: "clientMoved"; event: ClientMovedEvent }
   | { kind: "textMessage"; message: TextMessageEvent }
   | { kind: "poked"; event: PokeEvent }
+  | { kind: "clientUpdated"; event: ClientUpdatedEvent }
+  | { kind: "clientServerGroupAdded"; event: ClientServerGroupAddedEvent }
+  | { kind: "clientServerGroupRemoved"; event: ClientServerGroupRemovedEvent }
+  | { kind: "clientChannelGroupChanged"; event: ClientChannelGroupChangedEvent }
   | { kind: "unknown" };
 
 /**
  * Read a notification. `cmd` is the parsed notification line, `selfCLID` this
  * client's own id (0 when it is not known yet), and `clients` the clients the
- * caller knows, which the enter and leave notifications keep current and the
- * others read: a text message carries no groups, and a move of the client's
- * own carries no invoker.
+ * caller knows, which the enter, leave, move, update and channel group
+ * notifications keep current and the others read: a text message carries no
+ * groups, and a move of the client's own carries no invoker. An entry is
+ * replaced, never edited, so an event that holds one stays as it was.
+ *
+ * The server-group notifications leave the clients alone: the update that
+ * accompanies them carries the whole new list, in either order, and is the
+ * only writer of it.
  */
 export function handleNotification(
   cmd: Command,
@@ -55,6 +76,14 @@ export function handleNotification(
       return handleTextMessage(cmd, clients);
     case "notifyclientpoke":
       return handleClientPoked(cmd);
+    case "notifyclientupdated":
+      return handleClientUpdated(cmd, clients);
+    case "notifyservergroupclientadded":
+      return handleServerGroupMember(cmd, "clientServerGroupAdded");
+    case "notifyservergroupclientdeleted":
+      return handleServerGroupMember(cmd, "clientServerGroupRemoved");
+    case "notifyclientchannelgroupchanged":
+      return handleClientChannelGroupChanged(cmd, clients);
     default:
       return { kind: "unknown" };
   }
@@ -152,6 +181,81 @@ function handleClientPoked(cmd: Command): NotificationResult {
       invokerName: cmd.params["invokername"] ?? "",
       invokerUID: asUID(cmd.params["invokeruid"] ?? ""),
       message: cmd.params["msg"] ?? "",
+    },
+  };
+}
+
+function invoked(params: Readonly<Record<string, string>>): Invoked {
+  return {
+    invokerID: asClientID(parseUint16(params["invokerid"] ?? "")),
+    invokerName: params["invokername"] ?? "",
+    invokerUID: asUID(params["invokeruid"] ?? ""),
+  };
+}
+
+function handleClientUpdated(
+  cmd: Command,
+  clients: Map<number, ClientEnterEvent>,
+): NotificationResult {
+  const clid = asClientID(parseUint16(cmd.params["clid"] ?? ""));
+  if (clid === 0) return { kind: "unknown" };
+  const changes = parseClientChanges(cmd.params);
+
+  // A client that is not known gets no entry: one needs a uid and a channel,
+  // which an update does not carry. The event is still delivered.
+  const existing = clients.get(clid);
+  if (existing) clients.set(clid, applyClientChanges(existing, changes));
+
+  return { kind: "clientUpdated", event: { clientID: clid, changes, ...invoked(cmd.params) } };
+}
+
+function handleServerGroupMember(
+  cmd: Command,
+  kind: "clientServerGroupAdded" | "clientServerGroupRemoved",
+): NotificationResult {
+  const clid = asClientID(parseUint16(cmd.params["clid"] ?? ""));
+  if (clid === 0) return { kind: "unknown" };
+  return {
+    kind,
+    event: {
+      groupID: asServerGroupID(parseUint64(cmd.params["sgid"] ?? "")),
+      clientID: clid,
+      nickname: cmd.params["name"] ?? "",
+      uid: asUID(cmd.params["cluid"] ?? ""),
+      ...invoked(cmd.params),
+    },
+  };
+}
+
+function handleClientChannelGroupChanged(
+  cmd: Command,
+  clients: Map<number, ClientEnterEvent>,
+): NotificationResult {
+  const clid = asClientID(parseUint16(cmd.params["clid"] ?? ""));
+  if (clid === 0) return { kind: "unknown" };
+  const channelID = asChannelID(parseUint64(cmd.params["cid"] ?? ""));
+  const channelGroupID = asChannelGroupID(parseUint64(cmd.params["cgid"] ?? ""));
+  const inherited = asChannelID(parseUint64(cmd.params["cgi"] ?? ""));
+
+  // The group is per channel: only the channel the client is in is the one
+  // its record describes.
+  const existing = clients.get(clid);
+  if (existing && existing.channelID === channelID) {
+    clients.set(clid, {
+      ...existing,
+      channelGroupID,
+      channelGroupInheritedChannelID: inherited,
+    });
+  }
+
+  return {
+    kind: "clientChannelGroupChanged",
+    event: {
+      clientID: clid,
+      channelID,
+      channelGroupID,
+      channelGroupInheritedChannelID: inherited,
+      ...invoked(cmd.params),
     },
   };
 }

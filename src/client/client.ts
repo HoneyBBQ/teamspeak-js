@@ -1510,6 +1510,22 @@ export class Client implements CommandExecutor, AsyncDisposable {
       case "textMessage":
         this.#emitServerEvent({ name: "textMessage", payload: result.message });
         break;
+      case "clientUpdated":
+        // The server may rename a client, this one included.
+        if (result.event.clientID === this.#clid && "nickname" in result.event.changes) {
+          this.#nickname = result.event.changes.nickname ?? this.#nickname;
+        }
+        this.#emitServerEvent({ name: "clientUpdated", payload: result.event });
+        break;
+      case "clientServerGroupAdded":
+        this.#emitServerEvent({ name: "clientServerGroupAdded", payload: result.event });
+        break;
+      case "clientServerGroupRemoved":
+        this.#emitServerEvent({ name: "clientServerGroupRemoved", payload: result.event });
+        break;
+      case "clientChannelGroupChanged":
+        this.#emitServerEvent({ name: "clientChannelGroupChanged", payload: result.event });
+        break;
       case "poked":
         this.#emitServerEvent({ name: "poked", payload: result.event });
         break;

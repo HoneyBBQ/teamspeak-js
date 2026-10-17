@@ -827,6 +827,13 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
       case "textMessage":
         this.#emit("textMessage", result.message);
         break;
+      case "clientUpdated":
+      case "clientServerGroupAdded":
+      case "clientServerGroupRemoved":
+      case "clientChannelGroupChanged":
+      // A TeamSpeak 3 ServerQuery connection is not sent these, so a query
+      // client does not offer them. Should a server send one, the clients it
+      // knows are still kept current by the core; `notification` has it.
       case "poked":
       case "unknown":
         // A query client is never poked, and anything else is not an event the

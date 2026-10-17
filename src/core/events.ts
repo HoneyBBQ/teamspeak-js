@@ -3,8 +3,8 @@
  * shares these types.
  */
 
-import type { ChannelID, ClientID, ServerGroupID, UID } from "./command/ids.js";
-import type { ClientEntry } from "./api/clients.js";
+import type { ChannelGroupID, ChannelID, ClientID, ServerGroupID, UID } from "./command/ids.js";
+import type { ClientChanges, ClientEntry } from "./api/clients.js";
 import type { NotificationName } from "./notification-name.js";
 
 /** A text message, sent privately, to a channel, or to the whole server. */
@@ -106,6 +106,65 @@ export interface PokeEvent {
   readonly message: string;
 }
 
+/** Who caused a notification: the three fields every invoked notification carries. */
+export interface Invoked {
+  /** The invoking client's id; 0 when the server acted or no invoker was named. */
+  readonly invokerID: ClientID;
+  /** Its nickname; "Server" when the server acted, "" when none was named. */
+  readonly invokerName: string;
+  /** Its unique identifier; "" when the server acted or none was named. */
+  readonly invokerUID: UID;
+}
+
+/** A client's properties changing. Delivered by the voice client only. */
+export interface ClientUpdatedEvent extends Invoked {
+  /** The client that changed. It may be this client. */
+  readonly clientID: ClientID;
+  /**
+   * Only the properties the notification carried. It may be empty, when the
+   * notification carried only properties this SDK does not model. Merge it
+   * into a record with `applyClientChanges`.
+   */
+  readonly changes: ClientChanges;
+}
+
+/**
+ * A client gaining or losing a server group. The group event says which group
+ * and who changed it; the client's whole new list arrives as `clientUpdated`.
+ */
+export interface ClientServerGroupEvent extends Invoked {
+  /** The server group. */
+  readonly groupID: ServerGroupID;
+  /** The client whose membership changed. */
+  readonly clientID: ClientID;
+  /** That client's nickname. */
+  readonly nickname: string;
+  /** That client's unique identifier. */
+  readonly uid: UID;
+}
+
+/** A client added to a server group. */
+export interface ClientServerGroupAddedEvent extends ClientServerGroupEvent {}
+
+/** A client removed from a server group. */
+export interface ClientServerGroupRemovedEvent extends ClientServerGroupEvent {}
+
+/**
+ * A client's channel group changing in a channel. Moving a client reports one
+ * as well, from the server (invoker id 0, name "Server"), since the group is
+ * per channel.
+ */
+export interface ClientChannelGroupChangedEvent extends Invoked {
+  /** The client whose channel group changed. */
+  readonly clientID: ClientID;
+  /** The channel the group applies in. */
+  readonly channelID: ChannelID;
+  /** The channel group the client now holds there. */
+  readonly channelGroupID: ChannelGroupID;
+  /** The channel the group is inherited from. */
+  readonly channelGroupInheritedChannelID: ChannelID;
+}
+
 /** Audio from another client, in the channel or whispered. */
 export interface VoiceDataEvent {
   /** Who is speaking. */
@@ -166,7 +225,8 @@ export interface DisconnectedEvent {
  *
  * These are the modelled events; `notification` carries every notification
  * besides, after the event it produced. Gaining a key is an additive change,
- * so a minor release may add one; none is ever removed in a minor.
+ * so a minor release may add one; none is ever removed in a minor. The keys
+ * are not listed here, so this comment cannot fall behind them.
  */
 export interface ServerEventMap {
   /** A text message to this client, its channel or the server. */

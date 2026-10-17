@@ -1,5 +1,9 @@
 import type {
+  ClientChannelGroupChangedEvent,
   ClientID,
+  ClientServerGroupAddedEvent,
+  ClientServerGroupRemovedEvent,
+  ClientUpdatedEvent,
   ClientVersion,
   CommandMiddleware,
   Logger,
@@ -34,6 +38,27 @@ export interface EventMap extends ServerEventMap, SessionEventMap {
    * that cannot keep up loses audio rather than memory.
    */
   voiceData: VoiceDataEvent;
+  /**
+   * A client's properties changing: nickname, away, mute, groups, talk power.
+   * `changes` holds only what the server sent. The client keeps its record of
+   * that client current before this is delivered. Only the voice protocol
+   * delivers it; a TeamSpeak 3 ServerQuery connection does not.
+   */
+  clientUpdated: ClientUpdatedEvent;
+  /**
+   * A client added to a server group, with the group and who did it. The
+   * client's whole new list is in the `clientUpdated` that goes with it, which
+   * may arrive before or after this.
+   */
+  clientServerGroupAdded: ClientServerGroupAddedEvent;
+  /** A client removed from a server group; see `clientServerGroupAdded`. */
+  clientServerGroupRemoved: ClientServerGroupRemovedEvent;
+  /**
+   * A client's channel group changing in a channel, which moving it also
+   * does. The client's record is refreshed when the channel is the one it is
+   * in.
+   */
+  clientChannelGroupChanged: ClientChannelGroupChangedEvent;
 }
 
 /**
@@ -59,6 +84,14 @@ const eventNameValues = {
   ClientLeave: "clientLeave",
   /** A client changing channel. */
   ClientMoved: "clientMoved",
+  /** A client's properties changing; carries only the changed ones. */
+  ClientUpdated: "clientUpdated",
+  /** A client added to a server group. */
+  ClientServerGroupAdded: "clientServerGroupAdded",
+  /** A client removed from a server group. */
+  ClientServerGroupRemoved: "clientServerGroupRemoved",
+  /** A client's channel group changing in a channel. */
+  ClientChannelGroupChanged: "clientChannelGroupChanged",
   /** This client being poked. */
   Poked: "poked",
   /** Audio from another client. Only decoded with a listener or event middleware. */
@@ -107,6 +140,10 @@ export type ServerEventName =
   | "clientEnter"
   | "clientLeave"
   | "clientMoved"
+  | "clientUpdated"
+  | "clientServerGroupAdded"
+  | "clientServerGroupRemoved"
+  | "clientChannelGroupChanged"
   | "poked"
   | "voiceData"
   | "notification";

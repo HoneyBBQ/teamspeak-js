@@ -187,4 +187,224 @@ describe("notification names", () => {
     const known = new Set<string>(Object.values(NotificationName));
     for (const name of dispatched) expect(known.has(name), name).toBe(true);
   });
+
+  describe("notifyclientupdated", () => {
+    const enter = {
+      name: "notifycliententerview",
+      params: {
+        clid: "7",
+        ctid: "3",
+        client_nickname: "Alice",
+        client_unique_identifier: "uid",
+        client_servergroups: "6",
+        client_away: "0",
+      },
+    };
+
+    it("reports exactly the properties it carried, and the admin who edited", () => {
+      const result = handleNotification(
+        {
+          name: "notifyclientupdated",
+          params: {
+            clid: "7",
+            client_description: "hello",
+            invokerid: "2",
+            invokername: "Admin",
+            invokeruid: "auid",
+          },
+        },
+        1,
+        makeClients(),
+      );
+
+      expect(result.kind).toBe("clientUpdated");
+      if (result.kind !== "clientUpdated") return;
+      expect(Object.keys(result.event.changes)).toEqual(["description"]);
+      expect(result.event).toMatchObject({ clientID: 7, invokerID: 2, invokerName: "Admin" });
+    });
+
+    it("has no invoker when nobody edited the client", () => {
+      const result = handleNotification(
+        { name: "notifyclientupdated", params: { clid: "7", client_away: "1" } },
+        1,
+        makeClients(),
+      );
+      expect(result.kind === "clientUpdated" && result.event).toMatchObject({
+        invokerID: 0,
+        invokerName: "",
+        invokerUID: "",
+      });
+    });
+
+    it("replaces the roster entry and leaves the earlier object as it was", () => {
+      const clients = makeClients();
+      const entered = handleNotification(enter, 1, clients);
+      const before = clients.get(7);
+
+      handleNotification(
+        { name: "notifyclientupdated", params: { clid: "7", client_servergroups: "6,8" } },
+        1,
+        clients,
+      );
+
+      expect(clients.get(7)).not.toBe(before);
+      expect(before?.serverGroups).toEqual([6n]);
+      expect(entered.kind === "clientEnter" && entered.info.serverGroups).toEqual([6n]);
+      expect(clients.get(7)?.serverGroups).toEqual([6n, 8n]);
+      expect(clients.get(7)?.nickname).toBe("Alice");
+    });
+
+    it("reads an empty group list as no groups", () => {
+      const clients = makeClients();
+      handleNotification(enter, 1, clients);
+      handleNotification(
+        { name: "notifyclientupdated", params: { clid: "7", client_servergroups: "" } },
+        1,
+        clients,
+      );
+      expect(clients.get(7)?.serverGroups).toEqual([]);
+    });
+
+    it("creates no entry for a client it does not know, and still reports it", () => {
+      const clients = makeClients();
+      const result = handleNotification(
+        { name: "notifyclientupdated", params: { clid: "9", client_away: "1" } },
+        1,
+        clients,
+      );
+      expect(result.kind).toBe("clientUpdated");
+      expect(clients.size).toBe(0);
+    });
+
+    it("is not an event for client id 0", () => {
+      const result = handleNotification(
+        { name: "notifyclientupdated", params: { clid: "0", client_away: "1" } },
+        1,
+        makeClients(),
+      );
+      expect(result.kind).toBe("unknown");
+    });
+
+    it("gives a following text message the new groups, whichever of the two came first", () => {
+      const added = {
+        name: "notifyservergroupclientadded",
+        params: { sgid: "8", clid: "7", name: "Alice", cluid: "uid" },
+      };
+      const updated = {
+        name: "notifyclientupdated",
+        params: { clid: "7", client_servergroups: "6,8" },
+      };
+      const text = { name: "notifytextmessage", params: { invokerid: "7", msg: "x" } };
+      for (const order of [
+        [added, updated],
+        [updated, added],
+      ]) {
+        const clients = makeClients();
+        handleNotification(enter, 1, clients);
+        for (const n of order) handleNotification(n, 1, clients);
+        const result = handleNotification(text, 1, clients);
+        expect(result.kind === "textMessage" && result.message.invokerGroups).toEqual([6n, 8n]);
+      }
+    });
+  });
+
+  describe("notifyservergroupclientadded and ...deleted", () => {
+    const params = {
+      sgid: "8",
+      clid: "7",
+      name: "Alice",
+      cluid: "uid",
+      invokerid: "2",
+      invokername: "Admin",
+      invokeruid: "auid",
+    };
+
+    it("read the group, the client and the invoker", () => {
+      const added = handleNotification(
+        { name: "notifyservergroupclientadded", params },
+        1,
+        makeClients(),
+      );
+      const removed = handleNotification(
+        { name: "notifyservergroupclientdeleted", params },
+        1,
+        makeClients(),
+      );
+      const expected = {
+        groupID: 8n,
+        clientID: 7,
+        nickname: "Alice",
+        uid: "uid",
+        invokerID: 2,
+        invokerName: "Admin",
+        invokerUID: "auid",
+      };
+      expect(added.kind === "clientServerGroupAdded" && added.event).toEqual(expected);
+      expect(removed.kind === "clientServerGroupRemoved" && removed.event).toEqual(expected);
+    });
+
+    it("do not touch the roster", () => {
+      const clients = makeClients();
+      handleNotification(
+        {
+          name: "notifycliententerview",
+          params: { clid: "7", ctid: "3", client_servergroups: "6" },
+        },
+        1,
+        clients,
+      );
+      const before = clients.get(7);
+      handleNotification({ name: "notifyservergroupclientadded", params }, 1, clients);
+      expect(clients.get(7)).toBe(before);
+    });
+  });
+
+  describe("notifyclientchannelgroupchanged", () => {
+    const enter = {
+      name: "notifycliententerview",
+      params: { clid: "7", ctid: "3", client_channel_group_id: "8" },
+    };
+    const changed = (cid: string) => ({
+      name: "notifyclientchannelgroupchanged",
+      params: {
+        invokerid: "0",
+        invokername: "Server",
+        invokeruid: "serveradmin",
+        cgid: "5",
+        cid,
+        clid: "7",
+        cgi: "3",
+      },
+    });
+
+    it("reads the event, a server invoker included", () => {
+      const result = handleNotification(changed("3"), 1, makeClients());
+      expect(result.kind === "clientChannelGroupChanged" && result.event).toEqual({
+        clientID: 7,
+        channelID: 3n,
+        channelGroupID: 5n,
+        channelGroupInheritedChannelID: 3n,
+        invokerID: 0,
+        invokerName: "Server",
+        invokerUID: "serveradmin",
+      });
+    });
+
+    it("refreshes the channel group when the client is in that channel", () => {
+      const clients = makeClients();
+      handleNotification(enter, 1, clients);
+      const before = clients.get(7);
+      handleNotification(changed("3"), 1, clients);
+      expect(clients.get(7)?.channelGroupID).toBe(5n);
+      expect(clients.get(7)?.channelGroupInheritedChannelID).toBe(3n);
+      expect(before?.channelGroupID).toBe(8n);
+    });
+
+    it("leaves the group alone for another channel", () => {
+      const clients = makeClients();
+      handleNotification(enter, 1, clients);
+      handleNotification(changed("4"), 1, clients);
+      expect(clients.get(7)?.channelGroupID).toBe(8n);
+    });
+  });
 });
