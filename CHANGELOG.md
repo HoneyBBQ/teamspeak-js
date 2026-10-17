@@ -4,6 +4,48 @@ Until 1.0.0-beta.4 this package was published as `@honeybbq/teamspeak-core`, and
 `@honeybbq/teamspeak-client` was a second package. The sections below, down to
 the last version heading, are the core's history; the client's is at the bottom.
 
+## 1.0.0-beta.10
+
+### Minor Changes
+
+- [#78](https://github.com/HoneyBBQ/teamspeak-js/pull/78) [`4f13ea5`](https://github.com/HoneyBBQ/teamspeak-js/commit/4f13ea5d81d8244a00d7437f5df3a5c70010b1bb) - Avatar and icon helpers. `uploadAvatar` hashes an image, uploads it and sets the client's avatar flag; `downloadAvatar` reads any client's avatar from `avatarFileName(uid)`, the name the server stores it under (`avatar_` and the unique id in the letters a to p, which is not the MD5 name); `removeAvatar` deletes your own. `uploadIcon` sends an icon under its CRC-32 id (`iconIDOf`), `downloadIcon` and `removeIcon` read and delete one, and `setChannelIcon`, `setServerGroupIcon`, `setChannelGroupIcon`, `setClientIcon` and `setServerIcon` point a record at it. `Client` has a `host` getter.
+
+- [#72](https://github.com/HoneyBBQ/teamspeak-js/pull/72) [`08ea67c`](https://github.com/HoneyBBQ/teamspeak-js/commit/08ea67c9cbea4b510419be11709063425791a0a5) - `ClientOptions` takes a `privilegeKey`, which the server redeems while the client joins, and `metaData`, which other clients see in their record of it; `updateClient` takes `metaData` too. `disconnect()` takes a `reasonMessage` that bystanders receive in `clientLeave`. The goodbye now carries `reasonid=8`, without which both servers drop the message.
+
+- [#72](https://github.com/HoneyBBQ/teamspeak-js/pull/72) [`08ea67c`](https://github.com/HoneyBBQ/teamspeak-js/commit/08ea67c9cbea4b510419be11709063425791a0a5) - The client answers `notifyconnectioninforequest` with `setconnectioninfo`, from what it has measured: the keepalive round trip, packets and bytes by class and direction, and bandwidth. `getClientConnectionInfo` reads another client's figures, and `verifyServerPassword` and `verifyChannelPassword` check a password without joining or moving.
+
+- [#72](https://github.com/HoneyBBQ/teamspeak-js/pull/72) [`08ea67c`](https://github.com/HoneyBBQ/teamspeak-js/commit/08ea67c9cbea4b510419be11709063425791a0a5) - `createChannel` looks the channel up by name and parent when the server's answer carries no `cid`, instead of failing a creation that succeeded.
+
+- [#72](https://github.com/HoneyBBQ/teamspeak-js/pull/72) [`08ea67c`](https://github.com/HoneyBBQ/teamspeak-js/commit/08ea67c9cbea4b510419be11709063425791a0a5) - `sendWhisper` can name channels as well as clients (`WhisperTargets.channels`), and the new `sendGroupWhisper` whispers to a server group, a channel group, the channel commanders or everyone, within the channels a scope picks. `GroupWhisperType` and `GroupWhisperScope` name the packet's two enums, and `GroupWhisperTarget` ties the group id to the type that takes it.
+
+- [#73](https://github.com/HoneyBBQ/teamspeak-js/pull/73) [`a445291`](https://github.com/HoneyBBQ/teamspeak-js/commit/a445291b47d04f82c809b4f658340d91da06a7da) - The client reports changes to channels and to the server as typed events, and the voice client reports its subscriptions, plugin commands and typing.
+
+  New events on every client: `channelCreated`, `channelEdited`, `channelMoved`, `channelDeleted`, `channelDescriptionChanged`, `channelPasswordChanged` and `serverEdited`. A ServerQuery client receives them through its `channel` and `server` categories, which are registered by default; `QueryEventsOption` lists what each category delivers. New events on the voice client: `channelSubscribed`, `channelUnsubscribed`, `pluginCommand` and `clientChatComposing`. Neither TeamSpeak 3 over raw ServerQuery nor TeamSpeak 6 over SSH sends a ServerQuery connection these four, nor `clientUpdated`, the group events or `clientChannelGroupChanged`, so the ServerQuery client does not offer them.
+
+  `channelCreated` and `channelEdited` carry `changes`, holding only the properties the server sent, under the names `createChannel` and `editChannel` take; for a new channel, a property that is absent has the server's default. `applyChannelChanges` merges one into a record. `serverEdited` carries the changed server properties by their `virtualserver_` names, and none for a welcome message change.
+
+  The answer to `getChannelDescription` arrives as an edit with reason `Reason.ChannelUpdate` and no invoker, which is not a change: it produces no `channelEdited`, and still reaches `notification` and the command.
+
+  `sendPluginCommand` sends a plugin command to the channel, the server or one client, `sendChatComposing` tells a client that we are typing a private message to it, and `closePrivateChat` tells it that we closed the chat. A ServerQuery connection cannot send them. Each function's documentation says who receives what, as measured on both servers.
+
+  A ServerQuery client lists the clients with `-away` and `-voice` when it connects, so the records it learns carry away and mute state.
+
+  Every notification is still delivered as `notification`, after its typed event. Code that switches over event names, in event middleware or elsewhere, needs a default case, as it always did.
+
+- [#80](https://github.com/HoneyBBQ/teamspeak-js/pull/80) [`355fe25`](https://github.com/HoneyBBQ/teamspeak-js/commit/355fe253e9261d4302a5ba491cce8b4ed078f79d) - `muteClients` and `unmuteClients` stop and resume hearing other clients on a voice connection: the server no longer forwards the muted clients' voice to the caller, while everyone else still hears them. Both take one or more client ids.
+
+- [#77](https://github.com/HoneyBBQ/teamspeak-js/pull/77) [`18c9f4b`](https://github.com/HoneyBBQ/teamspeak-js/commit/18c9f4be37d407a0cf1ab1c55745c0363bd8c77c) - `PermissionName` names the `i_needed_modify_power_*` permissions, one per permission and called `NeededModifyPower` followed by that permission's name, such as `PermissionName.NeededModifyPowerVirtualServerCanonicalNameManage`. The seven TeamSpeak 6 permissions that had no name for their twin are covered with the rest.
+
+- [#77](https://github.com/HoneyBBQ/teamspeak-js/pull/77) [`18c9f4b`](https://github.com/HoneyBBQ/teamspeak-js/commit/18c9f4be37d407a0cf1ab1c55745c0363bd8c77c) - The query client can connect as a TeamSpeak 6 guest, which beta13 and later accept without any setup: pass `guest: true` in the `ssh` transport (logs in as the user `guest` with no password) or the `web` transport (sends no api key). It is an explicit choice: a missing `username`, `password` or `apiKey` still throws, and the error now names `guest: true` as the way to connect without one. A guest runs with the Guest Server Query group's permissions, so `version` and `whoami` answer and admin commands are refused; pass `events: false` for an SSH guest that may not register for notifications.
+
+### Patch Changes
+
+- [#76](https://github.com/HoneyBBQ/teamspeak-js/pull/76) [`e00eec7`](https://github.com/HoneyBBQ/teamspeak-js/commit/e00eec79547d2dd5d76339aea7b2e7168441698c) - `createServerGroup`, `createChannelGroup`, and `copyServerGroup` / `copyChannelGroup` onto a new group look the group up by name and type when the server's answer carries no id, instead of failing a creation that succeeded. A `NoDataError` from `addPrivilegeKey` or `addAPIKey` now says plainly that the command took effect, so it is not retried blindly.
+
+- [#75](https://github.com/HoneyBBQ/teamspeak-js/pull/75) [`3e50041`](https://github.com/HoneyBBQ/teamspeak-js/commit/3e50041ddb7b567f593d9cdedc9dd5d54cd40307) - `QueryClient` reads its own client id and the client list again after `use()`, and forgets both after `logout()` and after a `use()` the server refuses, which leaves the connection on no server. Before, a kick on the server it had just selected was missed, and the roster still named the old server's clients. `registerNotifications()` lists the clients again once the server accepts it. A reconnect starts over from the constructor options and does not repeat a `use()` made by hand.
+
+  `clientgetvariables`, `getconnectioninfo` and `channelgetdescription` over the voice protocol take only the row that echoes the `clid` or `cid` that was asked about. Another client's update, or the client's own mute broadcast, no longer comes back as the answer.
+
 ## 1.0.0-beta.9
 
 ### Major Changes
