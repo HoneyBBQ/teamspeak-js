@@ -23,6 +23,13 @@
 # TS3_QUERY_GUEST=1 marks a TeamSpeak 6 server (beta13 or later) that accepts
 # guest ServerQuery logins, so the suite also tests those.
 #
+# Both server generations serve raw ServerQuery, SSH and WebQuery (TS3 from
+# 3.12, TS6 from its first release), but TS3 has them off except raw: start it
+# with TS3SERVER_QUERY_PROTOCOLS=raw,ssh,http and TS3SERVER_SERVERADMIN_PASSWORD
+# set. Give this script TS3_QUERY_HOST and TS3_QUERY_HTTP together and it
+# provisions over raw TCP, creates the WebQuery api key there (a TS3 server
+# prints none in its log), and writes the environment for both transports.
+#
 # Needs python3, to read WebQuery's JSON replies.
 set -euo pipefail
 
@@ -83,7 +90,14 @@ tcp_password_works() {
 ADMIN_PW="${TS3_ADMIN_PW:-}"
 HTTP_API_KEY="${TS3_API_KEY:-}"
 
-if [ -n "$QUERY_HTTP" ]; then
+# Provision over WebQuery only where there is no raw port to do it over. A server
+# with both gets its api key created over the raw one.
+USE_HTTP=""
+if [ -n "$QUERY_HTTP" ] && [ -z "$QUERY_HOST" ]; then
+  USE_HTTP=1
+fi
+
+if [ -n "$USE_HTTP" ]; then
   for candidate in "${containers[@]}"; do
     [ -n "$HTTP_API_KEY" ] && break
     key="$(credential_from_logs apikey "$candidate")"
@@ -202,10 +216,10 @@ query_tcp() {
 #   TS6  no raw query at all — it serves HTTP instead, so the same commands go
 #        over WebQuery, which TS3 also supports
 #
-# TS3_QUERY_HTTP selects WebQuery; TS3_QUERY_HOST selects direct TCP; failing
-# both, the query client runs inside the container.
+# TS3_QUERY_HOST selects direct TCP; TS3_QUERY_HTTP alone selects WebQuery;
+# failing both, the query client runs inside the container.
 query() {
-  if [ -n "$QUERY_HTTP" ]; then
+  if [ -n "$USE_HTTP" ]; then
     while IFS= read -r line; do
       [ -n "$line" ] || continue
       # login and use address the raw query session, which WebQuery replaces
@@ -278,8 +292,32 @@ run_commands() {
 # down: that one rate-limits the voice clients the tests connect as, this one
 # rate-limits this script.
 run_commands <<'PROBE'
-instanceedit serverinstance_serverquery_flood_commands=1000 serverinstance_serverquery_flood_time=1 serverinstance_serverquery_flood_ban_time=0
+instanceedit serverinstance_serverquery_flood_commands=1000 serverinstance_serverquery_flood_time=1 serverinstance_serverquery_ban_time=1
 PROBE
+
+# A TS3 server prints no WebQuery api key, so one is made over the raw session.
+# lifetime=0 never expires and scope=manage allows every command, which is what
+# the suite needs; the key is shown once, here, and goes into the env file.
+if [ -n "$QUERY_HTTP" ] && [ -z "$HTTP_API_KEY" ]; then
+  run_commands <<'PROBE'
+apikeyadd scope=manage lifetime=0
+PROBE
+  HTTP_API_KEY="$(printf '%s' "$command_output" | grep -o 'apikey=[^ ]*' | head -1 | cut -d= -f2 || true)"
+  # TS3 opens its HTTP port a few seconds after the raw one.
+  key_accepted=""
+  for _ in $(seq 1 30); do
+    if webquery_key_works "$HTTP_API_KEY"; then
+      key_accepted=1
+      break
+    fi
+    sleep 1
+  done
+  if [ -z "$key_accepted" ]; then
+    echo "the api key made over raw ServerQuery is not accepted by http://${QUERY_HTTP}" >&2
+    echo "start the server with TS3SERVER_QUERY_PROTOCOLS=raw,ssh,http" >&2
+    exit 1
+  fi
+fi
 
 channel_list() {
   run_commands <<'PROBE'
@@ -360,13 +398,28 @@ if ! printf '%s' "$command_output" | grep -q 'virtualserver_flag_password=1'; th
   exit 1
 fi
 
+# Which generation this is, read from the server's own version, so that a suite
+# can check what its client concluded against something it did not compute.
+run_commands <<'PROBE'
+version
+PROBE
+SERVER_MAJOR="$(printf '%s' "$command_output" | sed -n 's/.*version=\([0-9][0-9]*\)\..*/\1/p' | head -1)"
+case "$SERVER_MAJOR" in
+  3) SERVER_FAMILY=ts3 ;;
+  6) SERVER_FAMILY=ts6 ;;
+  *)
+    echo "the server did not report a version this fixture knows: $command_output" >&2
+    exit 1
+    ;;
+esac
+
 # The voice port is configurable because a second server on the same host needs
 # a different one; CI maps the first to 9987 either way.
 VOICE_PORT="${TS3_VOICE_PORT:-9987}"
 
-# The ServerQuery client suite. The transport it uses is whichever one this
-# invocation provisioned over: raw TCP where TS3_QUERY_HOST was given, WebQuery
-# where TS3_QUERY_HTTP was. Both are written, so the suite reads what is there.
+# The ServerQuery client suite. Each transport the invocation has an endpoint
+# for is written: raw TCP where TS3_QUERY_HOST was given, WebQuery where
+# TS3_QUERY_HTTP was, so the suite reads what is there and runs each.
 QUERY_ENV=""
 if [ -n "$QUERY_HOST" ]; then
   QUERY_ENV="export TEAMSPEAK_QUERY_KIND=tcp
@@ -374,14 +427,18 @@ export TEAMSPEAK_QUERY_HOST=$QUERY_HOST
 export TEAMSPEAK_QUERY_PORT=$QUERY_PORT
 export TEAMSPEAK_QUERY_LOGIN_NAME=serveradmin
 export TEAMSPEAK_QUERY_LOGIN_PASSWORD=$ADMIN_PW"
-elif [ -n "$QUERY_HTTP" ]; then
-  QUERY_ENV="export TEAMSPEAK_QUERY_KIND=web
+fi
+if [ -n "$QUERY_HTTP" ]; then
+  if [ -z "$QUERY_ENV" ]; then
+    QUERY_ENV="export TEAMSPEAK_QUERY_KIND=web"
+  fi
+  QUERY_ENV="$QUERY_ENV
 export TEAMSPEAK_QUERY_URL=http://$QUERY_HTTP
 export TEAMSPEAK_QUERY_API_KEY=$HTTP_API_KEY"
 fi
 
-# SSH is off unless this server was started with it, and TS3 does not publish
-# it at all, so the suite runs that part only where TS3_QUERY_SSH_PORT says so.
+# SSH is off unless this server was started with it (TS3 needs query_protocols
+# to include ssh), so the suite runs that part only where TS3_QUERY_SSH_PORT says so.
 # The host falls back to whichever endpoint this invocation used, which is the
 # WebQuery one on a server with no raw TCP port.
 if [ -n "${TS3_QUERY_SSH_PORT:-}" ]; then
@@ -409,6 +466,7 @@ export TEAMSPEAK_SERVER_HAS_PASSWORD=1
 export TEAMSPEAK_DEFAULT_CHANNEL=$DEFAULT_CHANNEL
 export TEAMSPEAK_PASSWORD_CHANNEL=$PASSWORD_CHANNEL
 export TEAMSPEAK_PASSWORD_CHANNEL_PASSWORD=$PASSWORD_CHANNEL_PASSWORD
+export TEAMSPEAK_QUERY_FAMILY=$SERVER_FAMILY
 $QUERY_ENV
 ENVFILE
 
