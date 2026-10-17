@@ -171,19 +171,25 @@ function presentedSshKey(): Promise<SshHostKey> {
  * that refuses the key has seen it and sent nothing.
  */
 async function probeSshKey(): Promise<SshHostKey> {
-  let presented: SshHostKey | undefined;
-  await connectSsh({
-    host: SSH_HOST,
-    port: SSH_PORT,
-    username: SSH_USER,
-    password: SSH_PASSWORD,
-    hostKey: (key) => {
-      presented = key;
-      throw new Error("recorded, and not trusted yet");
-    },
-  }).catch(() => {});
-  if (presented === undefined) throw new Error(`the server at ${SSH_HOST}:${SSH_PORT} sent no key`);
-  return presented;
+  for (let attempt = 1; ; attempt++) {
+    let presented: SshHostKey | undefined;
+    await connectSsh({
+      host: SSH_HOST,
+      port: SSH_PORT,
+      username: SSH_USER,
+      password: SSH_PASSWORD,
+      hostKey: (key) => {
+        presented = key;
+        throw new Error("recorded, and not trusted yet");
+      },
+    }).catch(() => {});
+    if (presented !== undefined) return presented;
+    // A server at its connection limit resets the handshake before any key.
+    if (attempt === CONNECT_ATTEMPTS) {
+      throw new Error(`the server at ${SSH_HOST}:${SSH_PORT} sent no key`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+  }
 }
 
 /** The options for one transport kind. */
@@ -1179,15 +1185,27 @@ describe.skipIf(SKIP || GUEST)("Integration — a server with no guest access", 
     rmSync(scratch, { recursive: true, force: true });
   });
 
+  /**
+   * The error a guest connection ends in. TeamSpeak 3 lets an address hold five
+   * connections across all its query ports, and resets a sixth, so an attempt
+   * that fails for any reason but the refusal under test is tried again, as the
+   * rest of the suite does; the refusal itself is the answer and is never
+   * retried.
+   */
   async function refusal(options: QueryClientOptions): Promise<unknown> {
-    const client = new QueryClient(options);
-    try {
-      await client.connect({ signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) });
-    } catch (error) {
-      return error;
+    for (let attempt = 1; ; attempt++) {
+      const client = new QueryClient(options);
+      try {
+        await client.connect({ signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) });
+      } catch (error) {
+        if (error instanceof GuestAccessError || attempt === CONNECT_ATTEMPTS) return error;
+        console.warn(`guest connect attempt ${attempt} of ${CONNECT_ATTEMPTS}: ${String(error)}`);
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+        continue;
+      }
+      await client.disconnect();
+      throw new Error("the guest connection was accepted");
     }
-    await client.disconnect();
-    throw new Error("the guest connection was accepted");
   }
 
   it.skipIf(!KINDS.includes("web"))(
