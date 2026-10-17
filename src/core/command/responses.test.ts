@@ -43,4 +43,12 @@ describe("RESPONSES", () => {
       for (const name of answers) expect(notifications.has(name), name).toBe(true);
     }
   });
+
+  // A command whose answer the server also sends unprompted, and which carries a
+  // key the answer echoes, is told from the unprompted row by that key.
+  it("names the echoed key of the answers that also arrive unprompted", () => {
+    expect(responseSpec("clientgetvariables")?.echoKey).toBe("clid");
+    expect(responseSpec("getconnectioninfo")?.echoKey).toBe("clid");
+    expect(responseSpec("channelgetdescription")?.echoKey).toBe("cid");
+  });
 });

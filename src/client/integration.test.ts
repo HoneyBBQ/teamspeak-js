@@ -461,6 +461,23 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     expect(mine[0]).toMatchObject({ clid: String(own) });
   }, 20_000);
 
+  // `notifyclientupdated` is also sent whenever another client changes state,
+  // and the client's own mute broadcast is one: neither answers a question
+  // about someone else.
+  it("exec — a variables answer is the client's that was asked about", async () => {
+    const peer = await connectPeer("ts-js-echo-peer");
+    const other = await connectPeer("ts-js-echo-other");
+    const asked = peer.clientID;
+    for (let i = 0; i < 11; i++) {
+      const changing = other.exec(`clientupdate client_input_muted=${i % 2}`);
+      const own = sharedClient.exec(`clientupdate client_output_muted=${i % 2}`);
+      const rows = await sharedClient.exec(`clientgetvariables clid=${asked}`);
+      await Promise.all([changing, own]);
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) expect(row["clid"]).toBe(String(asked));
+    }
+  }, 30_000);
+
   it("listServerGroups — includes the server's default group", async () => {
     const [groups, server] = await Promise.all([
       listServerGroups(sharedClient),

@@ -21,6 +21,8 @@ interface PendingCommand {
   readonly spec: ResponseSpec | undefined;
   /** The request's value for `spec.correlated.key`, when there is one. */
   readonly correlation: string | undefined;
+  /** The request's value for `spec.echoKey`, when there is one. */
+  readonly echo: string | undefined;
   /** Correlated answers that arrived before the command's own `error`. */
   readonly correlated: Array<Record<string, string>>;
   /** The command's `error` result, held while its correlated answer is due. */
@@ -63,11 +65,12 @@ export class CommandTracker {
   register(
     spec?: ResponseSpec,
     correlation?: string,
+    echo?: string,
   ): [rc: number, promise: Promise<CommandResult>] {
     this.#nextRC++;
     const rc = this.#nextRC;
     const promise = new Promise<CommandResult>((resolve) => {
-      this.#pending.set(rc, { resolve, spec, correlation, correlated: [] });
+      this.#pending.set(rc, { resolve, spec, correlation, echo, correlated: [] });
     });
     return [rc, promise];
   }
@@ -165,8 +168,13 @@ export class CommandTracker {
   #answers(p: PendingCommand, row: BufferedRow): boolean {
     if (row.source === "") return true;
     if (!p.spec?.notifications?.includes(row.source)) return false;
-    if (!p.spec.ownRowsOnly) return true;
-    return row.params["invokerid"] === String(this.#ownClientID());
+    if (p.spec.ownRowsOnly && row.params["invokerid"] !== String(this.#ownClientID())) return false;
+    // A row that carries the key and names another value was meant for another
+    // request; one that does not carry it is taken.
+    const key = p.spec.echoKey;
+    if (key === undefined || p.echo === undefined) return true;
+    const value = row.params[key];
+    return value === undefined || value === p.echo;
   }
 
   #settle(rc: number, p: PendingCommand, result: CommandResult): void {

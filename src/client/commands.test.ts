@@ -47,6 +47,43 @@ describe("CommandTracker", () => {
     expect((await done).data).toEqual([{ sgid: "6", name: "Server Admin" }]);
   });
 
+  // `notifyclientupdated` is sent whenever any client changes, so a row for
+  // someone else, or the client's own mute broadcast, can sit in front of the
+  // row that answers.
+  it("takes only the row that echoes the requested clid", async () => {
+    const t = ready();
+    const [rc, done] = t.register(responseSpec("clientgetvariables"), undefined, "7");
+    t.buffer({ clid: "3", client_input_muted: "1" }, "notifyclientupdated");
+    t.buffer({ clid: "7", client_nickname: "Seven" }, "notifyclientupdated");
+    t.buffer({ clid: "9", client_output_muted: "1" }, "notifyclientupdated");
+    t.resolve(rc, null);
+
+    expect((await done).data).toEqual([{ clid: "7", client_nickname: "Seven" }]);
+  });
+
+  it("answers with nothing when only other clients' rows arrived", async () => {
+    const t = ready();
+    const [rc, done] = t.register(responseSpec("getconnectioninfo"), undefined, "7");
+    t.buffer({ clid: "3", connection_ping: "1" }, "notifyconnectioninfo");
+    t.resolve(rc, null);
+
+    expect((await done).data).toEqual([]);
+  });
+
+  it("takes a row without the echoed key, and every row when the request had none", async () => {
+    const t = ready();
+    const [first, firstDone] = t.register(responseSpec("channelgetdescription"), undefined, "4");
+    t.buffer({ channel_description: "no cid" }, "notifychanneledited");
+    t.buffer({ cid: "5", channel_description: "other" }, "notifychanneledited");
+    t.resolve(first, null);
+    expect((await firstDone).data).toEqual([{ channel_description: "no cid" }]);
+
+    const [second, secondDone] = t.register(responseSpec("clientgetvariables"));
+    t.buffer({ clid: "3" }, "notifyclientupdated");
+    t.resolve(second, null);
+    expect((await secondDone).data).toEqual([{ clid: "3" }]);
+  });
+
   // An event that happens to arrive between a command and its answer is not
   // the answer.
   it("leaves undeclared notifications out", async () => {

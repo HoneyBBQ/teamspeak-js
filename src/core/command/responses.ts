@@ -35,6 +35,17 @@ export interface ResponseSpec {
    */
   readonly ownRowsOnly?: boolean;
   /**
+   * The request parameter the answer echoes back, to tell the row that answers
+   * from the same notification sent for someone else.
+   *
+   * `notifyclientupdated` goes out whenever any client changes, and
+   * `notifychanneledited` whenever any channel does, so the row answering
+   * `clientgetvariables clid=7` is the one with `clid=7`. A row that names
+   * another value is no answer; one that does not carry the key is taken, as is
+   * every row when the request did not carry it.
+   */
+  readonly echoKey?: string;
+  /**
    * Notifications that answer after the `error`, matched on a request field.
    *
    * File transfer negotiation reports its key once the command has already
@@ -56,6 +67,12 @@ export interface ResponseSpec {
 
 const inline = (...notifications: string[]): ResponseSpec => ({ notifications });
 
+/** An inline answer that is also sent unprompted, for any `key` the request names. */
+const echoing = (notification: string, key: string): ResponseSpec => ({
+  notifications: [notification],
+  echoKey: key,
+});
+
 const fileTransfer = (answer: string): ResponseSpec => ({
   correlated: {
     notifications: [answer, "notifystatusfiletransfer"],
@@ -71,7 +88,7 @@ export const RESPONSES: Readonly<Record<string, ResponseSpec>> = {
   banlist: inline("notifybanlist"),
   channelclientpermlist: inline("notifychannelclientpermlist"),
   channelcreate: { notifications: ["notifychannelcreated"], ownRowsOnly: true },
-  channelgetdescription: inline("notifychanneledited"),
+  channelgetdescription: echoing("notifychanneledited", "cid"),
   channelgroupadd: inline("notifychannelgrouplist"),
   channelgroupclientlist: inline("notifychannelgroupclientlist"),
   channelgroupcopy: inline("notifychannelgrouplist"),
@@ -85,11 +102,11 @@ export const RESPONSES: Readonly<Record<string, ResponseSpec>> = {
   clientgetnamefromdbid: inline("notifyclientnamefromdbid"),
   clientgetnamefromuid: inline("notifyclientnamefromuid"),
   clientgetuidfromclid: inline("notifyclientuidfromclid"),
-  clientgetvariables: inline("notifyclientupdated"),
+  clientgetvariables: echoing("notifyclientupdated", "clid"),
   clientsetserverquerylogin: inline("notifyclientserverqueryloginpassword"),
   clientpermlist: inline("notifyclientpermlist"),
   complainlist: inline("notifycomplainlist"),
-  getconnectioninfo: inline("notifyconnectioninfo"),
+  getconnectioninfo: echoing("notifyconnectioninfo", "clid"),
   ftgetfileinfo: inline("notifyfileinfo"),
   ftgetfilelist: inline("notifyfilelist"),
   ftinitdownload: fileTransfer("notifystartdownload"),

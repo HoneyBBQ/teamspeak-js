@@ -31,6 +31,24 @@ after someone else edits a group, `notifychannelcreated` for every channel
 anyone creates — so it is still dispatched as an event, and `channelcreate`
 keeps only the row whose `invokerid` is this client.
 
+### Answers that are also sent unprompted
+
+`notifyclientupdated` goes out whenever any client changes state, the client's
+own mute broadcast included, `notifyconnectioninfo` for any client asked about,
+and `notifychanneledited` whenever any channel is edited. A command answered by
+one of them can therefore receive a row meant for someone else: measured on both
+servers, a `clientgetvariables clid=<other>` sent while a third client changed
+its mute state came back with that client's row in front of the answer.
+
+The answer echoes the key the request carried, so the table names it (`echoKey`)
+and a row that carries the key with another value is not an answer. This
+applies to `clientgetvariables` and `getconnectioninfo` (`clid`) and to
+`channelgetdescription` (`cid`). A row without the key is taken, and so is every
+row when the request did not carry it. The other entries are either not sent
+unprompted, or send no key the request could echo: `servergetvariables`,
+`serverrequestconnectioninfo` and the group lists answer with rows that name no
+request value.
+
 ### A correction
 
 An earlier version of this document said the voice protocol answers these

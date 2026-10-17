@@ -820,8 +820,9 @@ export class Client implements CommandExecutor, AsyncDisposable {
     const spec = responseSpec(parsed?.name ?? "");
     const key = spec?.correlated?.key;
     const correlation = key === undefined ? undefined : parsed?.params[key];
+    const echo = spec?.echoKey === undefined ? undefined : parsed?.params[spec.echoKey];
 
-    const [rc, answered] = this.#cmdTrack.register(spec, correlation);
+    const [rc, answered] = this.#cmdTrack.register(spec, correlation, echo);
     let timer: ReturnType<typeof setTimeout> | undefined;
     let onAbort: (() => void) | undefined;
     // Started before the throttle: the timeout bounds the whole command, its
