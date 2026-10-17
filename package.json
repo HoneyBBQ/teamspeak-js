@@ -81,6 +81,7 @@
     "test:integration:both": "pnpm test:integration:ts3 && pnpm test:integration:ts6",
     "changeset": "changeset",
     "version-packages": "GITHUB_TOKEN=${GITHUB_TOKEN:-$(gh auth token)} changeset version && pnpm install --lockfile-only",
+    "check:changesets": "node scripts/check-changesets.mts",
     "check:docs": "node scripts/check-docs.mts",
     "check:theme": "pnpm docs:build && node scripts/check-theme.mts",
     "api:report": "pnpm build && api-extractor run --local -c api-extractor.core.json && api-extractor run --local -c api-extractor.client.jsonc && api-extractor run --local -c api-extractor.query.jsonc",
