@@ -90,6 +90,8 @@ describe("WebQueryTransport", () => {
       "-voice": "",
       "-limits": "",
       "-icon": "",
+      "-secondsempty": "",
+      "-banners": "",
     });
   });
 

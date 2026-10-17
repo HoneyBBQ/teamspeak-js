@@ -222,13 +222,16 @@ const listFlags: ReadonlyArray<readonly [string, true]> = [
   ["-voice", true],
   ["-limits", true],
   ["-icon", true],
+  ["-secondsempty", true],
+  ["-banners", true],
 ];
 
 /**
  * All channels on the server, in the server's own sort order.
  *
- * Always asks for the topic, flags, voice, limits and icon, which a bare
- * `channellist` leaves out. `description` and `uid` are not part of
+ * Always asks for the topic, flags, voice, limits, icon, seconds empty and
+ * banners, which a bare `channellist` leaves out. The last two are asked for
+ * and not read: `Channel` has no field for them yet. `description` and `uid` are not part of
  * `channellist` and stay empty; `getChannelInfo` has them.
  */
 export async function listChannels(

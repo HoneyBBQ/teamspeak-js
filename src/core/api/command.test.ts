@@ -641,11 +641,11 @@ describe("other fixes", () => {
     expect(second?.iconID).toBeUndefined();
   });
 
-  it("asks channellist for the topic, flags, voice, limits and icon", async () => {
+  it("asks channellist for the topic, flags, voice, limits, icon, seconds empty and banners", async () => {
     const { client, sent } = recordingClient([]);
     await listChannels(client);
 
-    expect(sent[0]).toBe("channellist -topic -flags -voice -limits -icon");
+    expect(sent[0]).toBe("channellist -topic -flags -voice -limits -icon -secondsempty -banners");
   });
 
   it("reads every channellist field", async () => {
