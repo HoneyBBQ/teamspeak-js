@@ -523,7 +523,7 @@ describe("QueryClient commands", () => {
     await registered;
     expect(transport.sent.slice(baseline)).toEqual([
       "servernotifyregister event=channel id=0",
-      "clientlist -uid -groups",
+      "clientlist -uid -groups -away -voice",
     ]);
   });
 
