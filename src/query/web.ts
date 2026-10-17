@@ -1,4 +1,5 @@
-import { request } from "node:http";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { TeamspeakError } from "@honeybbq/teamspeak";
 import { buildCommandOrdered, parseCommand, splitCommandRows } from "../core/internal.js";
 import type { QueryTransport } from "./transport.js";
@@ -59,19 +60,38 @@ export type WebCredentials =
       readonly apiKey?: never;
     };
 
-/** How a WebQuery is reached. */
-export type WebQueryOptions = WebCredentials & {
-  /** The server's base URL, such as `http://127.0.0.1:10080`. */
-  readonly url: string;
-  /** The virtual server to address; `use` changes it. Unset addresses the instance. */
-  readonly serverID?: number | bigint | undefined;
-  /**
-   * The `fetch` to use. By default a small one over `node:http`: the global
-   * `fetch` refuses port 10080, WebQuery's own default, as a port the Fetch
-   * standard blocks.
-   */
-  readonly fetch?: typeof fetch | undefined;
-};
+/** How a WebQuery is reached. TS6 remains the default for backwards compatibility. */
+export type WebQueryOptions =
+  | (WebCredentials & {
+      /** The server's base URL, such as `http://127.0.0.1:10080`. */
+      readonly url: string;
+      /** The virtual server to address; `use` changes it. TS3 QueryClient requires this selection. */
+      readonly serverID?: number | bigint | undefined;
+      /**
+       * The `fetch` to use. By default a small one over `node:http` or `node:https`:
+       * the global `fetch` refuses port 10080, WebQuery's own default, as a port
+       * the Fetch standard blocks.
+       */
+      readonly fetch?: typeof fetch | undefined;
+      readonly protocol?: "ts6";
+    })
+  | {
+      /** The server's base URL, such as `http://127.0.0.1:10080`. */
+      readonly url: string;
+      /** The virtual server to address; `use` changes it. TS3 QueryClient requires this selection. */
+      readonly serverID?: number | bigint | undefined;
+      /**
+       * The `fetch` to use. By default a small one over `node:http` or `node:https`:
+       * the global `fetch` refuses port 10080, WebQuery's own default, as a port
+       * the Fetch standard blocks.
+       */
+      readonly fetch?: typeof fetch | undefined;
+      /** TeamSpeak 3's GET-based WebQuery. */
+      readonly protocol: "ts3";
+      /** TeamSpeak 3 WebQuery requires an api key and has no guest mode. */
+      readonly apiKey: string;
+      readonly guest?: never;
+    };
 
 /** The answer WebQuery gives: rows, and the status of the command. */
 interface WebAnswer {
@@ -84,12 +104,12 @@ interface WebAnswer {
 }
 
 /**
- * A {@link QueryTransport} over WebQuery, TeamSpeak 6's HTTP interface.
+ * A {@link QueryTransport} over TeamSpeak 3 or TeamSpeak 6 WebQuery.
  *
- * Each command line becomes one request, `POST /<server>/<command>` with the
- * parameters as JSON, and the JSON answer is turned back into what a raw
- * connection would have sent: one line per row, then `error id=… msg=…`. The
- * client above sees one answer shape.
+ * TS6 commands become `POST /<server>/<command>` requests with JSON parameters.
+ * TS3 commands become `GET /<server>/<command>?<parameters>` requests. Each
+ * JSON answer is turned back into what a raw connection would have sent: one
+ * line per row, then `error id=… msg=…`. The client above sees one answer shape.
  *
  * WebQuery has no session, so two things differ. The api key replaces `login`,
  * which the server refuses; and `use` is answered here, by changing the server
@@ -104,12 +124,23 @@ export class WebQueryTransport implements QueryTransport {
 
   #base: string;
   #apiKey: string | undefined;
+  #protocol: "ts3" | "ts6";
   #prefix: string;
   #fetch: typeof fetch;
   #closed = false;
 
   constructor(options: WebQueryOptions) {
     this.#base = options.url.replace(/\/+$/, "");
+    this.#protocol = options.protocol ?? "ts6";
+    if (this.#protocol !== "ts3" && this.#protocol !== "ts6") {
+      throw new TypeError('protocol is "ts3" or "ts6"');
+    }
+    if (this.#protocol === "ts3" && options.guest === true) {
+      throw new TypeError("TeamSpeak 3 WebQuery does not support guest access");
+    }
+    if (this.#protocol === "ts3" && (typeof options.apiKey !== "string" || options.apiKey === "")) {
+      throw new TypeError("TeamSpeak 3 WebQuery requires a non-empty apiKey");
+    }
     if (options.guest === true) {
       if (options.apiKey !== undefined) {
         throw new TypeError("apiKey and guest were given together; a guest sends no api key");
@@ -137,14 +168,25 @@ export class WebQueryTransport implements QueryTransport {
     }
 
     const params = rows.map((row) => ({ ...row.params }));
-    const response = await this.#fetch(`${this.#base}${this.#prefix}/${name}`, {
-      method: "POST",
-      headers: {
-        ...(this.#apiKey === undefined ? {} : { "x-api-key": this.#apiKey }),
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(params.length === 1 ? params[0] : params),
-    });
+    const endpoint = `${this.#base}${this.#prefix}/${encodeURIComponent(name)}`;
+    const request =
+      this.#protocol === "ts3"
+        ? {
+            url: withQuery(endpoint, params),
+            init: {
+              method: "GET",
+              headers: this.#headers(),
+            } satisfies RequestInit,
+          }
+        : {
+            url: endpoint,
+            init: {
+              method: "POST",
+              headers: { ...this.#headers(), "content-type": "application/json" },
+              body: JSON.stringify(params.length === 1 ? params[0] : params),
+            } satisfies RequestInit,
+          };
+    const response = await this.#fetch(request.url, request.init);
 
     let answer: WebAnswer | undefined;
     try {
@@ -178,6 +220,10 @@ export class WebQueryTransport implements QueryTransport {
     return Promise.resolve();
   }
 
+  #headers(): Record<string, string> {
+    return this.#apiKey === undefined ? {} : { "x-api-key": this.#apiKey };
+  }
+
   /** `use sid=1`, or `use port=9987`, which WebQuery addresses as `/byport/9987`. */
   #use(params: Readonly<Record<string, string>>): void {
     const sid = params["sid"];
@@ -197,6 +243,22 @@ export class WebQueryTransport implements QueryTransport {
   }
 }
 
+/** TS3 WebQuery carries command parameters in the GET query string. */
+function withQuery(
+  endpoint: string,
+  rows: ReadonlyArray<Readonly<Record<string, string>>>,
+): string {
+  const entries = rows.flatMap((row) => Object.entries(row));
+  if (entries.length === 0) return endpoint;
+
+  const query = entries.map(([key, value]) => {
+    const pair = new URLSearchParams([[key, value]]).toString();
+    // The API documents flags without an equals sign, e.g. `?-topic&-icon`.
+    return key.startsWith("-") && value === "" ? pair.slice(0, -1) : pair;
+  });
+  return `${endpoint}?${query.join("&")}`;
+}
+
 /** One answer row as a line of `key=value` fields; a field that is not text is written as text. */
 function rowLine(row: object): string {
   const fields = Object.entries(row).map(
@@ -207,13 +269,24 @@ function rowLine(row: object): string {
 }
 
 /**
- * The part of `fetch` this transport uses, over `node:http`: a POST with a
- * string body, answered with a `Response`. Plain HTTP only, as WebQuery is.
+ * The part of `fetch` this transport uses, over `node:http` or `node:https`,
+ * answered with a `Response`.
  */
 const httpFetch = ((url: string, init: RequestInit) =>
   new Promise<Response>((resolve, reject) => {
+    const parsed = new URL(url);
+    const request =
+      parsed.protocol === "https:"
+        ? httpsRequest
+        : parsed.protocol === "http:"
+          ? httpRequest
+          : undefined;
+    if (request === undefined) {
+      reject(new TypeError("WebQuery URL protocol is http: or https:"));
+      return;
+    }
     const req = request(
-      url,
+      parsed,
       { method: init.method, headers: init.headers as Record<string, string> },
       (res) => {
         const chunks: Buffer[] = [];
@@ -230,5 +303,6 @@ const httpFetch = ((url: string, init: RequestInit) =>
       },
     );
     req.on("error", reject);
-    req.end(init.body as string);
+    if (typeof init.body === "string") req.end(init.body);
+    else req.end();
   })) as unknown as typeof fetch;

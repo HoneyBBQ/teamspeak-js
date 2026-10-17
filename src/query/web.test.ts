@@ -26,6 +26,7 @@ async function webClient(transport: WebQueryTransport, calls: Call[]): Promise<Q
 
 interface Call {
   url: string;
+  method: string;
   headers: Record<string, string>;
   body: unknown;
 }
@@ -37,8 +38,9 @@ function fakeFetch(replies: Array<{ status?: number; json?: unknown; text?: stri
   const fetchFn = (async (url: string, init: RequestInit) => {
     calls.push({
       url,
+      method: init.method ?? "GET",
       headers: init.headers as Record<string, string>,
-      body: JSON.parse(init.body as string),
+      body: typeof init.body === "string" ? JSON.parse(init.body) : undefined,
     });
     // `version` and `whoami` are asked for on every connection, so the setup's
     // are answered from here rather than from the queue each test fills. A
@@ -93,6 +95,49 @@ describe("WebQueryTransport", () => {
       "-secondsempty": "",
       "-banners": "",
     });
+  });
+
+  it("sends TeamSpeak 3 WebQuery commands as GET query parameters", async () => {
+    const { calls, fetchFn } = fakeFetch([ok([{ cid: "1", channel_name: "Lobby", pid: "0" }])]);
+    const client = await webClient(
+      new WebQueryTransport({
+        protocol: "ts3",
+        url: "http://h:10080/",
+        apiKey: "KEY",
+        serverID: 1,
+        fetch: fetchFn,
+      }),
+      calls,
+    );
+
+    const channels = await listChannels(client);
+
+    expect(channels.map((c) => c.name)).toEqual(["Lobby"]);
+    expect(calls[0]?.method).toBe("GET");
+    expect(calls[0]?.url).toBe(
+      "http://h:10080/1/channellist?-topic&-flags&-voice&-limits&-icon&-secondsempty&-banners",
+    );
+    expect(calls[0]?.headers["x-api-key"]).toBe("KEY");
+    expect(calls[0]?.body).toBeUndefined();
+  });
+
+  it("URL-encodes TeamSpeak 3 query values and keeps repeated batch fields", async () => {
+    const { calls, fetchFn } = fakeFetch([ok()]);
+    const transport = new WebQueryTransport({
+      protocol: "ts3",
+      url: "http://h:10080",
+      apiKey: "KEY",
+      serverID: 1,
+      fetch: fetchFn,
+    });
+    transport.onLine = () => {};
+
+    await transport.send("clientpoke clid=1 msg=hello\\sworld|clid=2 msg=hello\\sworld");
+
+    expect(calls[0]?.url).toBe(
+      "http://h:10080/1/clientpoke?clid=1&msg=hello+world&clid=2&msg=hello+world",
+    );
+    expect(calls[0]?.method).toBe("GET");
   });
 
   it("sends no api key for a guest, and refuses a missing one otherwise", async () => {

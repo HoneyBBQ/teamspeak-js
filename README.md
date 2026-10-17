@@ -537,17 +537,37 @@ the way the voice protocol cannot: the same typed commands the core exports,
 plus the ones only an administrator may run, over the three transports a
 ServerQuery speaks.
 
-| Transport | Where        | Server           | Login               | Notifications |
-| --------- | ------------ | ---------------- | ------------------- | ------------- |
-| `tcp`     | 10011        | TeamSpeak 3 only | the `login` command | yes           |
-| `ssh`     | 10022        | both             | the SSH login       | yes           |
-| `web`     | 10080 (HTTP) | TeamSpeak 6      | the api key         | **no**        |
+| Transport | Where              | Server           | Login                | Notifications |
+| --------- | ------------------ | ---------------- | -------------------- | ------------- |
+| `tcp`     | 10011              | TeamSpeak 3 only | the `login` command  | yes           |
+| `ssh`     | 10022              | both             | the SSH login        | yes           |
+| `web`     | 10080 / 10443      | TeamSpeak 3      | the api key          | **no**        |
+| `web`     | 10080 (HTTP)       | TeamSpeak 6      | the api key or guest | **no**        |
 
 Only raw TCP and SSH carry notifications: the server pushes them down the same
 connection. WebQuery has no session to push to and refuses to register, so the
 client never tries, and a listener for a server event there throws rather than
 sitting silent. `connected` and `disconnected` work on every transport, since
 they come from the client itself.
+
+Set `protocol: "ts3"` for TeamSpeak 3 WebQuery. It uses GET query parameters,
+requires an api key and a selected virtual server, and supports selection by
+server id or voice port. The default `web` protocol is `ts6` for compatibility;
+it sends POST requests with JSON parameters and also allows the TS6 guest mode.
+Both WebQuery variants use the api key in the `x-api-key` header and cannot
+deliver server notifications.
+
+```typescript
+const client = new QueryClient({
+  transport: {
+    kind: "web",
+    protocol: "ts3",
+    url: "https://ts.example.com:10443",
+    apiKey: process.env.QUERY_API_KEY!,
+  },
+  server: { id: 1 },
+});
+```
 
 ```typescript
 import { QueryClient } from "@honeybbq/teamspeak/query";

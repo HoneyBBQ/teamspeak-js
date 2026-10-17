@@ -137,9 +137,17 @@ export type QueryTransportOptions = {
     readonly kind: "ssh";
 } & SshConnectOptions) | ({
     readonly kind: "web";
+    readonly protocol?: "ts6";
     readonly url: string;
     readonly fetch?: typeof fetch | undefined;
 } & WebCredentials) | {
+    readonly kind: "web";
+    readonly protocol: "ts3";
+    readonly url: string;
+    readonly apiKey: string;
+    readonly guest?: never;
+    readonly fetch?: typeof fetch | undefined;
+} | {
     readonly kind: "custom";
     readonly open: (signal?: AbortSignal) => Promise<QueryTransport>;
 };
@@ -303,10 +311,18 @@ export class WebQueryHttpError extends TeamspeakError {
 }
 
 // @public
-export type WebQueryOptions = WebCredentials & {
+export type WebQueryOptions = (WebCredentials & {
     readonly url: string;
     readonly serverID?: number | bigint | undefined;
     readonly fetch?: typeof fetch | undefined;
+    readonly protocol?: "ts6";
+}) | {
+    readonly url: string;
+    readonly serverID?: number | bigint | undefined;
+    readonly fetch?: typeof fetch | undefined;
+    readonly protocol: "ts3";
+    readonly apiKey: string;
+    readonly guest?: never;
 };
 
 // @public

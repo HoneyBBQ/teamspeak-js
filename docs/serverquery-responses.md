@@ -17,11 +17,11 @@ Only **d** blocks 1.0.
 
 ## Transports
 
-| Transport | Where        | TS3                         | TS6                 | Login           | Events |
-| --------- | ------------ | --------------------------- | ------------------- | --------------- | ------ |
-| Raw TCP   | 10011        | yes                         | **no**              | `login` command | yes    |
-| SSH       | 10022        | not published, not measured | yes, off by default | the SSH login   | yes    |
-| WebQuery  | 10080 (HTTP) | not published, not measured | yes                 | `x-api-key`     | no     |
+| Transport | Where              | TS3                               | TS6                 | Login           | Events |
+| --------- | ------------------ | --------------------------------- | ------------------- | --------------- | ------ |
+| Raw TCP   | 10011              | yes                               | **no**              | `login` command | yes    |
+| SSH       | 10022              | not published, not measured       | yes, off by default | the SSH login   | yes    |
+| WebQuery  | 10080 (HTTP/HTTPS) | supported, not live measured here | not measured here   | `x-api-key`     | no     |
 
 **TS6 does not serve raw TCP.** Nothing listens on 10011 in the container
 (its listening sockets are the HTTP query port and the file transfer port),
@@ -45,19 +45,26 @@ thousand under load, mostly with notifications registered). An empty line
 releases it and gets no answer of its own, so the SSH transport writes one when
 a command has waited 2 seconds, and once a second after.
 
-**WebQuery** frames each command as `POST /<server>/<command>` with the
-parameters as JSON, and answers JSON: `body` is the rows and `status` is the
-`error` line (`code`, `message`, and sometimes `extra_message`). The transport
-turns that back into rows and an `error id=… msg=…` line, so the client sees
-one answer shape.
+**TS3 WebQuery** frames each command as `GET /<server>/<command>` with its
+parameters in the query string; flags have no value, such as `-topic`, and the
+api key goes in `x-api-key`. TeamSpeak 3 also accepts `/byport/<voice-port>/…`
+to select a virtual server by its voice port. Requests need a selected server
+and an api key; guest access is not available. The protocol is documented in
+the [TeamSpeak WebQuery discussion](https://community.teamspeak.com/t/webquery-discussion-help-3-12-0-onwards/7184).
+
+**TS6 WebQuery** frames each command as `POST /<server>/<command>` with
+parameters as JSON. Both protocols answer JSON: `body` is the rows and `status`
+is the `error` line (`code`, `message`, and sometimes `extra_message`). The
+transport turns that back into rows and an `error id=… msg=…` line, so the
+client sees one answer shape.
 
 - A refusal is HTTP 200 for most errors (768, 1281, 512) and 400 for some
   (1538 for an unknown command, 7 for an unknown server); the `status.code`
   decides, not the HTTP status.
 - A wrong key is 401 and carries a TeamSpeak code (5122), so it is a
   `ServerError`. Only an answer with no code at all is a transport error.
-- No key at all is served as a guest (beta13 and later; see
-  [Guests](#guests)).
+- On TS6 beta13 and later, no key at all is served as a guest (see
+  [Guests](#guests)); TS3 requires a key.
 - `login`, `use` and `quit` do not exist. `use` is answered by the transport,
   which changes the server the next requests address.
 - The api key the server printed at its first start is refused every `ft*`
@@ -65,7 +72,7 @@ one answer shape.
   scope", so TS6's file transfers and events need SSH. The server's own
   documentation lists them as unsupported over WebQuery.
 - The global `fetch` refuses port 10080 as a blocked port ("bad port"), so
-  the transport uses `node:http`.
+  the transport uses `node:http` or `node:https` by default.
 
 On the wire, a ServerQuery connection writes `\n\r` after each line, and a
 list is one line of rows joined by `|`. Every row carries all its fields: no

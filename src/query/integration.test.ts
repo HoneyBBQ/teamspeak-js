@@ -113,6 +113,7 @@ const QUERY_KIND = process.env["TEAMSPEAK_QUERY_KIND"];
 const QUERY_HOST = process.env["TEAMSPEAK_QUERY_HOST"] ?? "";
 const QUERY_PORT = Number(process.env["TEAMSPEAK_QUERY_PORT"] ?? "10011");
 const QUERY_URL = process.env["TEAMSPEAK_QUERY_URL"] ?? "";
+const QUERY_PROTOCOL = process.env["TEAMSPEAK_QUERY_PROTOCOL"] as "ts3" | "ts6" | undefined;
 const QUERY_API_KEY = process.env["TEAMSPEAK_QUERY_API_KEY"] ?? "";
 const LOGIN_NAME = process.env["TEAMSPEAK_QUERY_LOGIN_NAME"] ?? "";
 const LOGIN_PASSWORD = process.env["TEAMSPEAK_QUERY_LOGIN_PASSWORD"] ?? "";
@@ -184,7 +185,12 @@ function optionsFor(kind: Kind): QueryClientOptions {
       };
     case "web":
       return {
-        transport: { kind: "web", url: QUERY_URL, apiKey: QUERY_API_KEY },
+        transport: {
+          kind: "web",
+          ...(QUERY_PROTOCOL === undefined ? {} : { protocol: QUERY_PROTOCOL }),
+          url: QUERY_URL,
+          apiKey: QUERY_API_KEY,
+        },
         server: { id: 1 },
       };
     case "ssh":
@@ -1126,7 +1132,12 @@ describe.skipIf(SKIP || !GUEST)("Integration — guest ServerQuery", () => {
     "a WebQuery request with a wrong api key is not a guest",
     async () => {
       const client = new QueryClient({
-        transport: { kind: "web", url: QUERY_URL, apiKey: "not-a-key" },
+        transport: {
+          kind: "web",
+          ...(QUERY_PROTOCOL === undefined ? {} : { protocol: QUERY_PROTOCOL }),
+          url: QUERY_URL,
+          apiKey: "not-a-key",
+        },
         server: { id: 1 },
       });
       await expect(

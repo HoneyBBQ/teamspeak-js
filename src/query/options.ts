@@ -37,13 +37,27 @@ export type QueryTransportOptions =
       readonly kind: "ssh";
     } & SshConnectOptions)
   | ({
-      /** TeamSpeak 6's HTTP WebQuery. */
+      /** TeamSpeak 6's HTTP WebQuery; set `protocol: "ts3"` for TeamSpeak 3. */
       readonly kind: "web";
+      /** Defaults to `ts6`, whose WebQuery request format is different from TS3's. */
+      readonly protocol?: "ts6";
       /** The server's base URL, such as `http://127.0.0.1:10080`. */
       readonly url: string;
       /** The `fetch` to use; a small one over `node:http` by default. */
       readonly fetch?: typeof fetch | undefined;
     } & WebCredentials)
+  | {
+      /** TeamSpeak 3's HTTP or HTTPS WebQuery. */
+      readonly kind: "web";
+      readonly protocol: "ts3";
+      /** The server's base URL, such as `http://127.0.0.1:10080`. */
+      readonly url: string;
+      /** A TeamSpeak 3 WebQuery api key. */
+      readonly apiKey: string;
+      readonly guest?: never;
+      /** The `fetch` to use; a small one over `node:http` or `node:https` by default. */
+      readonly fetch?: typeof fetch | undefined;
+    }
   | {
       /** An application-supplied transport. */
       readonly kind: "custom";
@@ -177,6 +191,14 @@ export type ResolvedTransport =
     }
   | {
       readonly kind: "web";
+      readonly protocol: "ts3";
+      readonly url: string;
+      readonly apiKey: string;
+      readonly fetch: typeof fetch | undefined;
+    }
+  | {
+      readonly kind: "web";
+      readonly protocol: "ts6";
       readonly url: string;
       /** Absent exactly for a guest connection, which sends no api key. */
       readonly apiKey: string | undefined;
@@ -318,9 +340,17 @@ function transportOptions(transport: unknown): ResolvedTransport {
       if (fetchFn !== undefined && typeof fetchFn !== "function") {
         throw new TypeError("transport.fetch is a function");
       }
+      const rawProtocol = options["protocol"];
+      if (rawProtocol !== undefined && rawProtocol !== "ts3" && rawProtocol !== "ts6") {
+        throw new TypeError('transport.protocol is "ts3" or "ts6"');
+      }
+      const protocol = rawProtocol ?? "ts6";
       const url = nonEmpty(options["url"], "transport.url");
       const guest = guestFlag(options["guest"]);
       const apiKey = options["apiKey"];
+      if (protocol === "ts3" && (guest || typeof apiKey !== "string" || apiKey === "")) {
+        throw new TypeError("TeamSpeak 3 WebQuery requires a non-empty transport.apiKey");
+      }
       if (guest) {
         if (apiKey !== undefined) {
           throw new TypeError(
@@ -332,12 +362,11 @@ function transportOptions(transport: unknown): ResolvedTransport {
           "transport.apiKey is a non-empty string; to connect without one, as a guest, set transport.guest to true",
         );
       }
-      return {
-        kind: "web",
-        url,
-        apiKey: guest ? undefined : apiKey,
-        fetch: fetchFn as typeof globalThis.fetch | undefined,
-      };
+      const fetch = fetchFn as typeof globalThis.fetch | undefined;
+      if (protocol === "ts3") {
+        return { kind: "web", protocol, url, apiKey: apiKey as string, fetch };
+      }
+      return { kind: "web", protocol: "ts6", url, apiKey: guest ? undefined : apiKey, fetch };
     }
     case "custom": {
       const open = options["open"];
@@ -415,6 +444,9 @@ export function normalizeQueryOptions(options: QueryClientOptions): ResolvedQuer
     if (!byID && (value < 1 || value > 65535)) {
       throw new RangeError("server.port is an integer from 1 to 65535");
     }
+  }
+  if (transport.kind === "web" && transport.protocol === "ts3" && server === undefined) {
+    throw new TypeError('transport.protocol "ts3" requires server: { id } or { port }');
   }
   const nickname = options.nickname;
   if (nickname !== undefined) nonEmpty(nickname, "nickname");

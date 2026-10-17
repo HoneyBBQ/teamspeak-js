@@ -766,8 +766,18 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
       case "ssh":
         return connectSsh({ ...transport.connect, signal });
       case "web":
+        if (transport.protocol === "ts3") {
+          return new WebQueryTransport({
+            url: transport.url,
+            protocol: "ts3",
+            apiKey: transport.apiKey,
+            fetch: transport.fetch,
+            serverID: serverIDOf(this.#options.server),
+          });
+        }
         return new WebQueryTransport({
           url: transport.url,
+          protocol: "ts6",
           ...(transport.apiKey === undefined ? { guest: true } : { apiKey: transport.apiKey }),
           fetch: transport.fetch,
           serverID: serverIDOf(this.#options.server),

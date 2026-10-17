@@ -208,6 +208,22 @@ describe("QueryClient options", () => {
     expect(bad({ kind: "ssh", host: "h", guest: true })).toThrow(/hostKey/);
   });
 
+  it("requires a selected server and an api key for TS3 WebQuery", () => {
+    expect(
+      () =>
+        new QueryClient({
+          transport: { kind: "web", protocol: "ts3", url: "http://h", apiKey: "k" },
+        }),
+    ).toThrow(/requires server/);
+    expect(
+      () =>
+        new QueryClient({
+          transport: { kind: "web", protocol: "ts3", url: "http://h", guest: true } as never,
+          server: { id: 1 },
+        }),
+    ).toThrow(/requires a non-empty.*apiKey/);
+  });
+
   it("rejects a number that is out of range, naming the option", () => {
     expect(() => new QueryClient({ transport: { kind: "tcp", host: "h", port: 0 } })).toThrow(
       RangeError,
