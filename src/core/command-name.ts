@@ -136,12 +136,16 @@ const commandNameValues = {
   ClientList: "clientlist",
   /** `clientmove`: Moves one or more clients to another channel. */
   ClientMove: "clientmove",
+  /** `clientmute`: Stops the server forwarding the given clients' voice to this client. Voice protocol only. */
+  ClientMute: "clientmute",
   /** `clientpermlist`: Displays a list of permissions defined for a client. */
   ClientPermList: "clientpermlist",
   /** `clientpoke`: Sends a poke message to the client specified with clid. */
   ClientPoke: "clientpoke",
   /** `clientsetserverquerylogin`: Updates your own ServerQuery login credentials using a specified username. */
   ClientSetServerQueryLogin: "clientsetserverquerylogin",
+  /** `clientunmute`: Resumes forwarding the given clients' voice to this client. Voice protocol only. */
+  ClientUnmute: "clientunmute",
   /** `clientupdate`: Changes your ServerQuery clients settings using given properties. */
   ClientUpdate: "clientupdate",
   /** `complainadd`: Submits a complaint about a connected client with database ID tcldbid to the server. */

@@ -455,6 +455,9 @@ export class InvalidIdentityError extends TeamspeakError {
 }
 
 // @public
+export function muteClients(client: Client, clientIDs: readonly ClientID[], options?: CommandOptions): Promise<void>;
+
+// @public
 export function parseIdentity(s: string): Identity;
 
 // @public
@@ -568,6 +571,9 @@ export function uidFromPublicKey(publicKey: string, algorithm: UIDAlgorithm): UI
 
 // @public
 export function unknownServerCapabilities(): ServerCapabilities;
+
+// @public
+export function unmuteClients(client: Client, clientIDs: readonly ClientID[], options?: CommandOptions): Promise<void>;
 
 // @public
 export function unsubscribeAllChannels(client: Client, options?: CommandOptions): Promise<void>;

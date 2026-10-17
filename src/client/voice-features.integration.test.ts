@@ -50,7 +50,12 @@ import { Client, clientInternals } from "./client.js";
 import { generateIdentitySync } from "./crypto/identity.js";
 import { GroupWhisperScope, GroupWhisperType } from "./types.js";
 import type { EventMap } from "./types.js";
-import { verifyChannelPassword, verifyServerPassword } from "./api/voice.js";
+import {
+  muteClients,
+  unmuteClients,
+  verifyChannelPassword,
+  verifyServerPassword,
+} from "./api/voice.js";
 import { QueryClient } from "../query/client.js";
 import type { QueryClientOptions } from "../query/options.js";
 
@@ -474,6 +479,46 @@ describe.skipIf(SKIP)("Voice features — live", () => {
     expect(info.ip).toBeTypeOf("string");
     expect(info.port).toBeGreaterThan(0);
   }, 45_000);
+
+  it("muteClients — the server stops sending the muted client's voice to the muter alone, until unmuteClients", async () => {
+    const heardByA = hear(a);
+    const heardByC = hear(c);
+    const sendFromB = (): Promise<void> =>
+      sendFrames(() => b.sendVoice(FRAME, Codec.OpusVoice), 40);
+    try {
+      // Positive control: without it, a silent listener proves nothing.
+      await sendFromB();
+      console.log("before mute: a", heardByA.count(), "c", heardByC.count());
+      expect(heardByA.count()).toBeGreaterThan(0);
+      expect(heardByC.count()).toBeGreaterThan(0);
+
+      await muteClients(a, [idOf(b)]);
+      heardByA.reset();
+      heardByC.reset();
+      await sendFromB();
+      console.log("muted: a", heardByA.count(), "c", heardByC.count());
+      expect(heardByA.count()).toBe(0);
+      expect(heardByC.count()).toBeGreaterThan(0);
+
+      await unmuteClients(a, [idOf(b)]);
+      heardByA.reset();
+      await sendFromB();
+      console.log("unmuted: a", heardByA.count());
+      expect(heardByA.count()).toBeGreaterThan(0);
+
+      // Several clients in one command.
+      await muteClients(a, [idOf(b), idOf(c)]);
+      heardByA.reset();
+      await sendFromB();
+      await sendFrames(() => c.sendVoice(FRAME, Codec.OpusVoice), 40);
+      console.log("both muted: a", heardByA.count());
+      expect(heardByA.count()).toBe(0);
+    } finally {
+      await unmuteClients(a, [idOf(b), idOf(c)]).catch(() => {});
+      heardByA.stop();
+      heardByC.stop();
+    }
+  }, 60_000);
 
   it.skipIf(SERVER_PASSWORD === "")(
     "verifyServerPassword — true for the password, false for another",

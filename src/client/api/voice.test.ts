@@ -1,10 +1,15 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { ErrorCode, ServerError, asChannelID } from "@honeybbq/teamspeak";
+import { ErrorCode, ServerError, asChannelID, asClientID } from "@honeybbq/teamspeak";
 import { encodeRequest } from "../../core/internal.js";
 import type { CommandRequest } from "@honeybbq/teamspeak";
 import type { Client } from "../client.js";
-import { verifyChannelPassword, verifyServerPassword } from "./voice.js";
+import {
+  muteClients,
+  unmuteClients,
+  verifyChannelPassword,
+  verifyServerPassword,
+} from "./voice.js";
 
 const hash = (p: string): string => createHash("sha1").update(p).digest("base64");
 
@@ -60,5 +65,26 @@ describe("verifyChannelPassword", () => {
     await expect(
       verifyChannelPassword(unknown.client, asChannelID(9n), "x"),
     ).rejects.toBeInstanceOf(ServerError);
+  });
+});
+
+describe("muteClients and unmuteClients", () => {
+  it("send one clid row per client, joined with a pipe", async () => {
+    const { client, sent } = fake(() => {});
+    await muteClients(client, [asClientID(3), asClientID(7)]);
+    await unmuteClients(client, [asClientID(3), asClientID(7)]);
+    await muteClients(client, [asClientID(5)]);
+    expect(sent).toEqual([
+      "clientmute clid=3|clid=7",
+      "clientunmute clid=3|clid=7",
+      "clientmute clid=5",
+    ]);
+  });
+
+  it("send nothing for an empty list", async () => {
+    const { client, sent } = fake(() => {});
+    await muteClients(client, []);
+    await unmuteClients(client, []);
+    expect(sent).toEqual([]);
   });
 });

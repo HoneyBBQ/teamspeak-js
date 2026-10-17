@@ -9,7 +9,7 @@
 
 import type { Client } from "../client.js";
 import { ErrorCode, ServerError } from "@honeybbq/teamspeak";
-import type { ChannelID, CommandOptions } from "@honeybbq/teamspeak";
+import type { ChannelID, ClientID, CommandOptions } from "@honeybbq/teamspeak";
 
 /**
  * The channel's description, which `listChannels` omits for bandwidth. The
@@ -135,4 +135,43 @@ export function verifyChannelPassword(
       ),
     ErrorCode.ChannelInvalidPassword,
   );
+}
+
+/** The clients of a mute, one `clid` row each; an empty list sends nothing. */
+async function sendMute(
+  client: Client,
+  command: "clientmute" | "clientunmute",
+  clientIDs: readonly ClientID[],
+  options?: CommandOptions,
+): Promise<void> {
+  if (clientIDs.length === 0) return;
+  await client.send({ command, rows: clientIDs.map((clid) => [["clid", clid]]) }, options);
+}
+
+/**
+ * Stop hearing the given clients (`clientmute`): the server no longer forwards
+ * their voice to this client. It is per listener, so everyone else still hears
+ * them, and it sends no notification and changes no client property. Several
+ * clients go in one command. The server accepts this client's own id and ids
+ * of clients that are not connected without an error. Undo it with
+ * `unmuteClients`. Measured on TeamSpeak 3 and 6.
+ */
+export function muteClients(
+  client: Client,
+  clientIDs: readonly ClientID[],
+  options?: CommandOptions,
+): Promise<void> {
+  return sendMute(client, "clientmute", clientIDs, options);
+}
+
+/**
+ * Hear the given clients again (`clientunmute`): the server resumes forwarding
+ * their voice to this client after `muteClients`. Measured on TeamSpeak 3 and 6.
+ */
+export function unmuteClients(
+  client: Client,
+  clientIDs: readonly ClientID[],
+  options?: CommandOptions,
+): Promise<void> {
+  return sendMute(client, "clientunmute", clientIDs, options);
 }

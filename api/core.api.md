@@ -824,9 +824,11 @@ const commandNameValues: {
     readonly ClientKick: "clientkick";
     readonly ClientList: "clientlist";
     readonly ClientMove: "clientmove";
+    readonly ClientMute: "clientmute";
     readonly ClientPermList: "clientpermlist";
     readonly ClientPoke: "clientpoke";
     readonly ClientSetServerQueryLogin: "clientsetserverquerylogin";
+    readonly ClientUnmute: "clientunmute";
     readonly ClientUpdate: "clientupdate";
     readonly ComplainAdd: "complainadd";
     readonly ComplainDel: "complaindel";
