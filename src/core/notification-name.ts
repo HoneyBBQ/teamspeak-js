@@ -13,6 +13,10 @@
  * does not name, which is why `NotificationEvent.name` is not limited to it.
  */
 const notificationNameValues = {
+  /** `notifyapikeyadd`: Reply to apikeyadd: the new API key, with its id, scope and lifetime. */
+  APIKeyAdd: "notifyapikeyadd",
+  /** `notifyapikeylist`: Reply to apikeylist: one row per API key. */
+  APIKeyList: "notifyapikeylist",
   /** `notifybanlist`: Reply to banlist: one row per ban rule on the virtual server. */
   BanList: "notifybanlist",
   /** `notifychannelchanged`: A channel's properties changed and this client should fetch them again. */
@@ -107,6 +111,8 @@ const notificationNameValues = {
   PermissionList: "notifypermissionlist",
   /** `notifypermoverview`: Reply to permoverview: one row per permission assignment that applies to a client in a channel. */
   PermOverview: "notifypermoverview",
+  /** `notifypermget`: Reply to permget on TeamSpeak 6: the permission asked for, with its id and value. */
+  PermGet: "notifypermget",
   /** `notifyplugincmd`: A plugin command another client sent with plugincmd, to this client's channel or to it directly. */
   PluginCmd: "notifyplugincmd",
   /** `notifyserverconnectioninfo`: Reply to serverrequestconnectioninfo: the virtual server's traffic and bandwidth statistics. */

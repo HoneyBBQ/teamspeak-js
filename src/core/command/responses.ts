@@ -66,6 +66,8 @@ const fileTransfer = (answer: string): ResponseSpec => ({
 
 /** The table behind {@link responseSpec}, by command name; exported for the tests that check it against the name tables. */
 export const RESPONSES: Readonly<Record<string, ResponseSpec>> = {
+  apikeyadd: inline("notifyapikeyadd"),
+  apikeylist: inline("notifyapikeylist"),
   banlist: inline("notifybanlist"),
   channelclientpermlist: inline("notifychannelclientpermlist"),
   channelcreate: { notifications: ["notifychannelcreated"], ownRowsOnly: true },
@@ -83,8 +85,11 @@ export const RESPONSES: Readonly<Record<string, ResponseSpec>> = {
   clientgetnamefromdbid: inline("notifyclientnamefromdbid"),
   clientgetnamefromuid: inline("notifyclientnamefromuid"),
   clientgetuidfromclid: inline("notifyclientuidfromclid"),
+  clientgetvariables: inline("notifyclientupdated"),
+  clientsetserverquerylogin: inline("notifyclientserverqueryloginpassword"),
   clientpermlist: inline("notifyclientpermlist"),
   complainlist: inline("notifycomplainlist"),
+  getconnectioninfo: inline("notifyconnectioninfo"),
   ftgetfileinfo: inline("notifyfileinfo"),
   ftgetfilelist: inline("notifyfilelist"),
   ftinitdownload: fileTransfer("notifystartdownload"),
@@ -94,10 +99,12 @@ export const RESPONSES: Readonly<Record<string, ResponseSpec>> = {
   messageget: inline("notifymessage"),
   messagelist: inline("notifymessagelist"),
   permfind: inline("notifypermfind"),
+  permget: inline("notifypermget"),
   permissionlist: inline("notifypermissionlist"),
   permoverview: inline("notifypermoverview"),
   privilegekeyadd: inline("notifytokenadd"),
   privilegekeylist: inline("notifytokenlist"),
+  servergetvariables: inline("notifyserverupdated"),
   servergroupadd: inline("notifyservergrouplist"),
   servergroupclientlist: inline("notifyservergroupclientlist"),
   servergroupcopy: inline("notifyservergrouplist"),
@@ -106,6 +113,8 @@ export const RESPONSES: Readonly<Record<string, ResponseSpec>> = {
   servergroupsbyclientid: inline("notifyservergroupsbyclientid"),
   serverrequestconnectioninfo: inline("notifyserverconnectioninfo"),
   servertemppasswordlist: inline("notifyservertemppasswordlist"),
+  tokenadd: inline("notifytokenadd"),
+  tokenlist: inline("notifytokenlist"),
 };
 
 /** The response shape of a command, or undefined for plain rows. */

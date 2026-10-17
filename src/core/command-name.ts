@@ -126,6 +126,8 @@ const commandNameValues = {
   ClientGetNameFromUID: "clientgetnamefromuid",
   /** `clientgetuidfromclid`: Displays the unique identifier matching the clientID specified by clid. */
   ClientGetUIDFromCLID: "clientgetuidfromclid",
+  /** `clientgetvariables`: Asks the server to send a client's properties again, as a `notifyclientupdated`. Voice protocol only. */
+  ClientGetVariables: "clientgetvariables",
   /** `clientinfo`: Displays detailed configuration information about a client including unique ID, nickname, client version, etc. */
   ClientInfo: "clientinfo",
   /** `clientkick`: Kicks one or more clients from their channel (reasonid 4) or from the server (reasonid 5). */
@@ -158,6 +160,8 @@ const commandNameValues = {
   CustomSearch: "customsearch",
   /** `customset`: Creates or updates a custom property for client specified by the cldbid. */
   CustomSet: "customset",
+  /** `getconnectioninfo`: Asks the server for a client's connection statistics, answered by `notifyconnectioninfo`. Voice protocol only. */
+  GetConnectionInfo: "getconnectioninfo",
   /** `ftcreatedir`: Creates new directory in a channel's file repository. */
   FTCreateDir: "ftcreatedir",
   /** `ftdeletefile`: Deletes one or more files stored in a channel's file repository. */
@@ -282,6 +286,8 @@ const commandNameValues = {
   ServerGroupsByClientID: "servergroupsbyclientid",
   /** `serveridgetbyport`: Displays the database ID of the virtual server running on the UDP port specified by virtualserver_port. */
   ServerIDGetByPort: "serveridgetbyport",
+  /** `servergetvariables`: Asks the server to send the virtual server's properties again, as a `notifyserverupdated`. Voice protocol only. */
+  ServerGetVariables: "servergetvariables",
   /** `serverinfo`: Displays detailed configuration information about the selected virtual server including unique ID, number of clients online, configuration, etc. */
   ServerInfo: "serverinfo",
   /** `serverlist`: Displays a list of virtual servers including their ID, status, number of clients online, etc. */

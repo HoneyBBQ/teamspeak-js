@@ -4,13 +4,26 @@ import { NotificationName } from "../notification-name.js";
 import { RESPONSES, responseSpec } from "./responses.js";
 
 describe("responseSpec", () => {
-  // The SDK sends privilegekeyadd and privilegekeylist; the tokenadd and
-  // tokenlist aliases are gone from its API, and so is their answer shape.
-  it("knows the privilege key commands, and not their old token aliases", () => {
+  it("knows the privilege key commands and their token aliases", () => {
     expect(responseSpec("privilegekeyadd")?.notifications).toEqual(["notifytokenadd"]);
     expect(responseSpec("privilegekeylist")?.notifications).toEqual(["notifytokenlist"]);
-    expect(responseSpec("tokenadd")).toBeUndefined();
-    expect(responseSpec("tokenlist")).toBeUndefined();
+    expect(responseSpec("tokenadd")?.notifications).toEqual(["notifytokenadd"]);
+    expect(responseSpec("tokenlist")?.notifications).toEqual(["notifytokenlist"]);
+  });
+
+  // Each answer was measured on TS3 3.13.8 and TS6 6.0.0-beta13.1 over the voice
+  // protocol: the rows arrive in this notification, not as nameless rows.
+  it.each([
+    ["apikeyadd", "notifyapikeyadd"],
+    ["apikeylist", "notifyapikeylist"],
+    ["permget", "notifypermget"],
+    ["getconnectioninfo", "notifyconnectioninfo"],
+    ["clientgetvariables", "notifyclientupdated"],
+    ["servergetvariables", "notifyserverupdated"],
+    ["clientsetserverquerylogin", "notifyclientserverqueryloginpassword"],
+  ])("answers %s with %s", (command, notification) => {
+    expect(responseSpec(command)?.notifications).toEqual([notification]);
+    expect(responseSpec(command)?.correlated).toBeUndefined();
   });
 });
 

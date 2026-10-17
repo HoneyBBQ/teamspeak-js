@@ -49,6 +49,17 @@ reason: the answer is the whole group list.
 default and which only a ServerQuery admin can grant. Once granted they work
 over the voice protocol with nameless rows.
 
+`messageadd`, `customset`, `customdelete`, `apikeydel` and `queryloginadd` answer with
+nothing; `custominfo`, `customsearch` and `banfind` (TS6) answer with nameless rows.
+`queryloginadd`, `querylogindel`, `queryloginlist`, `login`, `logout` and `use` are
+ServerQuery-only: a voice connection gets error 2 (not implemented) for them.
+
+The instance-level commands `serverlist`, `servercreate`, `serverdelete`,
+`serverstart`, `serversnapshotcreate`, `serversnapshotdeploy`, `gm`,
+`servergroupautoaddperm` and `servergroupautodelperm` answer 2568 for a voice
+client in the Server Admin group, as `hostinfo` does. `serverprocessstop` is
+not sent over a voice connection.
+
 ## Commands that return nothing here
 
 `banadd`, `banclient` and `servertemppasswordadd` succeed without reporting an
@@ -58,6 +69,8 @@ id over the voice protocol; ServerQuery reports one.
 
 | Command                       | Answer                                                                            |
 | ----------------------------- | --------------------------------------------------------------------------------- |
+| `apikeyadd`                   | `notifyapikeyadd`                                                                 |
+| `apikeylist`                  | `notifyapikeylist`                                                                |
 | `banadd`                      | nothing                                                                           |
 | `banclient`                   | nothing (the banned client's `notifyclientleftview` is a side effect)             |
 | `banlist`                     | `notifybanlist`                                                                   |
@@ -83,26 +96,31 @@ id over the voice protocol; ServerQuery reports one.
 | `clientgetnamefromdbid`       | `notifyclientnamefromdbid`                                                        |
 | `clientgetnamefromuid`        | `notifyclientnamefromuid`                                                         |
 | `clientgetuidfromclid`        | `notifyclientuidfromclid`                                                         |
+| `clientgetvariables`          | `notifyclientupdated`                                                             |
 | `clientinfo`                  | nameless rows                                                                     |
 | `clientlist`                  | nameless rows                                                                     |
 | `clientpermlist`              | `notifyclientpermlist`                                                            |
+| `clientsetserverquerylogin`   | `notifyclientserverqueryloginpassword`                                            |
 | `complainlist`                | `notifycomplainlist`                                                              |
 | `ftgetfileinfo`               | `notifyfileinfo`                                                                  |
 | `ftgetfilelist`               | `notifyfilelist`, `notifyfilelistfinished`                                        |
 | `ftinitdownload`              | after `error`: `notifystartdownload` (by `clientftfid`)                           |
 | `ftinitupload`                | after `error`: `notifystartupload` (by `clientftfid`)                             |
 | `ftlist`                      | `notifyfiletransferlist`                                                          |
+| `getconnectioninfo`           | `notifyconnectioninfo`                                                            |
 | `hostinfo`                    | nameless rows                                                                     |
 | `instanceinfo`                | nameless rows                                                                     |
 | `logview`                     | `notifyserverlog`                                                                 |
 | `messageget`                  | `notifymessage`                                                                   |
 | `messagelist`                 | `notifymessagelist`                                                               |
 | `permfind`                    | `notifypermfind`                                                                  |
+| `permget`                     | `notifypermget` on TS6, nameless rows on TS3                                      |
 | `permidgetbyname`             | nameless rows                                                                     |
 | `permissionlist`              | `notifypermissionlist`                                                            |
 | `permoverview`                | `notifypermoverview`                                                              |
 | `privilegekeyadd`             | `notifytokenadd`                                                                  |
 | `privilegekeylist`            | `notifytokenlist`                                                                 |
+| `servergetvariables`          | `notifyserverupdated`                                                             |
 | `servergroupadd`              | `notifyservergrouplist`                                                           |
 | `servergroupclientlist`       | `notifyservergroupclientlist`                                                     |
 | `servergroupcopy`             | `notifyservergrouplist`                                                           |
@@ -114,5 +132,7 @@ id over the voice protocol; ServerQuery reports one.
 | `serverrequestconnectioninfo` | `notifyserverconnectioninfo`                                                      |
 | `servertemppasswordadd`       | nothing                                                                           |
 | `servertemppasswordlist`      | `notifyservertemppasswordlist`                                                    |
+| `tokenadd`                    | `notifytokenadd`                                                                  |
+| `tokenlist`                   | `notifytokenlist`                                                                 |
 | `version`                     | nameless rows                                                                     |
 | `whoami`                      | nameless rows                                                                     |
