@@ -25,6 +25,8 @@ class FakeTransport implements QueryTransport {
   clientList: string[] = ["error id=0 msg=ok"];
   /** The rows `whoami` answers with: no row, as a server that does not say who this is. */
   whoami: string[] = ["error id=0 msg=ok"];
+  /** Commands the server refuses, by their first word, with the error line it answers. */
+  refuse = new Map<string, string>();
 
   constructor(supportsNotifications = true) {
     this.supportsNotifications = supportsNotifications;
@@ -32,7 +34,10 @@ class FakeTransport implements QueryTransport {
 
   async send(line: string): Promise<void> {
     this.sent.push(line);
-    if (line.startsWith("version")) {
+    const refusal = this.refuse.get(line.split(" ")[0] ?? "");
+    if (refusal !== undefined) {
+      this.receive(refusal);
+    } else if (line.startsWith("version")) {
       this.receive("version=3.13.8 build=1 platform=Linux", "error id=0 msg=ok");
     } else if (line.startsWith("whoami")) {
       this.receive(...this.whoami);
@@ -360,5 +365,182 @@ describe("QueryClient events", () => {
     const client = clientOn(offline, { events: true });
     await expect(client.connect()).rejects.toBeInstanceOf(TypeError);
     expect(client.status).toBe("disconnected");
+  });
+});
+
+describe("QueryClient: what it knows of the server it is on", () => {
+  const ok = "error id=0 msg=ok";
+  const roster = (...ids: number[]): string[] => [
+    ...ids.map(
+      (id) =>
+        `clid=${id} cid=1 client_nickname=c${id} client_unique_identifier=uid${id} client_type=0`,
+    ),
+    ok,
+  ];
+
+  async function onServer(): Promise<{ client: QueryClient; transport: FakeTransport }> {
+    const transport = new FakeTransport();
+    transport.whoami = ["client_id=4 client_nickname=bot", ok];
+    transport.clientList = roster(4, 5);
+    const client = clientOn(transport, { events: true, server: { id: 1 }, nickname: "bot" });
+    await client.connect();
+    return { client, transport };
+  }
+
+  const kicksOf = (client: QueryClient): KickedEvent[] => {
+    const kicks: KickedEvent[] = [];
+    client.on("kicked", (e) => kicks.push(e));
+    return kicks;
+  };
+  const enters = (client: QueryClient): ClientEnterEvent[] => {
+    const seen: ClientEnterEvent[] = [];
+    client.on("clientEnter", (e) => seen.push(e));
+    return seen;
+  };
+
+  it("reads its id again after use, and recognises a kick on the new server", async () => {
+    const { client, transport } = await onServer();
+    const kicks = kicksOf(client);
+    transport.whoami = ["client_id=11 client_nickname=bot", ok];
+    transport.clientList = roster(11, 12);
+    await client.use({ id: 2 });
+
+    // The old id is another client now; the new one is this client.
+    transport.receive("notifyclientmoved clid=4 ctid=1 reasonid=4 reasonmsg=old");
+    expect(kicks).toHaveLength(0);
+    transport.receive("notifyclientmoved clid=11 ctid=1 reasonid=4 reasonmsg=new");
+    expect(kicks).toHaveLength(1);
+  });
+
+  it("drops the old roster on use and lists the new server's clients", async () => {
+    const { client, transport } = await onServer();
+    transport.whoami = ["client_id=11", ok];
+    transport.clientList = [
+      "clid=11 cid=1 client_nickname=c11 client_unique_identifier=u11 client_type=0 client_servergroups=7",
+      "clid=12 cid=1 client_nickname=c12 client_unique_identifier=u12 client_type=0 client_servergroups=8",
+      ok,
+    ];
+    transport.sent.length = 0;
+    await client.use({ port: 9988 });
+    expect(transport.sent.map((l) => l.split(" ")[0])).toEqual(["use", "whoami", "clientlist"]);
+
+    const messages: TextMessageEvent[] = [];
+    client.on("textMessage", (e) => messages.push(e));
+    // Client 5 only the old server had; 12 only the new one has.
+    transport.receive("notifytextmessage targetmode=1 msg=a invokerid=5 invokername=c5");
+    transport.receive("notifytextmessage targetmode=1 msg=b invokerid=12 invokername=c12");
+    expect(messages[0]?.invokerGroups).toBeUndefined();
+    expect(messages[1]?.invokerGroups).toEqual([8n]);
+  });
+
+  it("lists no clients after use when no event is registered for", async () => {
+    const transport = new FakeTransport();
+    transport.whoami = ["client_id=4", ok];
+    const client = clientOn(transport, { events: false, server: { id: 1 } });
+    await client.connect();
+    transport.sent.length = 0;
+    await client.use({ id: 2 });
+    expect(transport.sent.map((l) => l.split(" ")[0])).toEqual(["use", "whoami"]);
+  });
+
+  it("asks nothing after use on a transport that delivers no events", async () => {
+    const transport = new FakeTransport(false);
+    const client = clientOn(transport);
+    await client.connect();
+    transport.sent.length = 0;
+    await client.use({ id: 2 });
+    expect(transport.sent).toEqual(["use sid=2"]);
+  });
+
+  it("clears its id and roster after logout", async () => {
+    const { client, transport } = await onServer();
+    const kicks = kicksOf(client);
+    await client.logout();
+    transport.receive("notifyclientmoved clid=4 ctid=1 reasonid=4 reasonmsg=gone");
+    expect(kicks).toHaveLength(0);
+  });
+
+  it("clears its id and roster when the server refuses use, and fails with its error", async () => {
+    const { client, transport } = await onServer();
+    const kicks = kicksOf(client);
+    transport.refuse.set("use", "error id=1033 msg=server\\sis\\snot\\srunning");
+    await expect(client.use({ id: 99 })).rejects.toMatchObject({ code: 1033 });
+
+    transport.receive("notifyclientmoved clid=4 ctid=1 reasonid=4 reasonmsg=gone");
+    expect(kicks).toHaveLength(0);
+
+    // The next successful use learns an id again.
+    transport.refuse.clear();
+    transport.whoami = ["client_id=21", ok];
+    transport.clientList = roster(21);
+    await client.use({ id: 1 });
+    transport.receive("notifyclientmoved clid=21 ctid=1 reasonid=4 reasonmsg=back");
+    expect(kicks).toHaveLength(1);
+  });
+
+  it("keeps its id when use fails for a reason that says nothing of the selection", async () => {
+    const { client, transport } = await onServer();
+    const kicks = kicksOf(client);
+    const stop = new AbortController();
+    stop.abort();
+    await expect(client.use({ id: 2 }, { signal: stop.signal })).rejects.toBeDefined();
+    transport.receive("notifyclientmoved clid=4 ctid=1 reasonid=4 reasonmsg=still");
+    expect(kicks).toHaveLength(1);
+  });
+
+  it("lists the clients again once a registration is accepted, and not when it is refused", async () => {
+    const { client, transport } = await onServer();
+    transport.sent.length = 0;
+    await client.registerNotifications("textserver");
+    expect(transport.sent.map((l) => l.split(" ")[0])).toEqual([
+      "servernotifyregister",
+      "clientlist",
+    ]);
+
+    transport.sent.length = 0;
+    transport.refuse.set("servernotifyregister", "error id=1024 msg=invalid\\sserverID");
+    await expect(client.registerNotifications("server")).rejects.toMatchObject({ code: 1024 });
+    expect(transport.sent.map((l) => l.split(" ")[0])).toEqual(["servernotifyregister"]);
+  });
+
+  it("learns the roster of the new server so a joiner is told from a known client", async () => {
+    const { client, transport } = await onServer();
+    transport.whoami = ["client_id=11", ok];
+    transport.clientList = roster(11, 12);
+    await client.use({ id: 2 });
+    const seen = enters(client);
+    transport.receive("notifycliententerview clid=30 ctid=1 client_nickname=new");
+    expect(seen).toHaveLength(1);
+  });
+
+  // A reconnect starts over from the options: it logs in, selects the server
+  // and registers the events again, and does not repeat a `use` made by hand.
+  it("does not repeat a use made by hand when it reconnects", async () => {
+    const transports: FakeTransport[] = [];
+    const open = async (): Promise<FakeTransport> => {
+      const t = new FakeTransport();
+      t.whoami = ["client_id=4", ok];
+      transports.push(t);
+      return t;
+    };
+    const client = new QueryClient({
+      transport: { kind: "custom", open },
+      events: { categories: ["server"] },
+      server: { id: 1 },
+      reconnect: { backoff: { initialDelayMs: 1, maxDelayMs: 1, jitter: 0 } },
+    });
+    await client.connect();
+    await client.use({ id: 2 });
+    const first = transports[0]!;
+    first.onClose?.(new Error("dropped"));
+    await waitFor(() => transports.length === 2 && client.status === "connected");
+
+    const second = transports[1]!.sent.filter(
+      (l) => l.startsWith("use") || l.startsWith("servernotifyregister"),
+    );
+    expect(second.map((l) => l.split(" ").slice(0, 2).join(" "))).toEqual([
+      "use sid=1",
+      "servernotifyregister event=server",
+    ]);
   });
 });

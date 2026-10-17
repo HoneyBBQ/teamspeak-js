@@ -339,7 +339,8 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
 
     const { login, server, nickname, eventCategories } = this.#options;
     if (login !== undefined) await this.login(login.name, login.password, { signal });
-    if (server !== undefined) await this.use(server, { nickname, signal });
+    // Not `use()`: this session learns who it is, and who is there, once, below.
+    if (server !== undefined) await this.#select(server, { nickname, signal });
     this.#version = await this.#getVersion(signal);
     this.#serverFamily = serverFamilyOf(this.#version);
     // Like the version, a failure here fails the connect: a client that cannot
@@ -349,9 +350,7 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
       for (const category of eventCategories) {
         // The channel category takes the channel to watch, or 0 for all of them;
         // the others take none, and the server refuses one they do not know.
-        await this.registerNotifications(category, category === "channel" ? 0 : undefined, {
-          signal,
-        });
+        await this.#register(category, category === "channel" ? 0 : undefined, { signal });
       }
       // Only worth listing when there is something to fill: the groups and the
       // invoker of a message this client would otherwise not know.
@@ -455,9 +454,14 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
    * Not served over WebQuery, whose api key is the login: the server refuses it
    * there (5120, command not in api key scope). A reconnect logs in again from
    * the `login` option.
+   *
+   * The client's own id and the roster it kept are cleared, as they belong to
+   * the server that was left. `use` still selects a server afterwards, as a
+   * client with no rights.
    */
   async logout(options: CommandOptions = {}): Promise<void> {
     await this.exec("logout", options);
+    this.#forgetServer();
   }
 
   /**
@@ -467,20 +471,58 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
    * Public for the same reason as {@link QueryClient.login}: `connect()` runs
    * it from the `server` option, and this is the same `use` command. Over
    * WebQuery the transport answers it, by addressing that server from then on.
+   *
+   * The connection becomes a client of the new server, with an id of its own,
+   * so the client reads its id again and drops the roster it kept of the server
+   * it was on; with events configured it lists the new server's clients, as
+   * `connect()` does. Selecting the server the connection is already on
+   * changes nothing, a new nickname included. A refusal leaves the connection
+   * on no server, not on the one it was on: the id and the roster are cleared,
+   * and the notifications registered are gone, so `use` again and
+   * {@link QueryClient.registerNotifications} again.
+   *
+   * A reconnect starts over from the options the client was made with: it logs
+   * in, selects `server` and registers `events` again, and does not repeat a
+   * `use` made by hand.
    */
   async use(
     server: { readonly id: ServerID | number } | { readonly port: number },
     options: CommandOptions & { readonly nickname?: string | undefined } = {},
   ): Promise<void> {
-    await this.exec(
-      buildCommandOrdered("use", [
-        "id" in server ? ["sid", String(server.id)] : ["port", String(server.port)],
-        ...(options.nickname === undefined
-          ? []
-          : ([["client_nickname", options.nickname]] as const)),
-      ]),
-      options,
-    );
+    await this.#select(server, options);
+    // The id and the roster serve the events, which a transport that delivers
+    // none has no use for.
+    if (!this.#notifications) return;
+    await this.#learnSelf(options.signal);
+    if (this.#options.eventCategories.length > 0) await this.#learnClients(options.signal);
+  }
+
+  /** The `use` command, and what it does to what the client knows. */
+  async #select(
+    server: { readonly id: ServerID | number } | { readonly port: number },
+    options: CommandOptions & { readonly nickname?: string | undefined },
+  ): Promise<void> {
+    try {
+      await this.exec(
+        buildCommandOrdered("use", [
+          "id" in server ? ["sid", String(server.id)] : ["port", String(server.port)],
+          ...(options.nickname === undefined
+            ? []
+            : ([["client_nickname", options.nickname]] as const)),
+        ]),
+        options,
+      );
+    } catch (error) {
+      if (error instanceof ServerError) this.#forgetServer();
+      throw error;
+    }
+    this.#forgetServer();
+  }
+
+  /** What belongs to the server the connection was on: its own id and the clients seen there. */
+  #forgetServer(): void {
+    this.#clid = 0;
+    this.#clients.clear();
   }
 
   /**
@@ -492,11 +534,24 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
    * it once per configured category. With the WebQuery transport there is
    * nothing to register for and the server refuses it, so the client never
    * calls it there, and neither should a caller.
+   *
+   * Once the server has accepted it, the client lists the server's clients
+   * again, as `connect()` does, so the events it fills from the roster are
+   * filled. With no server selected the server refuses it (1024).
    */
   async registerNotifications(
     event: QueryEventCategory,
     channelID?: bigint | number,
     options: CommandOptions = {},
+  ): Promise<void> {
+    await this.#register(event, channelID, options);
+    await this.#learnClients(options.signal);
+  }
+
+  async #register(
+    event: QueryEventCategory,
+    channelID: bigint | number | undefined,
+    options: CommandOptions,
   ): Promise<void> {
     await this.exec(
       buildCommandOrdered("servernotifyregister", [

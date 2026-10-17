@@ -426,6 +426,47 @@ describe.skipIf(SKIP)("Integration — ServerQuery client", () => {
     }
   }, 60_000);
 
+  // A refused `use` leaves the connection on no server, and the next one makes
+  // it a client of that server with an id of its own: a server answers a `use`
+  // of the server already selected with nothing at all, so this is the id change
+  // a lone server allows. The client has to read the new id, or the channel kick
+  // of itself below is a move of somebody else.
+  it("recognises its own kick after the server it is on was selected again", async (ctx) => {
+    for (const [kind] of eventClients(ctx)) {
+      const client = new QueryClient({ ...optionsFor(kind), nickname: `ts-js-reuse-${kind}` });
+      await connectWithRetries(client);
+      try {
+        const before = await whoAmI(client);
+        await expect(client.use({ id: 9999 }), kind).rejects.toMatchObject({ code: 1033 });
+        // No server is selected: the server answers a registration with 1024.
+        await expect(client.registerNotifications("server"), kind).rejects.toMatchObject({
+          code: 1024,
+        });
+        await client.use({ id: 1 }, { nickname: `ts-js-reuse-${kind}` });
+        const after = await whoAmI(client);
+        expect(after.clientID, kind).not.toBe(before.clientID);
+
+        for (const category of client.eventCategories) {
+          await client.registerNotifications(category, category === "channel" ? 0 : undefined);
+        }
+        const target = (await listChannels(client)).find(
+          (channel) => channel.name === PASSWORD_CHANNEL,
+        );
+        expect(target, kind).toBeDefined();
+        await moveClient(client, after.clientID, target!.id, {
+          password: PASSWORD_CHANNEL_PASSWORD,
+        });
+        const kicked = new Promise<KickedEvent>((resolve) => client.on("kicked", resolve));
+        await kickClient(client, after.clientID, Reason.KickChannel, {
+          reasonMessage: `again-${kind}`,
+        });
+        expect(await withTimeout(kicked), kind).toMatchObject({ reasonMessage: `again-${kind}` });
+      } finally {
+        await client.disconnect().catch(() => {});
+      }
+    }
+  }, 90_000);
+
   it.skipIf(!KINDS.includes("web"))(
     "delivers no events over WebQuery, and refuses to register for them",
     async () => {

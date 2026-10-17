@@ -489,16 +489,23 @@ describe("QueryClient commands", () => {
     const used = client.use({ id: 1 }, { nickname: "probe bot" });
     await transport.sentCount(baseline + 2);
     transport.receive("error id=0 msg=ok");
+    // The client asks who it is on the new server.
+    await transport.sentCount(baseline + 3);
+    transport.receive("client_id=5", "error id=0 msg=ok");
     await used;
     const byPort = client.use({ port: 9987 });
-    await transport.sentCount(baseline + 3);
+    await transport.sentCount(baseline + 4);
     transport.receive("error id=0 msg=ok");
+    await transport.sentCount(baseline + 5);
+    transport.receive("client_id=6", "error id=0 msg=ok");
     await byPort;
 
     expect(transport.sent.slice(baseline)).toEqual([
       "login client_login_name=serveradmin client_login_password=pa\\sss",
       "use sid=1 client_nickname=probe\\sbot",
+      "whoami",
       "use port=9987",
+      "whoami",
     ]);
   });
 
@@ -507,8 +514,14 @@ describe("QueryClient commands", () => {
     const registered = client.registerNotifications("channel", 0);
     await transport.sentCount(baseline + 1);
     transport.receive("error id=0 msg=ok");
+    // The roster is read again once the server has accepted it.
+    await transport.sentCount(baseline + 2);
+    transport.receive("error id=0 msg=ok");
     await registered;
-    expect(transport.sent.slice(baseline)).toEqual(["servernotifyregister event=channel id=0"]);
+    expect(transport.sent.slice(baseline)).toEqual([
+      "servernotifyregister event=channel id=0",
+      "clientlist -uid -groups",
+    ]);
   });
 
   it("unregisters one category, one channel, or everything", async () => {
