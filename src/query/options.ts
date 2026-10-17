@@ -37,7 +37,7 @@ export type QueryTransportOptions =
       readonly kind: "ssh";
     } & SshConnectOptions)
   | ({
-      /** TeamSpeak 6's HTTP WebQuery. */
+      /** WebQuery, the HTTP interface of TeamSpeak 3 (3.12 and later) and TeamSpeak 6. */
       readonly kind: "web";
       /** The server's base URL, such as `http://127.0.0.1:10080`. */
       readonly url: string;

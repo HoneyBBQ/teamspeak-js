@@ -251,7 +251,9 @@ export interface SshDialTarget {
  * `whoami` answer, `serverinfo` and the like are refused with 2568, and
  * `servernotifyregister` is the Guest group's permission to give or withhold,
  * so pass `events: false` to a `QueryClient` that should not register for any.
- * A server started with `--query-ssh-allow-guest=0` refuses the login with a
+ * A server that offers no guest access (TeamSpeak 3 has none, and TeamSpeak 6
+ * can be started with `--query-ssh-allow-guest=0`) fails the login, which a
+ * `QueryClient` reports as a `GuestAccessError` whose `cause` is the
  * {@link QueryAuthError}.
  *
  * @experimental Part of the `@honeybbq/teamspeak/query` entry, which may

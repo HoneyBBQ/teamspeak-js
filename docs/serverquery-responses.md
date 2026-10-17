@@ -17,11 +17,46 @@ Only **d** blocks 1.0.
 
 ## Transports
 
-| Transport | Where        | TS3                         | TS6                 | Login           | Events |
-| --------- | ------------ | --------------------------- | ------------------- | --------------- | ------ |
-| Raw TCP   | 10011        | yes                         | **no**              | `login` command | yes    |
-| SSH       | 10022        | not published, not measured | yes, off by default | the SSH login   | yes    |
-| WebQuery  | 10080 (HTTP) | not published, not measured | yes                 | `x-api-key`     | no     |
+| Transport | Where        | TS3                                  | TS6                 | Login           | Events |
+| --------- | ------------ | ------------------------------------ | ------------------- | --------------- | ------ |
+| Raw TCP   | 10011        | yes                                  | **no**              | `login` command | yes    |
+| SSH       | 10022        | yes (3.3 and later), off by default  | yes, off by default | the SSH login   | yes    |
+| WebQuery  | 10080 (HTTP) | yes (3.12 and later), off by default | yes                 | `x-api-key`     | no     |
+
+**TS3 serves SSH and WebQuery too, once `query_protocols` lists them.** It is
+`raw` alone by default; `raw,ssh,http` turns on all three (the official Docker
+image reads it from `TS3SERVER_QUERY_PROTOCOLS`, and the serveradmin password
+for SSH from `TS3SERVER_SERVERADMIN_PASSWORD`). Measured on 3.13.8 with the
+three on, the same suite passing over each:
+
+- SSH logs in as `serveradmin` with the serveradmin password and presents an RSA
+  host key, generated at the first start, as TS6 does. It greets with the same
+  two-line banner and takes `use`, not `login`.
+- WebQuery accepts both `POST` with a JSON body, which the transport sends, and
+  `GET` with the parameters in the query string; `/<sid>/`, `/byport/<port>/`
+  and no prefix at all (the first server) address a server. The server prints no
+  api key at its first start: create one over raw TCP, `apikeyadd scope=manage
+  lifetime=0`. With no key the answer is 401 with code 5124 ("missing apikey"),
+  where TS6 serves a guest, and a wrong key is 401 with 5122. A key of `manage`
+  scope is still refused `servernotifyregister`, with 5120.
+- TS3's WebQuery runs every command on a virtual server, the first one when the
+  path names none, so a command that differs between the instance and a server
+  has only its server form there: `queryloginadd client_login_name=…` makes a
+  global login over raw TCP and SSH with no server selected, and answers 1539
+  over WebQuery. An unknown command is 1538 over WebQuery (as on TS6) and 256
+  over raw TCP and SSH.
+- TS3's SSH server offers `rsa-sha2-512`, `rsa-sha2-256` and `ssh-rsa` for its
+  host key and signs the key exchange with `rsa-sha2-512` whichever the client
+  chose, so a client that asks for `rsa-sha2-256` first is refused by its own
+  library. OpenSSH and `ssh2` agree with it; Go's library needs `rsa-sha2-512`
+  put first.
+- A TS3 SSH session whose client closes the connection without `quit` can stay
+  on the server, as a query client in `clientlist`, for minutes at least; enough of them and the address gets no new connections (an address is
+  allowed five at once). The SSH and raw transports therefore say `quit`
+  before they close.
+- The ServerQuery flood limit and its ban time are `serverinstance_serverquery_flood_*`
+  and `serverinstance_serverquery_ban_time`. `serverinstance_serverquery_flood_ban_time`
+  is accepted by both servers and changes nothing.
 
 **TS6 does not serve raw TCP.** Nothing listens on 10011 in the container
 (its listening sockets are the HTTP query port and the file transfer port),
@@ -29,7 +64,7 @@ connecting is refused, and the server's command-line options list SSH, HTTP
 and HTTPS query interfaces and no raw one. Port 10011 on the host, in the
 setup the probe ran in, is TS3's.
 
-**SSH is off by default on TS6** and was measured on a second TS6 container
+**SSH is off by default on TS6**, as on TS3, and was measured on a second TS6 container
 started with `TSSERVER_QUERY_SSH_ENABLED=1`, its own file transfer port and
 its own admin password. The session is the query account already, so there is
 no `login`, only `use`. It greets with the same two-line banner as raw TCP.
@@ -233,7 +268,7 @@ What the table does not say:
 - **A deploy ends the selection.** Over raw TCP and SSH the next command after
   `serversnapshotdeploy` answers 1024 (invalid serverID) until `use` runs again. The
   channels get new ids.
-- **SSH has no instance level on TS6.** Connecting with no server selected fails with
+- **SSH has no instance level on TS6, nor on TS3.** Connecting with no server selected fails with
   1024 (invalid serverID). A connection selects server 1 and runs the
   instance-level commands from there; WebQuery addresses the instance directly.
 - **`custominfo` for a client with no properties** answers 512, as for a client that

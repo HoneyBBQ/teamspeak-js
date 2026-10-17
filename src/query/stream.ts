@@ -18,6 +18,9 @@ export interface QueryStream {
   on(event: "close", listener: () => void): unknown;
 }
 
+/** How long `close()` waits for the server to end the session after `quit`. */
+const QUIT_WAIT_MS = 1_000;
+
 /**
  * A {@link QueryTransport} over a byte stream: raw TCP, or an SSH shell.
  *
@@ -37,6 +40,8 @@ export class StreamTransport implements QueryTransport {
   #banner = 2;
   #closing = false;
   #ended = false;
+  /** Wakes a `close()` that is waiting for the server to end the session. */
+  #onEnded: (() => void) | undefined;
   #error: Error | undefined;
 
   /**
@@ -60,16 +65,41 @@ export class StreamTransport implements QueryTransport {
     });
   }
 
-  close(): Promise<void> {
-    if (this.#ended) return Promise.resolve();
+  /**
+   * Say `quit`, give the server a moment to end the session, and close.
+   *
+   * Ending the connection without it is not always noticed: a TeamSpeak 3
+   * server can keep an SSH session, and its slot among the few each address
+   * gets, long after the client has gone. `quit` is the command that ends a
+   * session, and the server answers it by closing the stream.
+   */
+  async close(): Promise<void> {
+    if (this.#ended) return;
     this.#closing = true;
+    // Whatever the server still says, it is no longer anyone's answer.
+    this.onLine = null;
+    const closed = new Promise<void>((resolve) => {
+      this.#onEnded = resolve;
+    });
+    const said = await this.send("quit").then(
+      () => true,
+      () => false,
+    );
+    if (said) {
+      let timer: NodeJS.Timeout | undefined;
+      const patience = new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, QUIT_WAIT_MS);
+      });
+      await Promise.race([closed, patience]);
+      clearTimeout(timer);
+    }
+    if (this.#ended) return;
     // Ending the stream is not enough to hear it close. An SSH session channel
     // is half-open, so `end()` sends EOF and stops there without reporting
     // 'close', and the hook that releases the connection underneath would never
     // run; the close is owed here as well as from the stream's own event.
     this.#stream.end();
     this.#handleClose();
-    return Promise.resolve();
   }
 
   #handleData(chunk: Uint8Array): void {
@@ -85,6 +115,7 @@ export class StreamTransport implements QueryTransport {
   #handleClose(): void {
     if (this.#ended) return;
     this.#ended = true;
+    this.#onEnded?.();
     this.#onEnd?.();
     this.onClose?.(this.#closing ? undefined : this.#error);
   }

@@ -31,6 +31,7 @@ import { utils } from "ssh2";
 import { describe, it, expect, beforeAll, afterAll, type TestContext } from "vitest";
 import {
   ClientStatus,
+  ErrorCode,
   Reason,
   TextMessageTarget,
   addAPIKey,
@@ -92,7 +93,7 @@ import {
 import { Client } from "../client/client.js";
 import { generateIdentitySync } from "../client/crypto/identity.js";
 import { QueryClient } from "./client.js";
-import { SshHostKeyError } from "./errors.js";
+import { GuestAccessError, QueryAuthError, SshHostKeyError } from "./errors.js";
 import type { QueryClientOptions } from "./options.js";
 import { connectSsh } from "./ssh.js";
 import type { SshHostKey } from "./ssh.js";
@@ -109,6 +110,7 @@ const SERVER_PASSWORD = process.env["TEAMSPEAK_SERVER_PASSWORD"] ?? "";
 const PASSWORD_CHANNEL = process.env["TEAMSPEAK_PASSWORD_CHANNEL"] ?? "";
 const PASSWORD_CHANNEL_PASSWORD = process.env["TEAMSPEAK_PASSWORD_CHANNEL_PASSWORD"] ?? "";
 
+const SERVER_FAMILY = process.env["TEAMSPEAK_QUERY_FAMILY"] ?? "";
 const QUERY_KIND = process.env["TEAMSPEAK_QUERY_KIND"];
 const QUERY_HOST = process.env["TEAMSPEAK_QUERY_HOST"] ?? "";
 const QUERY_PORT = Number(process.env["TEAMSPEAK_QUERY_PORT"] ?? "10011");
@@ -125,8 +127,7 @@ const SSH_KNOWN_HOSTS = process.env["TEAMSPEAK_QUERY_SSH_KNOWN_HOSTS"] ?? "";
 /** Set where the server accepts guest logins: TeamSpeak 6 beta13 and later, not TS3. */
 const GUEST = process.env["TEAMSPEAK_QUERY_GUEST"] === "1";
 
-/** 5120, `command not in api key scope`: not a name `ErrorCode` gives. */
-const NOT_IN_API_KEY_SCOPE = 5120;
+const NOT_IN_API_KEY_SCOPE = ErrorCode.APIKeyOutOfScope;
 
 const CONNECT_TIMEOUT_MS = 15_000;
 const CONNECT_ATTEMPTS = 3;
@@ -137,8 +138,8 @@ type Kind = "tcp" | "web" | "ssh";
 
 /** The transports this run can use, from what the fixture provisioned. */
 const KINDS: readonly Kind[] = [
-  ...(QUERY_KIND === "tcp" ? (["tcp"] as const) : []),
-  ...(QUERY_KIND === "web" ? (["web"] as const) : []),
+  ...(QUERY_KIND === "tcp" || QUERY_HOST !== "" ? (["tcp"] as const) : []),
+  ...(QUERY_KIND === "web" || (QUERY_URL !== "" && QUERY_API_KEY !== "") ? (["web"] as const) : []),
   ...(SSH_PORT > 0 ? (["ssh"] as const) : []),
 ];
 
@@ -152,24 +153,43 @@ function knownHostsLine(key: Pick<SshHostKey, "keyType" | "key">): string {
   return `[${SSH_HOST}]:${SSH_PORT} ${key.keyType} ${Buffer.from(key.key).toString("base64")}\n`;
 }
 
+/** The key the SSH server presented, once {@link presentedSshKey} has asked. */
+let presentedKey: Promise<SshHostKey> | undefined;
+
 /**
- * The key the SSH server presents. The check runs before the login, so a probe
+ * The key the SSH server presents. It does not change during a run, so it is
+ * probed once: every probe is another connection, and TeamSpeak 3 lets an
+ * address hold only five at a time.
+ */
+function presentedSshKey(): Promise<SshHostKey> {
+  presentedKey ??= probeSshKey();
+  return presentedKey;
+}
+
+/**
+ * Ask the SSH server for its key. The check runs before the login, so a probe
  * that refuses the key has seen it and sent nothing.
  */
-async function presentedSshKey(): Promise<SshHostKey> {
-  let presented: SshHostKey | undefined;
-  await connectSsh({
-    host: SSH_HOST,
-    port: SSH_PORT,
-    username: SSH_USER,
-    password: SSH_PASSWORD,
-    hostKey: (key) => {
-      presented = key;
-      throw new Error("recorded, and not trusted yet");
-    },
-  }).catch(() => {});
-  if (presented === undefined) throw new Error(`the server at ${SSH_HOST}:${SSH_PORT} sent no key`);
-  return presented;
+async function probeSshKey(): Promise<SshHostKey> {
+  for (let attempt = 1; ; attempt++) {
+    let presented: SshHostKey | undefined;
+    await connectSsh({
+      host: SSH_HOST,
+      port: SSH_PORT,
+      username: SSH_USER,
+      password: SSH_PASSWORD,
+      hostKey: (key) => {
+        presented = key;
+        throw new Error("recorded, and not trusted yet");
+      },
+    }).catch(() => {});
+    if (presented !== undefined) return presented;
+    // A server at its connection limit resets the handshake before any key.
+    if (attempt === CONNECT_ATTEMPTS) {
+      throw new Error(`the server at ${SSH_HOST}:${SSH_PORT} sent no key`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+  }
 }
 
 /** The options for one transport kind. */
@@ -305,7 +325,9 @@ describe.skipIf(SKIP)("Integration — ServerQuery client", () => {
     for (const [kind, client] of clients) {
       expect(client.status, kind).toBe(ClientStatus.Connected);
       // The server says which generation it is, so this is read, not assumed.
+      // The fixture read it too, from the version, without this client's help.
       expect(["ts3", "ts6"], kind).toContain(client.serverFamily);
+      if (SERVER_FAMILY !== "") expect(client.serverFamily, kind).toBe(SERVER_FAMILY);
 
       const version = await getVersion(client);
       console.log(`${kind}: version=${version.version} platform=${version.platform}`);
@@ -361,7 +383,11 @@ describe.skipIf(SKIP)("Integration — ServerQuery client", () => {
 
       const moved = new Promise<ClientMovedEvent>((resolve) =>
         client.on("clientMoved", (event) => {
-          if (event.clientID === joiner.clientID) resolve(event);
+          // The move out of the way above can still be on its way: a second
+          // query client sees it after this listener is attached.
+          if (event.clientID === joiner.clientID && event.targetChannelID === me.channelID) {
+            resolve(event);
+          }
         }),
       );
       await moveClient(joiner, joiner.clientID, me.channelID);
@@ -1132,6 +1158,80 @@ describe.skipIf(SKIP || !GUEST)("Integration — guest ServerQuery", () => {
       await expect(
         client.connect({ signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) }),
       ).rejects.toBeDefined();
+    },
+    30_000,
+  );
+});
+
+// Where the fixture does not say the server has guest access (TeamSpeak 3 has
+// none; a TeamSpeak 6 started with it off refuses too), a guest connection is
+// refused, and the refusal says so. Measured on 3.13.8: WebQuery answers 5124
+// ("missing apikey", HTTP 401) and SSH fails the `guest` user's authentication.
+describe.skipIf(SKIP || GUEST)("Integration — a server with no guest access", () => {
+  const scratch = mkdtempSync(join(tmpdir(), "query-noguest-"));
+  let knownHosts = "";
+
+  beforeAll(async () => {
+    if (SKIP || GUEST || !KINDS.includes("ssh")) return;
+    const line = SSH_KNOWN_HOSTS !== "" ? undefined : knownHostsLine(await presentedSshKey());
+    knownHosts = SSH_KNOWN_HOSTS;
+    if (line !== undefined) {
+      knownHosts = join(scratch, "recorded");
+      writeFileSync(knownHosts, line);
+    }
+  }, 30_000);
+
+  afterAll(() => {
+    rmSync(scratch, { recursive: true, force: true });
+  });
+
+  /**
+   * The error a guest connection ends in. TeamSpeak 3 lets an address hold five
+   * connections across all its query ports, and resets a sixth, so an attempt
+   * that fails for any reason but the refusal under test is tried again, as the
+   * rest of the suite does; the refusal itself is the answer and is never
+   * retried.
+   */
+  async function refusal(options: QueryClientOptions): Promise<unknown> {
+    for (let attempt = 1; ; attempt++) {
+      const client = new QueryClient(options);
+      try {
+        await client.connect({ signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) });
+      } catch (error) {
+        if (error instanceof GuestAccessError || attempt === CONNECT_ATTEMPTS) return error;
+        console.warn(`guest connect attempt ${attempt} of ${CONNECT_ATTEMPTS}: ${String(error)}`);
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+        continue;
+      }
+      await client.disconnect();
+      throw new Error("the guest connection was accepted");
+    }
+  }
+
+  it.skipIf(!KINDS.includes("web"))(
+    "a guest over web is told there is no guest access, with the server's code",
+    async () => {
+      const error = await refusal({
+        transport: { kind: "web", url: QUERY_URL, guest: true },
+        server: { id: 1 },
+      });
+      expect(error).toBeInstanceOf(GuestAccessError);
+      expect((error as GuestAccessError).code).toBe(5124);
+      expect((error as GuestAccessError).message).toContain("does not offer guest access");
+    },
+    30_000,
+  );
+
+  it.skipIf(!KINDS.includes("ssh"))(
+    "a guest over ssh is told there is no guest access, with the login failure",
+    async () => {
+      const error = await refusal({
+        transport: { kind: "ssh", host: SSH_HOST, port: SSH_PORT, guest: true, knownHosts },
+        server: { id: 1 },
+        events: false,
+      });
+      expect(error).toBeInstanceOf(GuestAccessError);
+      expect((error as GuestAccessError).cause).toBeInstanceOf(QueryAuthError);
     },
     30_000,
   );
