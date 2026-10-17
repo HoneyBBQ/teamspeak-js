@@ -1756,13 +1756,9 @@ export interface OwnPermission {
 
 // @public
 export interface PacketLoss {
-    // (undocumented)
     readonly control: number;
-    // (undocumented)
     readonly keepalive: number;
-    // (undocumented)
     readonly speech: number;
-    // (undocumented)
     readonly total: number;
 }
 
