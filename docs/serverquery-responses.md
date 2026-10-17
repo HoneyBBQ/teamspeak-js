@@ -381,6 +381,74 @@ under "Not in it".
   a category no server here lists. Events over WebQuery, which has none to
   measure.
 
+### Notifications only a voice client receives
+
+A query client registered for all five categories, next to two voice clients
+in one channel, with an admin query connection acting. TS3 was raw TCP, TS6 was
+SSH on a server started with `TSSERVER_QUERY_SSH_ENABLED=1`. The same action
+reached the voice clients on both servers; the table is whether the query
+connection saw it.
+
+| Notification                                            | Action that sent it                                              | TS3 raw query | TS6 SSH |
+| ------------------------------------------------------- | ---------------------------------------------------------------- | ------------- | ------- |
+| `notifyclientupdated`                                   | a client set itself away; a group added; a talk power            | no            | no      |
+| `notifyservergroupclientadded` / `...deleted`           | `servergroupaddclient` / `servergroupdelclient`                  | no            | no      |
+| `notifyclientchannelgroupchanged`                       | `setclientchannelgroup`; a move                                  | no            | no      |
+| `notifychannelsubscribed` / `notifychannelunsubscribed` | a voice client's `channelsubscribe` / `channelunsubscribe`       | no            | no      |
+| `notifyplugincmd`                                       | a voice client's `plugincmd`, in all three target modes          | no            | no      |
+| `notifyclientchatcomposing`                             | a voice client's `clientchatcomposing` aimed at the query client | no            | no      |
+
+A query client cannot send the commands behind the last three either:
+`channelsubscribe` and `clientchatcomposing` answer 256, `command not found`,
+and `plugincmd` answers 516, `invalid client type`. The notifications a query
+client does receive were the same on both servers: `notifychannelcreated`,
+`...edited`, `...moved`, `...deleted`, `...descriptionchanged`,
+`...passwordchanged` (all under `channel`), `notifyserveredited` (under
+`server`), and `notifyclientmoved`.
+
+`notifyserveredited` carries `reasonid=10` on TS3 and no `reasonid` on TS6; a
+change of the welcome message carries no property key on either.
+
+### `reasonid=9` on `notifychanneledited`
+
+`channelgetdescription` is answered with `notifychanneledited` holding `cid`,
+`channel_description` and `reasonid=9`, and no invoker. Every real edit measured
+carried `reasonid=10` and an invoker. What else was tried, on TS3 and TS6:
+
+| Trigger                                                                | What the server sent                                                              |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| the caller fetches a description (empty or not)                        | to the caller only: the invoker-less `reasonid=9` edit                            |
+| another client fetches it                                              | nothing to anyone else, query client included                                     |
+| a client subscribes, unsubscribes, subscribes to all, unsubscribes all | `notifychannelsubscribed` / `...unsubscribed` only                                |
+| a client moves into a channel it was not in, or is moved               | `notifyclientmoved` and a channel group change; no channel notification           |
+| a channel permission changes (join, subscribe, description view power) | nothing; a subscribe power above the client's unsubscribes it (`...unsubscribed`) |
+| a fetch without the description view power                             | error 2568, no notification                                                       |
+| `channeledit` (topic, name, description, password, limits)             | `reasonid=10` with the invoker, to every client and the query client              |
+| `channelmove`                                                          | `notifychannelmoved` with `reasonid=1` and the invoker                            |
+
+No channel view power exists in either permission list, so a channel never
+comes into view by a permission change. No real change arrived as an
+invoker-less `reasonid=9`.
+
+### `plugincmd` and the private chat commands
+
+The same two voice clients, plus two in another channel, one subscribed to the
+first channel and one not. Identical on TS3 and TS6.
+
+| `targetmode` | Who received `notifyplugincmd`                                                 |
+| ------------ | ------------------------------------------------------------------------------ |
+| 0            | the sender's channel, the sender included                                      |
+| 1            | every client on the server, the sender included                                |
+| 2            | the client in `target` only; the sender receives it only when it is the target |
+| 3            | every client on the server, as 1; indistinguishable from it                    |
+| 4            | refused, 1538                                                                  |
+
+A `targetmode=2` command without `target` is refused with 1539, and with an
+unknown one with 512. Empty `data` is delivered. `clientchatcomposing` reaches
+the target client only, in any channel, and the sender when it names itself.
+`clientchatclosed` reaches the target only when the sender had sent it a private
+message first; without one nothing arrives and no error is raised.
+
 ## Passwords
 
 A channel password goes over ServerQuery as it is, and the server hashes it.
