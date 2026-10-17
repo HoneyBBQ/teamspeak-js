@@ -7,8 +7,11 @@
  * ```
  *
  * These are the names TeamSpeak 3.13 and 6 servers list, in the order they
- * list them, measured with `permissionlist`; the seven marked TeamSpeak 6 only
- * are missing on TeamSpeak 3. A name starting `b_` is a switch, granted or
+ * list them, measured with `permissionlist`; the fourteen marked TeamSpeak 6 only
+ * are missing on TeamSpeak 3. Every permission has a twin,
+ * `i_needed_modify_power_` followed by its name, which sets the modify power
+ * needed to change it; those are the second block, named `NeededModifyPower`
+ * followed by the permission's own name. A name starting `b_` is a switch, granted or
  * not; one starting `i_` is a value, such as a power compared with a needed
  * power. A server may know permissions this table does not, which is why
  * `permissionByName` takes any string.
@@ -528,6 +531,627 @@ const permissionNameValues = {
   FTStorageMBPerClient: "i_ft_storage_mb_per_client",
   /** `i_ft_max_file_size_mb`: Maximum file size of a single file this client can upload. TeamSpeak 6 only. */
   FTMaxFileSizeMB: "i_ft_max_file_size_mb",
+  // The permission that sets the modify power needed to change each permission above, named NeededModifyPower followed by that permission's own name, in the order the server lists them.
+  /** `i_needed_modify_power_serverinstance_help_view`: The power needed to modify `b_serverinstance_help_view`. */
+  NeededModifyPowerServerInstanceHelpView: "i_needed_modify_power_serverinstance_help_view",
+  /** `i_needed_modify_power_serverinstance_info_view`: The power needed to modify `b_serverinstance_info_view`. */
+  NeededModifyPowerServerInstanceInfoView: "i_needed_modify_power_serverinstance_info_view",
+  /** `i_needed_modify_power_serverinstance_virtualserver_list`: The power needed to modify `b_serverinstance_virtualserver_list`. */
+  NeededModifyPowerServerInstanceVirtualServerList:
+    "i_needed_modify_power_serverinstance_virtualserver_list",
+  /** `i_needed_modify_power_serverinstance_binding_list`: The power needed to modify `b_serverinstance_binding_list`. */
+  NeededModifyPowerServerInstanceBindingList: "i_needed_modify_power_serverinstance_binding_list",
+  /** `i_needed_modify_power_serverinstance_permission_list`: The power needed to modify `b_serverinstance_permission_list`. */
+  NeededModifyPowerServerInstancePermissionList:
+    "i_needed_modify_power_serverinstance_permission_list",
+  /** `i_needed_modify_power_serverinstance_permission_find`: The power needed to modify `b_serverinstance_permission_find`. */
+  NeededModifyPowerServerInstancePermissionFind:
+    "i_needed_modify_power_serverinstance_permission_find",
+  /** `i_needed_modify_power_virtualserver_create`: The power needed to modify `b_virtualserver_create`. */
+  NeededModifyPowerVirtualServerCreate: "i_needed_modify_power_virtualserver_create",
+  /** `i_needed_modify_power_virtualserver_delete`: The power needed to modify `b_virtualserver_delete`. */
+  NeededModifyPowerVirtualServerDelete: "i_needed_modify_power_virtualserver_delete",
+  /** `i_needed_modify_power_virtualserver_start_any`: The power needed to modify `b_virtualserver_start_any`. */
+  NeededModifyPowerVirtualServerStartAny: "i_needed_modify_power_virtualserver_start_any",
+  /** `i_needed_modify_power_virtualserver_stop_any`: The power needed to modify `b_virtualserver_stop_any`. */
+  NeededModifyPowerVirtualServerStopAny: "i_needed_modify_power_virtualserver_stop_any",
+  /** `i_needed_modify_power_virtualserver_change_machine_id`: The power needed to modify `b_virtualserver_change_machine_id`. */
+  NeededModifyPowerVirtualServerChangeMachineID:
+    "i_needed_modify_power_virtualserver_change_machine_id",
+  /** `i_needed_modify_power_virtualserver_change_template`: The power needed to modify `b_virtualserver_change_template`. */
+  NeededModifyPowerVirtualServerChangeTemplate:
+    "i_needed_modify_power_virtualserver_change_template",
+  /** `i_needed_modify_power_serverquery_login`: The power needed to modify `b_serverquery_login`. */
+  NeededModifyPowerServerQueryLogin: "i_needed_modify_power_serverquery_login",
+  /** `i_needed_modify_power_serverquery_login_create`: The power needed to modify `b_serverquery_login_create`. */
+  NeededModifyPowerServerQueryLoginCreate: "i_needed_modify_power_serverquery_login_create",
+  /** `i_needed_modify_power_serverquery_login_delete`: The power needed to modify `b_serverquery_login_delete`. */
+  NeededModifyPowerServerQueryLoginDelete: "i_needed_modify_power_serverquery_login_delete",
+  /** `i_needed_modify_power_serverquery_login_list`: The power needed to modify `b_serverquery_login_list`. */
+  NeededModifyPowerServerQueryLoginList: "i_needed_modify_power_serverquery_login_list",
+  /** `i_needed_modify_power_serverinstance_textmessage_send`: The power needed to modify `b_serverinstance_textmessage_send`. */
+  NeededModifyPowerServerInstanceTextMessageSend:
+    "i_needed_modify_power_serverinstance_textmessage_send",
+  /** `i_needed_modify_power_serverinstance_log_view`: The power needed to modify `b_serverinstance_log_view`. */
+  NeededModifyPowerServerInstanceLogView: "i_needed_modify_power_serverinstance_log_view",
+  /** `i_needed_modify_power_serverinstance_log_add`: The power needed to modify `b_serverinstance_log_add`. */
+  NeededModifyPowerServerInstanceLogAdd: "i_needed_modify_power_serverinstance_log_add",
+  /** `i_needed_modify_power_serverinstance_stop`: The power needed to modify `b_serverinstance_stop`. */
+  NeededModifyPowerServerInstanceStop: "i_needed_modify_power_serverinstance_stop",
+  /** `i_needed_modify_power_serverinstance_licensesign_message`: The power needed to modify `b_serverinstance_licensesign_message`. TeamSpeak 6 only. */
+  NeededModifyPowerServerInstanceLicenseSignMessage:
+    "i_needed_modify_power_serverinstance_licensesign_message",
+  /** `i_needed_modify_power_serverinstance_modify_settings`: The power needed to modify `b_serverinstance_modify_settings`. */
+  NeededModifyPowerServerInstanceModifySettings:
+    "i_needed_modify_power_serverinstance_modify_settings",
+  /** `i_needed_modify_power_serverinstance_modify_querygroup`: The power needed to modify `b_serverinstance_modify_querygroup`. */
+  NeededModifyPowerServerInstanceModifyQueryGroup:
+    "i_needed_modify_power_serverinstance_modify_querygroup",
+  /** `i_needed_modify_power_serverinstance_modify_templates`: The power needed to modify `b_serverinstance_modify_templates`. */
+  NeededModifyPowerServerInstanceModifyTemplates:
+    "i_needed_modify_power_serverinstance_modify_templates",
+  /** `i_needed_modify_power_virtualserver_select`: The power needed to modify `b_virtualserver_select`. */
+  NeededModifyPowerVirtualServerSelect: "i_needed_modify_power_virtualserver_select",
+  /** `i_needed_modify_power_virtualserver_info_view`: The power needed to modify `b_virtualserver_info_view`. */
+  NeededModifyPowerVirtualServerInfoView: "i_needed_modify_power_virtualserver_info_view",
+  /** `i_needed_modify_power_virtualserver_connectioninfo_view`: The power needed to modify `b_virtualserver_connectioninfo_view`. */
+  NeededModifyPowerVirtualServerConnectionInfoView:
+    "i_needed_modify_power_virtualserver_connectioninfo_view",
+  /** `i_needed_modify_power_virtualserver_channel_list`: The power needed to modify `b_virtualserver_channel_list`. */
+  NeededModifyPowerVirtualServerChannelList: "i_needed_modify_power_virtualserver_channel_list",
+  /** `i_needed_modify_power_virtualserver_channel_search`: The power needed to modify `b_virtualserver_channel_search`. */
+  NeededModifyPowerVirtualServerChannelSearch: "i_needed_modify_power_virtualserver_channel_search",
+  /** `i_needed_modify_power_virtualserver_client_list`: The power needed to modify `b_virtualserver_client_list`. */
+  NeededModifyPowerVirtualServerClientList: "i_needed_modify_power_virtualserver_client_list",
+  /** `i_needed_modify_power_virtualserver_client_search`: The power needed to modify `b_virtualserver_client_search`. */
+  NeededModifyPowerVirtualServerClientSearch: "i_needed_modify_power_virtualserver_client_search",
+  /** `i_needed_modify_power_virtualserver_client_dblist`: The power needed to modify `b_virtualserver_client_dblist`. */
+  NeededModifyPowerVirtualServerClientDBList: "i_needed_modify_power_virtualserver_client_dblist",
+  /** `i_needed_modify_power_virtualserver_client_dbsearch`: The power needed to modify `b_virtualserver_client_dbsearch`. */
+  NeededModifyPowerVirtualServerClientDBSearch:
+    "i_needed_modify_power_virtualserver_client_dbsearch",
+  /** `i_needed_modify_power_virtualserver_client_dbinfo`: The power needed to modify `b_virtualserver_client_dbinfo`. */
+  NeededModifyPowerVirtualServerClientDBInfo: "i_needed_modify_power_virtualserver_client_dbinfo",
+  /** `i_needed_modify_power_virtualserver_permission_find`: The power needed to modify `b_virtualserver_permission_find`. */
+  NeededModifyPowerVirtualServerPermissionFind:
+    "i_needed_modify_power_virtualserver_permission_find",
+  /** `i_needed_modify_power_virtualserver_custom_search`: The power needed to modify `b_virtualserver_custom_search`. */
+  NeededModifyPowerVirtualServerCustomSearch: "i_needed_modify_power_virtualserver_custom_search",
+  /** `i_needed_modify_power_virtualserver_start`: The power needed to modify `b_virtualserver_start`. */
+  NeededModifyPowerVirtualServerStart: "i_needed_modify_power_virtualserver_start",
+  /** `i_needed_modify_power_virtualserver_stop`: The power needed to modify `b_virtualserver_stop`. */
+  NeededModifyPowerVirtualServerStop: "i_needed_modify_power_virtualserver_stop",
+  /** `i_needed_modify_power_virtualserver_token_list`: The power needed to modify `b_virtualserver_token_list`. */
+  NeededModifyPowerVirtualServerTokenList: "i_needed_modify_power_virtualserver_token_list",
+  /** `i_needed_modify_power_virtualserver_token_add`: The power needed to modify `b_virtualserver_token_add`. */
+  NeededModifyPowerVirtualServerTokenAdd: "i_needed_modify_power_virtualserver_token_add",
+  /** `i_needed_modify_power_virtualserver_token_use`: The power needed to modify `b_virtualserver_token_use`. */
+  NeededModifyPowerVirtualServerTokenUse: "i_needed_modify_power_virtualserver_token_use",
+  /** `i_needed_modify_power_virtualserver_token_delete`: The power needed to modify `b_virtualserver_token_delete`. */
+  NeededModifyPowerVirtualServerTokenDelete: "i_needed_modify_power_virtualserver_token_delete",
+  /** `i_needed_modify_power_virtualserver_apikey_add`: The power needed to modify `b_virtualserver_apikey_add`. */
+  NeededModifyPowerVirtualServerAPIKeyAdd: "i_needed_modify_power_virtualserver_apikey_add",
+  /** `i_needed_modify_power_virtualserver_apikey_manage`: The power needed to modify `b_virtualserver_apikey_manage`. */
+  NeededModifyPowerVirtualServerAPIKeyManage: "i_needed_modify_power_virtualserver_apikey_manage",
+  /** `i_needed_modify_power_virtualserver_log_view`: The power needed to modify `b_virtualserver_log_view`. */
+  NeededModifyPowerVirtualServerLogView: "i_needed_modify_power_virtualserver_log_view",
+  /** `i_needed_modify_power_virtualserver_log_add`: The power needed to modify `b_virtualserver_log_add`. */
+  NeededModifyPowerVirtualServerLogAdd: "i_needed_modify_power_virtualserver_log_add",
+  /** `i_needed_modify_power_virtualserver_join_ignore_password`: The power needed to modify `b_virtualserver_join_ignore_password`. */
+  NeededModifyPowerVirtualServerJoinIgnorePassword:
+    "i_needed_modify_power_virtualserver_join_ignore_password",
+  /** `i_needed_modify_power_virtualserver_notify_register`: The power needed to modify `b_virtualserver_notify_register`. */
+  NeededModifyPowerVirtualServerNotifyRegister:
+    "i_needed_modify_power_virtualserver_notify_register",
+  /** `i_needed_modify_power_virtualserver_notify_unregister`: The power needed to modify `b_virtualserver_notify_unregister`. */
+  NeededModifyPowerVirtualServerNotifyUnregister:
+    "i_needed_modify_power_virtualserver_notify_unregister",
+  /** `i_needed_modify_power_virtualserver_snapshot_create`: The power needed to modify `b_virtualserver_snapshot_create`. */
+  NeededModifyPowerVirtualServerSnapshotCreate:
+    "i_needed_modify_power_virtualserver_snapshot_create",
+  /** `i_needed_modify_power_virtualserver_snapshot_deploy`: The power needed to modify `b_virtualserver_snapshot_deploy`. */
+  NeededModifyPowerVirtualServerSnapshotDeploy:
+    "i_needed_modify_power_virtualserver_snapshot_deploy",
+  /** `i_needed_modify_power_virtualserver_permission_reset`: The power needed to modify `b_virtualserver_permission_reset`. */
+  NeededModifyPowerVirtualServerPermissionReset:
+    "i_needed_modify_power_virtualserver_permission_reset",
+  /** `i_needed_modify_power_virtualserver_canonical_name_manage`: The power needed to modify `b_virtualserver_canonical_name_manage`. TeamSpeak 6 only. */
+  NeededModifyPowerVirtualServerCanonicalNameManage:
+    "i_needed_modify_power_virtualserver_canonical_name_manage",
+  /** `i_needed_modify_power_virtualserver_modify_name`: The power needed to modify `b_virtualserver_modify_name`. */
+  NeededModifyPowerVirtualServerModifyName: "i_needed_modify_power_virtualserver_modify_name",
+  /** `i_needed_modify_power_virtualserver_modify_welcomemessage`: The power needed to modify `b_virtualserver_modify_welcomemessage`. */
+  NeededModifyPowerVirtualServerModifyWelcomeMessage:
+    "i_needed_modify_power_virtualserver_modify_welcomemessage",
+  /** `i_needed_modify_power_virtualserver_modify_maxclients`: The power needed to modify `b_virtualserver_modify_maxclients`. */
+  NeededModifyPowerVirtualServerModifyMaxClients:
+    "i_needed_modify_power_virtualserver_modify_maxclients",
+  /** `i_needed_modify_power_virtualserver_modify_reserved_slots`: The power needed to modify `b_virtualserver_modify_reserved_slots`. */
+  NeededModifyPowerVirtualServerModifyReservedSlots:
+    "i_needed_modify_power_virtualserver_modify_reserved_slots",
+  /** `i_needed_modify_power_virtualserver_modify_password`: The power needed to modify `b_virtualserver_modify_password`. */
+  NeededModifyPowerVirtualServerModifyPassword:
+    "i_needed_modify_power_virtualserver_modify_password",
+  /** `i_needed_modify_power_virtualserver_modify_default_servergroup`: The power needed to modify `b_virtualserver_modify_default_servergroup`. */
+  NeededModifyPowerVirtualServerModifyDefaultServerGroup:
+    "i_needed_modify_power_virtualserver_modify_default_servergroup",
+  /** `i_needed_modify_power_virtualserver_modify_default_channelgroup`: The power needed to modify `b_virtualserver_modify_default_channelgroup`. */
+  NeededModifyPowerVirtualServerModifyDefaultChannelGroup:
+    "i_needed_modify_power_virtualserver_modify_default_channelgroup",
+  /** `i_needed_modify_power_virtualserver_modify_default_channeladmingroup`: The power needed to modify `b_virtualserver_modify_default_channeladmingroup`. */
+  NeededModifyPowerVirtualServerModifyDefaultChannelAdminGroup:
+    "i_needed_modify_power_virtualserver_modify_default_channeladmingroup",
+  /** `i_needed_modify_power_virtualserver_modify_channel_forced_silence`: The power needed to modify `b_virtualserver_modify_channel_forced_silence`. */
+  NeededModifyPowerVirtualServerModifyChannelForcedSilence:
+    "i_needed_modify_power_virtualserver_modify_channel_forced_silence",
+  /** `i_needed_modify_power_virtualserver_modify_complain`: The power needed to modify `b_virtualserver_modify_complain`. */
+  NeededModifyPowerVirtualServerModifyComplain:
+    "i_needed_modify_power_virtualserver_modify_complain",
+  /** `i_needed_modify_power_virtualserver_modify_antiflood`: The power needed to modify `b_virtualserver_modify_antiflood`. */
+  NeededModifyPowerVirtualServerModifyAntiflood:
+    "i_needed_modify_power_virtualserver_modify_antiflood",
+  /** `i_needed_modify_power_virtualserver_modify_ft_settings`: The power needed to modify `b_virtualserver_modify_ft_settings`. */
+  NeededModifyPowerVirtualServerModifyFTSettings:
+    "i_needed_modify_power_virtualserver_modify_ft_settings",
+  /** `i_needed_modify_power_virtualserver_modify_ft_quotas`: The power needed to modify `b_virtualserver_modify_ft_quotas`. */
+  NeededModifyPowerVirtualServerModifyFTQuotas:
+    "i_needed_modify_power_virtualserver_modify_ft_quotas",
+  /** `i_needed_modify_power_virtualserver_modify_hostmessage`: The power needed to modify `b_virtualserver_modify_hostmessage`. */
+  NeededModifyPowerVirtualServerModifyHostMessage:
+    "i_needed_modify_power_virtualserver_modify_hostmessage",
+  /** `i_needed_modify_power_virtualserver_modify_hostbanner`: The power needed to modify `b_virtualserver_modify_hostbanner`. */
+  NeededModifyPowerVirtualServerModifyHostBanner:
+    "i_needed_modify_power_virtualserver_modify_hostbanner",
+  /** `i_needed_modify_power_virtualserver_modify_hostbutton`: The power needed to modify `b_virtualserver_modify_hostbutton`. */
+  NeededModifyPowerVirtualServerModifyHostButton:
+    "i_needed_modify_power_virtualserver_modify_hostbutton",
+  /** `i_needed_modify_power_virtualserver_modify_port`: The power needed to modify `b_virtualserver_modify_port`. */
+  NeededModifyPowerVirtualServerModifyPort: "i_needed_modify_power_virtualserver_modify_port",
+  /** `i_needed_modify_power_virtualserver_modify_autostart`: The power needed to modify `b_virtualserver_modify_autostart`. */
+  NeededModifyPowerVirtualServerModifyAutoStart:
+    "i_needed_modify_power_virtualserver_modify_autostart",
+  /** `i_needed_modify_power_virtualserver_modify_needed_identity_security_level`: The power needed to modify `b_virtualserver_modify_needed_identity_security_level`. */
+  NeededModifyPowerVirtualServerModifyNeededIdentitySecurityLevel:
+    "i_needed_modify_power_virtualserver_modify_needed_identity_security_level",
+  /** `i_needed_modify_power_virtualserver_modify_priority_speaker_dimm_modificator`: The power needed to modify `b_virtualserver_modify_priority_speaker_dimm_modificator`. */
+  NeededModifyPowerVirtualServerModifyPrioritySpeakerDimmModificator:
+    "i_needed_modify_power_virtualserver_modify_priority_speaker_dimm_modificator",
+  /** `i_needed_modify_power_virtualserver_modify_log_settings`: The power needed to modify `b_virtualserver_modify_log_settings`. */
+  NeededModifyPowerVirtualServerModifyLogSettings:
+    "i_needed_modify_power_virtualserver_modify_log_settings",
+  /** `i_needed_modify_power_virtualserver_modify_min_client_version`: The power needed to modify `b_virtualserver_modify_min_client_version`. */
+  NeededModifyPowerVirtualServerModifyMinClientVersion:
+    "i_needed_modify_power_virtualserver_modify_min_client_version",
+  /** `i_needed_modify_power_virtualserver_modify_icon_id`: The power needed to modify `b_virtualserver_modify_icon_id`. */
+  NeededModifyPowerVirtualServerModifyIconID: "i_needed_modify_power_virtualserver_modify_icon_id",
+  /** `i_needed_modify_power_virtualserver_modify_weblist`: The power needed to modify `b_virtualserver_modify_weblist`. */
+  NeededModifyPowerVirtualServerModifyWebList: "i_needed_modify_power_virtualserver_modify_weblist",
+  /** `i_needed_modify_power_virtualserver_modify_codec_encryption_mode`: The power needed to modify `b_virtualserver_modify_codec_encryption_mode`. */
+  NeededModifyPowerVirtualServerModifyCodecEncryptionMode:
+    "i_needed_modify_power_virtualserver_modify_codec_encryption_mode",
+  /** `i_needed_modify_power_virtualserver_modify_temporary_passwords`: The power needed to modify `b_virtualserver_modify_temporary_passwords`. */
+  NeededModifyPowerVirtualServerModifyTemporaryPasswords:
+    "i_needed_modify_power_virtualserver_modify_temporary_passwords",
+  /** `i_needed_modify_power_virtualserver_modify_temporary_passwords_own`: The power needed to modify `b_virtualserver_modify_temporary_passwords_own`. */
+  NeededModifyPowerVirtualServerModifyTemporaryPasswordsOwn:
+    "i_needed_modify_power_virtualserver_modify_temporary_passwords_own",
+  /** `i_needed_modify_power_virtualserver_modify_channel_temp_delete_delay_default`: The power needed to modify `b_virtualserver_modify_channel_temp_delete_delay_default`. */
+  NeededModifyPowerVirtualServerModifyChannelTempDeleteDelayDefault:
+    "i_needed_modify_power_virtualserver_modify_channel_temp_delete_delay_default",
+  /** `i_needed_modify_power_virtualserver_modify_nickname`: The power needed to modify `b_virtualserver_modify_nickname`. */
+  NeededModifyPowerVirtualServerModifyNickname:
+    "i_needed_modify_power_virtualserver_modify_nickname",
+  /** `i_needed_modify_power_virtualserver_modify_integrations`: The power needed to modify `b_virtualserver_modify_integrations`. */
+  NeededModifyPowerVirtualServerModifyIntegrations:
+    "i_needed_modify_power_virtualserver_modify_integrations",
+  /** `i_needed_modify_power_virtualserver_modify_mytsid_connect`: The power needed to modify `b_virtualserver_modify_mytsid_connect`. TeamSpeak 6 only. */
+  NeededModifyPowerVirtualServerModifyMyTSIDConnect:
+    "i_needed_modify_power_virtualserver_modify_mytsid_connect",
+  /** `i_needed_modify_power_channel_min_depth`: The power needed to modify `i_channel_min_depth`. */
+  NeededModifyPowerChannelMinDepth: "i_needed_modify_power_channel_min_depth",
+  /** `i_needed_modify_power_channel_max_depth`: The power needed to modify `i_channel_max_depth`. */
+  NeededModifyPowerChannelMaxDepth: "i_needed_modify_power_channel_max_depth",
+  /** `i_needed_modify_power_channel_group_inheritance_end`: The power needed to modify `b_channel_group_inheritance_end`. */
+  NeededModifyPowerChannelGroupInheritanceEnd:
+    "i_needed_modify_power_channel_group_inheritance_end",
+  /** `i_needed_modify_power_channel_permission_modify_power`: The power needed to modify `i_channel_permission_modify_power`. */
+  NeededModifyPowerChannelPermissionModifyPower:
+    "i_needed_modify_power_channel_permission_modify_power",
+  /** `i_needed_modify_power_channel_needed_permission_modify_power`: The power needed to modify `i_channel_needed_permission_modify_power`. */
+  NeededModifyPowerChannelNeededPermissionModifyPower:
+    "i_needed_modify_power_channel_needed_permission_modify_power",
+  /** `i_needed_modify_power_channel_info_view`: The power needed to modify `b_channel_info_view`. */
+  NeededModifyPowerChannelInfoView: "i_needed_modify_power_channel_info_view",
+  /** `i_needed_modify_power_channel_create_child`: The power needed to modify `b_channel_create_child`. */
+  NeededModifyPowerChannelCreateChild: "i_needed_modify_power_channel_create_child",
+  /** `i_needed_modify_power_channel_create_permanent`: The power needed to modify `b_channel_create_permanent`. */
+  NeededModifyPowerChannelCreatePermanent: "i_needed_modify_power_channel_create_permanent",
+  /** `i_needed_modify_power_channel_create_semi_permanent`: The power needed to modify `b_channel_create_semi_permanent`. */
+  NeededModifyPowerChannelCreateSemiPermanent:
+    "i_needed_modify_power_channel_create_semi_permanent",
+  /** `i_needed_modify_power_channel_create_temporary`: The power needed to modify `b_channel_create_temporary`. */
+  NeededModifyPowerChannelCreateTemporary: "i_needed_modify_power_channel_create_temporary",
+  /** `i_needed_modify_power_channel_create_with_topic`: The power needed to modify `b_channel_create_with_topic`. */
+  NeededModifyPowerChannelCreateWithTopic: "i_needed_modify_power_channel_create_with_topic",
+  /** `i_needed_modify_power_channel_create_with_description`: The power needed to modify `b_channel_create_with_description`. */
+  NeededModifyPowerChannelCreateWithDescription:
+    "i_needed_modify_power_channel_create_with_description",
+  /** `i_needed_modify_power_channel_create_with_password`: The power needed to modify `b_channel_create_with_password`. */
+  NeededModifyPowerChannelCreateWithPassword: "i_needed_modify_power_channel_create_with_password",
+  /** `i_needed_modify_power_channel_create_with_banner`: The power needed to modify `b_channel_create_with_banner`. */
+  NeededModifyPowerChannelCreateWithBanner: "i_needed_modify_power_channel_create_with_banner",
+  /** `i_needed_modify_power_channel_create_modify_with_codec_opusvoice`: The power needed to modify `b_channel_create_modify_with_codec_opusvoice`. */
+  NeededModifyPowerChannelCreateModifyWithCodecOpusVoice:
+    "i_needed_modify_power_channel_create_modify_with_codec_opusvoice",
+  /** `i_needed_modify_power_channel_create_modify_with_codec_opusmusic`: The power needed to modify `b_channel_create_modify_with_codec_opusmusic`. */
+  NeededModifyPowerChannelCreateModifyWithCodecOpusMusic:
+    "i_needed_modify_power_channel_create_modify_with_codec_opusmusic",
+  /** `i_needed_modify_power_channel_create_modify_with_codec_maxquality`: The power needed to modify `i_channel_create_modify_with_codec_maxquality`. */
+  NeededModifyPowerChannelCreateModifyWithCodecMaxQuality:
+    "i_needed_modify_power_channel_create_modify_with_codec_maxquality",
+  /** `i_needed_modify_power_channel_create_modify_with_codec_latency_factor_min`: The power needed to modify `i_channel_create_modify_with_codec_latency_factor_min`. */
+  NeededModifyPowerChannelCreateModifyWithCodecLatencyFactorMin:
+    "i_needed_modify_power_channel_create_modify_with_codec_latency_factor_min",
+  /** `i_needed_modify_power_channel_create_with_maxclients`: The power needed to modify `b_channel_create_with_maxclients`. */
+  NeededModifyPowerChannelCreateWithMaxClients:
+    "i_needed_modify_power_channel_create_with_maxclients",
+  /** `i_needed_modify_power_channel_create_with_maxfamilyclients`: The power needed to modify `b_channel_create_with_maxfamilyclients`. */
+  NeededModifyPowerChannelCreateWithMaxFamilyClients:
+    "i_needed_modify_power_channel_create_with_maxfamilyclients",
+  /** `i_needed_modify_power_channel_create_with_sortorder`: The power needed to modify `b_channel_create_with_sortorder`. */
+  NeededModifyPowerChannelCreateWithSortOrder:
+    "i_needed_modify_power_channel_create_with_sortorder",
+  /** `i_needed_modify_power_channel_create_with_default`: The power needed to modify `b_channel_create_with_default`. */
+  NeededModifyPowerChannelCreateWithDefault: "i_needed_modify_power_channel_create_with_default",
+  /** `i_needed_modify_power_channel_create_with_needed_talk_power`: The power needed to modify `b_channel_create_with_needed_talk_power`. */
+  NeededModifyPowerChannelCreateWithNeededTalkPower:
+    "i_needed_modify_power_channel_create_with_needed_talk_power",
+  /** `i_needed_modify_power_channel_create_modify_with_force_password`: The power needed to modify `b_channel_create_modify_with_force_password`. */
+  NeededModifyPowerChannelCreateModifyWithForcePassword:
+    "i_needed_modify_power_channel_create_modify_with_force_password",
+  /** `i_needed_modify_power_channel_create_modify_with_temp_delete_delay`: The power needed to modify `i_channel_create_modify_with_temp_delete_delay`. */
+  NeededModifyPowerChannelCreateModifyWithTempDeleteDelay:
+    "i_needed_modify_power_channel_create_modify_with_temp_delete_delay",
+  /** `i_needed_modify_power_channel_modify_parent`: The power needed to modify `b_channel_modify_parent`. */
+  NeededModifyPowerChannelModifyParent: "i_needed_modify_power_channel_modify_parent",
+  /** `i_needed_modify_power_channel_modify_make_default`: The power needed to modify `b_channel_modify_make_default`. */
+  NeededModifyPowerChannelModifyMakeDefault: "i_needed_modify_power_channel_modify_make_default",
+  /** `i_needed_modify_power_channel_modify_make_permanent`: The power needed to modify `b_channel_modify_make_permanent`. */
+  NeededModifyPowerChannelModifyMakePermanent:
+    "i_needed_modify_power_channel_modify_make_permanent",
+  /** `i_needed_modify_power_channel_modify_make_semi_permanent`: The power needed to modify `b_channel_modify_make_semi_permanent`. */
+  NeededModifyPowerChannelModifyMakeSemiPermanent:
+    "i_needed_modify_power_channel_modify_make_semi_permanent",
+  /** `i_needed_modify_power_channel_modify_make_temporary`: The power needed to modify `b_channel_modify_make_temporary`. */
+  NeededModifyPowerChannelModifyMakeTemporary:
+    "i_needed_modify_power_channel_modify_make_temporary",
+  /** `i_needed_modify_power_channel_modify_name`: The power needed to modify `b_channel_modify_name`. */
+  NeededModifyPowerChannelModifyName: "i_needed_modify_power_channel_modify_name",
+  /** `i_needed_modify_power_channel_modify_topic`: The power needed to modify `b_channel_modify_topic`. */
+  NeededModifyPowerChannelModifyTopic: "i_needed_modify_power_channel_modify_topic",
+  /** `i_needed_modify_power_channel_modify_description`: The power needed to modify `b_channel_modify_description`. */
+  NeededModifyPowerChannelModifyDescription: "i_needed_modify_power_channel_modify_description",
+  /** `i_needed_modify_power_channel_modify_password`: The power needed to modify `b_channel_modify_password`. */
+  NeededModifyPowerChannelModifyPassword: "i_needed_modify_power_channel_modify_password",
+  /** `i_needed_modify_power_channel_modify_banner`: The power needed to modify `b_channel_modify_banner`. */
+  NeededModifyPowerChannelModifyBanner: "i_needed_modify_power_channel_modify_banner",
+  /** `i_needed_modify_power_channel_modify_codec`: The power needed to modify `b_channel_modify_codec`. */
+  NeededModifyPowerChannelModifyCodec: "i_needed_modify_power_channel_modify_codec",
+  /** `i_needed_modify_power_channel_modify_codec_quality`: The power needed to modify `b_channel_modify_codec_quality`. */
+  NeededModifyPowerChannelModifyCodecQuality: "i_needed_modify_power_channel_modify_codec_quality",
+  /** `i_needed_modify_power_channel_modify_codec_latency_factor`: The power needed to modify `b_channel_modify_codec_latency_factor`. */
+  NeededModifyPowerChannelModifyCodecLatencyFactor:
+    "i_needed_modify_power_channel_modify_codec_latency_factor",
+  /** `i_needed_modify_power_channel_modify_maxclients`: The power needed to modify `b_channel_modify_maxclients`. */
+  NeededModifyPowerChannelModifyMaxClients: "i_needed_modify_power_channel_modify_maxclients",
+  /** `i_needed_modify_power_channel_modify_maxfamilyclients`: The power needed to modify `b_channel_modify_maxfamilyclients`. */
+  NeededModifyPowerChannelModifyMaxFamilyClients:
+    "i_needed_modify_power_channel_modify_maxfamilyclients",
+  /** `i_needed_modify_power_channel_modify_sortorder`: The power needed to modify `b_channel_modify_sortorder`. */
+  NeededModifyPowerChannelModifySortOrder: "i_needed_modify_power_channel_modify_sortorder",
+  /** `i_needed_modify_power_channel_modify_needed_talk_power`: The power needed to modify `b_channel_modify_needed_talk_power`. */
+  NeededModifyPowerChannelModifyNeededTalkPower:
+    "i_needed_modify_power_channel_modify_needed_talk_power",
+  /** `i_needed_modify_power_channel_modify_power`: The power needed to modify `i_channel_modify_power`. */
+  NeededModifyPowerChannelModifyPower: "i_needed_modify_power_channel_modify_power",
+  /** `i_needed_modify_power_channel_needed_modify_power`: The power needed to modify `i_channel_needed_modify_power`. */
+  NeededModifyPowerChannelNeededModifyPower: "i_needed_modify_power_channel_needed_modify_power",
+  /** `i_needed_modify_power_channel_modify_make_codec_encrypted`: The power needed to modify `b_channel_modify_make_codec_encrypted`. */
+  NeededModifyPowerChannelModifyMakeCodecEncrypted:
+    "i_needed_modify_power_channel_modify_make_codec_encrypted",
+  /** `i_needed_modify_power_channel_modify_temp_delete_delay`: The power needed to modify `b_channel_modify_temp_delete_delay`. */
+  NeededModifyPowerChannelModifyTempDeleteDelay:
+    "i_needed_modify_power_channel_modify_temp_delete_delay",
+  /** `i_needed_modify_power_channel_modify_ft_quotas`: The power needed to modify `b_channel_modify_ft_quotas`. TeamSpeak 6 only. */
+  NeededModifyPowerChannelModifyFTQuotas: "i_needed_modify_power_channel_modify_ft_quotas",
+  /** `i_needed_modify_power_channel_delete_permanent`: The power needed to modify `b_channel_delete_permanent`. */
+  NeededModifyPowerChannelDeletePermanent: "i_needed_modify_power_channel_delete_permanent",
+  /** `i_needed_modify_power_channel_delete_semi_permanent`: The power needed to modify `b_channel_delete_semi_permanent`. */
+  NeededModifyPowerChannelDeleteSemiPermanent:
+    "i_needed_modify_power_channel_delete_semi_permanent",
+  /** `i_needed_modify_power_channel_delete_temporary`: The power needed to modify `b_channel_delete_temporary`. */
+  NeededModifyPowerChannelDeleteTemporary: "i_needed_modify_power_channel_delete_temporary",
+  /** `i_needed_modify_power_channel_delete_flag_force`: The power needed to modify `b_channel_delete_flag_force`. */
+  NeededModifyPowerChannelDeleteFlagForce: "i_needed_modify_power_channel_delete_flag_force",
+  /** `i_needed_modify_power_channel_delete_power`: The power needed to modify `i_channel_delete_power`. */
+  NeededModifyPowerChannelDeletePower: "i_needed_modify_power_channel_delete_power",
+  /** `i_needed_modify_power_channel_needed_delete_power`: The power needed to modify `i_channel_needed_delete_power`. */
+  NeededModifyPowerChannelNeededDeletePower: "i_needed_modify_power_channel_needed_delete_power",
+  /** `i_needed_modify_power_channel_join_permanent`: The power needed to modify `b_channel_join_permanent`. */
+  NeededModifyPowerChannelJoinPermanent: "i_needed_modify_power_channel_join_permanent",
+  /** `i_needed_modify_power_channel_join_semi_permanent`: The power needed to modify `b_channel_join_semi_permanent`. */
+  NeededModifyPowerChannelJoinSemiPermanent: "i_needed_modify_power_channel_join_semi_permanent",
+  /** `i_needed_modify_power_channel_join_temporary`: The power needed to modify `b_channel_join_temporary`. */
+  NeededModifyPowerChannelJoinTemporary: "i_needed_modify_power_channel_join_temporary",
+  /** `i_needed_modify_power_channel_join_ignore_password`: The power needed to modify `b_channel_join_ignore_password`. */
+  NeededModifyPowerChannelJoinIgnorePassword: "i_needed_modify_power_channel_join_ignore_password",
+  /** `i_needed_modify_power_channel_join_ignore_maxclients`: The power needed to modify `b_channel_join_ignore_maxclients`. */
+  NeededModifyPowerChannelJoinIgnoreMaxClients:
+    "i_needed_modify_power_channel_join_ignore_maxclients",
+  /** `i_needed_modify_power_channel_join_power`: The power needed to modify `i_channel_join_power`. */
+  NeededModifyPowerChannelJoinPower: "i_needed_modify_power_channel_join_power",
+  /** `i_needed_modify_power_channel_needed_join_power`: The power needed to modify `i_channel_needed_join_power`. */
+  NeededModifyPowerChannelNeededJoinPower: "i_needed_modify_power_channel_needed_join_power",
+  /** `i_needed_modify_power_channel_subscribe_power`: The power needed to modify `i_channel_subscribe_power`. */
+  NeededModifyPowerChannelSubscribePower: "i_needed_modify_power_channel_subscribe_power",
+  /** `i_needed_modify_power_channel_needed_subscribe_power`: The power needed to modify `i_channel_needed_subscribe_power`. */
+  NeededModifyPowerChannelNeededSubscribePower:
+    "i_needed_modify_power_channel_needed_subscribe_power",
+  /** `i_needed_modify_power_channel_description_view_power`: The power needed to modify `i_channel_description_view_power`. */
+  NeededModifyPowerChannelDescriptionViewPower:
+    "i_needed_modify_power_channel_description_view_power",
+  /** `i_needed_modify_power_channel_needed_description_view_power`: The power needed to modify `i_channel_needed_description_view_power`. */
+  NeededModifyPowerChannelNeededDescriptionViewPower:
+    "i_needed_modify_power_channel_needed_description_view_power",
+  /** `i_needed_modify_power_icon_id`: The power needed to modify `i_icon_id`. */
+  NeededModifyPowerIconID: "i_needed_modify_power_icon_id",
+  /** `i_needed_modify_power_max_icon_filesize`: The power needed to modify `i_max_icon_filesize`. */
+  NeededModifyPowerMaxIconFileSize: "i_needed_modify_power_max_icon_filesize",
+  /** `i_needed_modify_power_icon_manage`: The power needed to modify `b_icon_manage`. */
+  NeededModifyPowerIconManage: "i_needed_modify_power_icon_manage",
+  /** `i_needed_modify_power_group_is_permanent`: The power needed to modify `b_group_is_permanent`. */
+  NeededModifyPowerGroupIsPermanent: "i_needed_modify_power_group_is_permanent",
+  /** `i_needed_modify_power_group_auto_update_type`: The power needed to modify `i_group_auto_update_type`. */
+  NeededModifyPowerGroupAutoUpdateType: "i_needed_modify_power_group_auto_update_type",
+  /** `i_needed_modify_power_group_auto_update_max_value`: The power needed to modify `i_group_auto_update_max_value`. */
+  NeededModifyPowerGroupAutoUpdateMaxValue: "i_needed_modify_power_group_auto_update_max_value",
+  /** `i_needed_modify_power_group_sort_id`: The power needed to modify `i_group_sort_id`. */
+  NeededModifyPowerGroupSortID: "i_needed_modify_power_group_sort_id",
+  /** `i_needed_modify_power_group_show_name_in_tree`: The power needed to modify `i_group_show_name_in_tree`. */
+  NeededModifyPowerGroupShowNameInTree: "i_needed_modify_power_group_show_name_in_tree",
+  /** `i_needed_modify_power_virtualserver_servergroup_list`: The power needed to modify `b_virtualserver_servergroup_list`. */
+  NeededModifyPowerVirtualServerServerGroupList:
+    "i_needed_modify_power_virtualserver_servergroup_list",
+  /** `i_needed_modify_power_virtualserver_servergroup_permission_list`: The power needed to modify `b_virtualserver_servergroup_permission_list`. */
+  NeededModifyPowerVirtualServerServerGroupPermissionList:
+    "i_needed_modify_power_virtualserver_servergroup_permission_list",
+  /** `i_needed_modify_power_virtualserver_servergroup_client_list`: The power needed to modify `b_virtualserver_servergroup_client_list`. */
+  NeededModifyPowerVirtualServerServerGroupClientList:
+    "i_needed_modify_power_virtualserver_servergroup_client_list",
+  /** `i_needed_modify_power_virtualserver_channelgroup_list`: The power needed to modify `b_virtualserver_channelgroup_list`. */
+  NeededModifyPowerVirtualServerChannelGroupList:
+    "i_needed_modify_power_virtualserver_channelgroup_list",
+  /** `i_needed_modify_power_virtualserver_channelgroup_permission_list`: The power needed to modify `b_virtualserver_channelgroup_permission_list`. */
+  NeededModifyPowerVirtualServerChannelGroupPermissionList:
+    "i_needed_modify_power_virtualserver_channelgroup_permission_list",
+  /** `i_needed_modify_power_virtualserver_channelgroup_client_list`: The power needed to modify `b_virtualserver_channelgroup_client_list`. */
+  NeededModifyPowerVirtualServerChannelGroupClientList:
+    "i_needed_modify_power_virtualserver_channelgroup_client_list",
+  /** `i_needed_modify_power_virtualserver_client_permission_list`: The power needed to modify `b_virtualserver_client_permission_list`. */
+  NeededModifyPowerVirtualServerClientPermissionList:
+    "i_needed_modify_power_virtualserver_client_permission_list",
+  /** `i_needed_modify_power_virtualserver_channel_permission_list`: The power needed to modify `b_virtualserver_channel_permission_list`. */
+  NeededModifyPowerVirtualServerChannelPermissionList:
+    "i_needed_modify_power_virtualserver_channel_permission_list",
+  /** `i_needed_modify_power_virtualserver_channelclient_permission_list`: The power needed to modify `b_virtualserver_channelclient_permission_list`. */
+  NeededModifyPowerVirtualServerChannelClientPermissionList:
+    "i_needed_modify_power_virtualserver_channelclient_permission_list",
+  /** `i_needed_modify_power_virtualserver_servergroup_create`: The power needed to modify `b_virtualserver_servergroup_create`. */
+  NeededModifyPowerVirtualServerServerGroupCreate:
+    "i_needed_modify_power_virtualserver_servergroup_create",
+  /** `i_needed_modify_power_virtualserver_channelgroup_create`: The power needed to modify `b_virtualserver_channelgroup_create`. */
+  NeededModifyPowerVirtualServerChannelGroupCreate:
+    "i_needed_modify_power_virtualserver_channelgroup_create",
+  /** `i_needed_modify_power_group_modify_power`: The power needed to modify `i_group_modify_power`. */
+  NeededModifyPowerGroupModifyPower: "i_needed_modify_power_group_modify_power",
+  /** `i_needed_modify_power_group_needed_modify_power`: The power needed to modify `i_group_needed_modify_power`. */
+  NeededModifyPowerGroupNeededModifyPower: "i_needed_modify_power_group_needed_modify_power",
+  /** `i_needed_modify_power_group_member_add_power`: The power needed to modify `i_group_member_add_power`. */
+  NeededModifyPowerGroupMemberAddPower: "i_needed_modify_power_group_member_add_power",
+  /** `i_needed_modify_power_group_needed_member_add_power`: The power needed to modify `i_group_needed_member_add_power`. */
+  NeededModifyPowerGroupNeededMemberAddPower: "i_needed_modify_power_group_needed_member_add_power",
+  /** `i_needed_modify_power_group_member_remove_power`: The power needed to modify `i_group_member_remove_power`. */
+  NeededModifyPowerGroupMemberRemovePower: "i_needed_modify_power_group_member_remove_power",
+  /** `i_needed_modify_power_group_needed_member_remove_power`: The power needed to modify `i_group_needed_member_remove_power`. */
+  NeededModifyPowerGroupNeededMemberRemovePower:
+    "i_needed_modify_power_group_needed_member_remove_power",
+  /** `i_needed_modify_power_permission_modify_power`: The power needed to modify `i_permission_modify_power`. */
+  NeededModifyPowerPermissionModifyPower: "i_needed_modify_power_permission_modify_power",
+  /** `i_needed_modify_power_permission_modify_power_ignore`: The power needed to modify `b_permission_modify_power_ignore`. */
+  NeededModifyPowerPermissionModifyPowerIgnore:
+    "i_needed_modify_power_permission_modify_power_ignore",
+  /** `i_needed_modify_power_virtualserver_servergroup_delete`: The power needed to modify `b_virtualserver_servergroup_delete`. */
+  NeededModifyPowerVirtualServerServerGroupDelete:
+    "i_needed_modify_power_virtualserver_servergroup_delete",
+  /** `i_needed_modify_power_virtualserver_channelgroup_delete`: The power needed to modify `b_virtualserver_channelgroup_delete`. */
+  NeededModifyPowerVirtualServerChannelGroupDelete:
+    "i_needed_modify_power_virtualserver_channelgroup_delete",
+  /** `i_needed_modify_power_client_permission_modify_power`: The power needed to modify `i_client_permission_modify_power`. */
+  NeededModifyPowerClientPermissionModifyPower:
+    "i_needed_modify_power_client_permission_modify_power",
+  /** `i_needed_modify_power_client_needed_permission_modify_power`: The power needed to modify `i_client_needed_permission_modify_power`. */
+  NeededModifyPowerClientNeededPermissionModifyPower:
+    "i_needed_modify_power_client_needed_permission_modify_power",
+  /** `i_needed_modify_power_client_max_clones_uid`: The power needed to modify `i_client_max_clones_uid`. */
+  NeededModifyPowerClientMaxClonesUID: "i_needed_modify_power_client_max_clones_uid",
+  /** `i_needed_modify_power_client_max_idletime`: The power needed to modify `i_client_max_idletime`. */
+  NeededModifyPowerClientMaxIdleTime: "i_needed_modify_power_client_max_idletime",
+  /** `i_needed_modify_power_client_max_avatar_filesize`: The power needed to modify `i_client_max_avatar_filesize`. */
+  NeededModifyPowerClientMaxAvatarFileSize: "i_needed_modify_power_client_max_avatar_filesize",
+  /** `i_needed_modify_power_client_max_channel_subscriptions`: The power needed to modify `i_client_max_channel_subscriptions`. */
+  NeededModifyPowerClientMaxChannelSubscriptions:
+    "i_needed_modify_power_client_max_channel_subscriptions",
+  /** `i_needed_modify_power_client_is_priority_speaker`: The power needed to modify `b_client_is_priority_speaker`. */
+  NeededModifyPowerClientIsPrioritySpeaker: "i_needed_modify_power_client_is_priority_speaker",
+  /** `i_needed_modify_power_client_skip_channelgroup_permissions`: The power needed to modify `b_client_skip_channelgroup_permissions`. */
+  NeededModifyPowerClientSkipChannelGroupPermissions:
+    "i_needed_modify_power_client_skip_channelgroup_permissions",
+  /** `i_needed_modify_power_client_force_push_to_talk`: The power needed to modify `b_client_force_push_to_talk`. */
+  NeededModifyPowerClientForcePushToTalk: "i_needed_modify_power_client_force_push_to_talk",
+  /** `i_needed_modify_power_client_ignore_bans`: The power needed to modify `b_client_ignore_bans`. */
+  NeededModifyPowerClientIgnoreBans: "i_needed_modify_power_client_ignore_bans",
+  /** `i_needed_modify_power_client_ignore_antiflood`: The power needed to modify `b_client_ignore_antiflood`. */
+  NeededModifyPowerClientIgnoreAntiflood: "i_needed_modify_power_client_ignore_antiflood",
+  /** `i_needed_modify_power_client_use_reserved_slot`: The power needed to modify `b_client_use_reserved_slot`. */
+  NeededModifyPowerClientUseReservedSlot: "i_needed_modify_power_client_use_reserved_slot",
+  /** `i_needed_modify_power_client_use_channel_commander`: The power needed to modify `b_client_use_channel_commander`. */
+  NeededModifyPowerClientUseChannelCommander: "i_needed_modify_power_client_use_channel_commander",
+  /** `i_needed_modify_power_client_request_talker`: The power needed to modify `b_client_request_talker`. */
+  NeededModifyPowerClientRequestTalker: "i_needed_modify_power_client_request_talker",
+  /** `i_needed_modify_power_client_avatar_delete_other`: The power needed to modify `b_client_avatar_delete_other`. */
+  NeededModifyPowerClientAvatarDeleteOther: "i_needed_modify_power_client_avatar_delete_other",
+  /** `i_needed_modify_power_client_is_sticky`: The power needed to modify `b_client_is_sticky`. */
+  NeededModifyPowerClientIsSticky: "i_needed_modify_power_client_is_sticky",
+  /** `i_needed_modify_power_client_ignore_sticky`: The power needed to modify `b_client_ignore_sticky`. */
+  NeededModifyPowerClientIgnoreSticky: "i_needed_modify_power_client_ignore_sticky",
+  /** `i_needed_modify_power_client_info_view`: The power needed to modify `b_client_info_view`. */
+  NeededModifyPowerClientInfoView: "i_needed_modify_power_client_info_view",
+  /** `i_needed_modify_power_client_permissionoverview_view`: The power needed to modify `b_client_permissionoverview_view`. */
+  NeededModifyPowerClientPermissionOverviewView:
+    "i_needed_modify_power_client_permissionoverview_view",
+  /** `i_needed_modify_power_client_permissionoverview_own`: The power needed to modify `b_client_permissionoverview_own`. */
+  NeededModifyPowerClientPermissionOverviewOwn:
+    "i_needed_modify_power_client_permissionoverview_own",
+  /** `i_needed_modify_power_client_remoteaddress_view`: The power needed to modify `b_client_remoteaddress_view`. */
+  NeededModifyPowerClientRemoteAddressView: "i_needed_modify_power_client_remoteaddress_view",
+  /** `i_needed_modify_power_client_serverquery_view_power`: The power needed to modify `i_client_serverquery_view_power`. */
+  NeededModifyPowerClientServerQueryViewPower:
+    "i_needed_modify_power_client_serverquery_view_power",
+  /** `i_needed_modify_power_client_needed_serverquery_view_power`: The power needed to modify `i_client_needed_serverquery_view_power`. */
+  NeededModifyPowerClientNeededServerQueryViewPower:
+    "i_needed_modify_power_client_needed_serverquery_view_power",
+  /** `i_needed_modify_power_client_custom_info_view`: The power needed to modify `b_client_custom_info_view`. */
+  NeededModifyPowerClientCustomInfoView: "i_needed_modify_power_client_custom_info_view",
+  /** `i_needed_modify_power_client_kick_from_server_power`: The power needed to modify `i_client_kick_from_server_power`. */
+  NeededModifyPowerClientKickFromServerPower: "i_needed_modify_power_client_kick_from_server_power",
+  /** `i_needed_modify_power_client_needed_kick_from_server_power`: The power needed to modify `i_client_needed_kick_from_server_power`. */
+  NeededModifyPowerClientNeededKickFromServerPower:
+    "i_needed_modify_power_client_needed_kick_from_server_power",
+  /** `i_needed_modify_power_client_kick_from_channel_power`: The power needed to modify `i_client_kick_from_channel_power`. */
+  NeededModifyPowerClientKickFromChannelPower:
+    "i_needed_modify_power_client_kick_from_channel_power",
+  /** `i_needed_modify_power_client_needed_kick_from_channel_power`: The power needed to modify `i_client_needed_kick_from_channel_power`. */
+  NeededModifyPowerClientNeededKickFromChannelPower:
+    "i_needed_modify_power_client_needed_kick_from_channel_power",
+  /** `i_needed_modify_power_client_ban_power`: The power needed to modify `i_client_ban_power`. */
+  NeededModifyPowerClientBanPower: "i_needed_modify_power_client_ban_power",
+  /** `i_needed_modify_power_client_needed_ban_power`: The power needed to modify `i_client_needed_ban_power`. */
+  NeededModifyPowerClientNeededBanPower: "i_needed_modify_power_client_needed_ban_power",
+  /** `i_needed_modify_power_client_move_power`: The power needed to modify `i_client_move_power`. */
+  NeededModifyPowerClientMovePower: "i_needed_modify_power_client_move_power",
+  /** `i_needed_modify_power_client_needed_move_power`: The power needed to modify `i_client_needed_move_power`. */
+  NeededModifyPowerClientNeededMovePower: "i_needed_modify_power_client_needed_move_power",
+  /** `i_needed_modify_power_client_complain_power`: The power needed to modify `i_client_complain_power`. */
+  NeededModifyPowerClientComplainPower: "i_needed_modify_power_client_complain_power",
+  /** `i_needed_modify_power_client_needed_complain_power`: The power needed to modify `i_client_needed_complain_power`. */
+  NeededModifyPowerClientNeededComplainPower: "i_needed_modify_power_client_needed_complain_power",
+  /** `i_needed_modify_power_client_complain_list`: The power needed to modify `b_client_complain_list`. */
+  NeededModifyPowerClientComplainList: "i_needed_modify_power_client_complain_list",
+  /** `i_needed_modify_power_client_complain_delete_own`: The power needed to modify `b_client_complain_delete_own`. */
+  NeededModifyPowerClientComplainDeleteOwn: "i_needed_modify_power_client_complain_delete_own",
+  /** `i_needed_modify_power_client_complain_delete`: The power needed to modify `b_client_complain_delete`. */
+  NeededModifyPowerClientComplainDelete: "i_needed_modify_power_client_complain_delete",
+  /** `i_needed_modify_power_client_ban_list`: The power needed to modify `b_client_ban_list`. */
+  NeededModifyPowerClientBanList: "i_needed_modify_power_client_ban_list",
+  /** `i_needed_modify_power_client_ban_create`: The power needed to modify `b_client_ban_create`. */
+  NeededModifyPowerClientBanCreate: "i_needed_modify_power_client_ban_create",
+  /** `i_needed_modify_power_client_ban_delete_own`: The power needed to modify `b_client_ban_delete_own`. */
+  NeededModifyPowerClientBanDeleteOwn: "i_needed_modify_power_client_ban_delete_own",
+  /** `i_needed_modify_power_client_ban_delete`: The power needed to modify `b_client_ban_delete`. */
+  NeededModifyPowerClientBanDelete: "i_needed_modify_power_client_ban_delete",
+  /** `i_needed_modify_power_client_ban_max_bantime`: The power needed to modify `i_client_ban_max_bantime`. */
+  NeededModifyPowerClientBanMaxBanTime: "i_needed_modify_power_client_ban_max_bantime",
+  /** `i_needed_modify_power_channel_textmessage_delete`: The power needed to modify `b_channel_textmessage_delete`. TeamSpeak 6 only. */
+  NeededModifyPowerChannelTextMessageDelete: "i_needed_modify_power_channel_textmessage_delete",
+  /** `i_needed_modify_power_client_private_textmessage_power`: The power needed to modify `i_client_private_textmessage_power`. */
+  NeededModifyPowerClientPrivateTextMessagePower:
+    "i_needed_modify_power_client_private_textmessage_power",
+  /** `i_needed_modify_power_client_needed_private_textmessage_power`: The power needed to modify `i_client_needed_private_textmessage_power`. */
+  NeededModifyPowerClientNeededPrivateTextMessagePower:
+    "i_needed_modify_power_client_needed_private_textmessage_power",
+  /** `i_needed_modify_power_client_server_textmessage_send`: The power needed to modify `b_client_server_textmessage_send`. */
+  NeededModifyPowerClientServerTextMessageSend:
+    "i_needed_modify_power_client_server_textmessage_send",
+  /** `i_needed_modify_power_client_channel_textmessage_send`: The power needed to modify `b_client_channel_textmessage_send`. */
+  NeededModifyPowerClientChannelTextMessageSend:
+    "i_needed_modify_power_client_channel_textmessage_send",
+  /** `i_needed_modify_power_client_offline_textmessage_send`: The power needed to modify `b_client_offline_textmessage_send`. */
+  NeededModifyPowerClientOfflineTextMessageSend:
+    "i_needed_modify_power_client_offline_textmessage_send",
+  /** `i_needed_modify_power_client_talk_power`: The power needed to modify `i_client_talk_power`. */
+  NeededModifyPowerClientTalkPower: "i_needed_modify_power_client_talk_power",
+  /** `i_needed_modify_power_client_needed_talk_power`: The power needed to modify `i_client_needed_talk_power`. */
+  NeededModifyPowerClientNeededTalkPower: "i_needed_modify_power_client_needed_talk_power",
+  /** `i_needed_modify_power_client_poke_power`: The power needed to modify `i_client_poke_power`. */
+  NeededModifyPowerClientPokePower: "i_needed_modify_power_client_poke_power",
+  /** `i_needed_modify_power_client_needed_poke_power`: The power needed to modify `i_client_needed_poke_power`. */
+  NeededModifyPowerClientNeededPokePower: "i_needed_modify_power_client_needed_poke_power",
+  /** `i_needed_modify_power_client_set_flag_talker`: The power needed to modify `b_client_set_flag_talker`. */
+  NeededModifyPowerClientSetFlagTalker: "i_needed_modify_power_client_set_flag_talker",
+  /** `i_needed_modify_power_client_whisper_power`: The power needed to modify `i_client_whisper_power`. */
+  NeededModifyPowerClientWhisperPower: "i_needed_modify_power_client_whisper_power",
+  /** `i_needed_modify_power_client_needed_whisper_power`: The power needed to modify `i_client_needed_whisper_power`. */
+  NeededModifyPowerClientNeededWhisperPower: "i_needed_modify_power_client_needed_whisper_power",
+  /** `i_needed_modify_power_client_modify_description`: The power needed to modify `b_client_modify_description`. */
+  NeededModifyPowerClientModifyDescription: "i_needed_modify_power_client_modify_description",
+  /** `i_needed_modify_power_client_modify_own_description`: The power needed to modify `b_client_modify_own_description`. */
+  NeededModifyPowerClientModifyOwnDescription:
+    "i_needed_modify_power_client_modify_own_description",
+  /** `i_needed_modify_power_client_modify_dbproperties`: The power needed to modify `b_client_modify_dbproperties`. */
+  NeededModifyPowerClientModifyDBProperties: "i_needed_modify_power_client_modify_dbproperties",
+  /** `i_needed_modify_power_client_delete_dbproperties`: The power needed to modify `b_client_delete_dbproperties`. */
+  NeededModifyPowerClientDeleteDBProperties: "i_needed_modify_power_client_delete_dbproperties",
+  /** `i_needed_modify_power_client_create_modify_serverquery_login`: The power needed to modify `b_client_create_modify_serverquery_login`. */
+  NeededModifyPowerClientCreateModifyServerQueryLogin:
+    "i_needed_modify_power_client_create_modify_serverquery_login",
+  /** `i_needed_modify_power_ft_ignore_password`: The power needed to modify `b_ft_ignore_password`. */
+  NeededModifyPowerFTIgnorePassword: "i_needed_modify_power_ft_ignore_password",
+  /** `i_needed_modify_power_ft_transfer_list`: The power needed to modify `b_ft_transfer_list`. */
+  NeededModifyPowerFTTransferList: "i_needed_modify_power_ft_transfer_list",
+  /** `i_needed_modify_power_ft_file_upload_power`: The power needed to modify `i_ft_file_upload_power`. */
+  NeededModifyPowerFTFileUploadPower: "i_needed_modify_power_ft_file_upload_power",
+  /** `i_needed_modify_power_ft_needed_file_upload_power`: The power needed to modify `i_ft_needed_file_upload_power`. */
+  NeededModifyPowerFTNeededFileUploadPower: "i_needed_modify_power_ft_needed_file_upload_power",
+  /** `i_needed_modify_power_ft_file_download_power`: The power needed to modify `i_ft_file_download_power`. */
+  NeededModifyPowerFTFileDownloadPower: "i_needed_modify_power_ft_file_download_power",
+  /** `i_needed_modify_power_ft_needed_file_download_power`: The power needed to modify `i_ft_needed_file_download_power`. */
+  NeededModifyPowerFTNeededFileDownloadPower: "i_needed_modify_power_ft_needed_file_download_power",
+  /** `i_needed_modify_power_ft_file_delete_power`: The power needed to modify `i_ft_file_delete_power`. */
+  NeededModifyPowerFTFileDeletePower: "i_needed_modify_power_ft_file_delete_power",
+  /** `i_needed_modify_power_ft_needed_file_delete_power`: The power needed to modify `i_ft_needed_file_delete_power`. */
+  NeededModifyPowerFTNeededFileDeletePower: "i_needed_modify_power_ft_needed_file_delete_power",
+  /** `i_needed_modify_power_ft_file_rename_power`: The power needed to modify `i_ft_file_rename_power`. */
+  NeededModifyPowerFTFileRenamePower: "i_needed_modify_power_ft_file_rename_power",
+  /** `i_needed_modify_power_ft_needed_file_rename_power`: The power needed to modify `i_ft_needed_file_rename_power`. */
+  NeededModifyPowerFTNeededFileRenamePower: "i_needed_modify_power_ft_needed_file_rename_power",
+  /** `i_needed_modify_power_ft_file_browse_power`: The power needed to modify `i_ft_file_browse_power`. */
+  NeededModifyPowerFTFileBrowsePower: "i_needed_modify_power_ft_file_browse_power",
+  /** `i_needed_modify_power_ft_needed_file_browse_power`: The power needed to modify `i_ft_needed_file_browse_power`. */
+  NeededModifyPowerFTNeededFileBrowsePower: "i_needed_modify_power_ft_needed_file_browse_power",
+  /** `i_needed_modify_power_ft_directory_create_power`: The power needed to modify `i_ft_directory_create_power`. */
+  NeededModifyPowerFTDirectoryCreatePower: "i_needed_modify_power_ft_directory_create_power",
+  /** `i_needed_modify_power_ft_needed_directory_create_power`: The power needed to modify `i_ft_needed_directory_create_power`. */
+  NeededModifyPowerFTNeededDirectoryCreatePower:
+    "i_needed_modify_power_ft_needed_directory_create_power",
+  /** `i_needed_modify_power_ft_quota_mb_download_per_client`: The power needed to modify `i_ft_quota_mb_download_per_client`. */
+  NeededModifyPowerFTQuotaMBDownloadPerClient:
+    "i_needed_modify_power_ft_quota_mb_download_per_client",
+  /** `i_needed_modify_power_ft_quota_mb_upload_per_client`: The power needed to modify `i_ft_quota_mb_upload_per_client`. */
+  NeededModifyPowerFTQuotaMBUploadPerClient: "i_needed_modify_power_ft_quota_mb_upload_per_client",
+  /** `i_needed_modify_power_ft_storage_mb_per_client`: The power needed to modify `i_ft_storage_mb_per_client`. TeamSpeak 6 only. */
+  NeededModifyPowerFTStorageMBPerClient: "i_needed_modify_power_ft_storage_mb_per_client",
+  /** `i_needed_modify_power_ft_max_file_size_mb`: The power needed to modify `i_ft_max_file_size_mb`. TeamSpeak 6 only. */
+  NeededModifyPowerFTMaxFileSizeMB: "i_needed_modify_power_ft_max_file_size_mb",
 } as const;
 
 /** The permission names; see {@link PermissionName}'s entries for what each allows. */
