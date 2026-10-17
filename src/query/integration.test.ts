@@ -153,11 +153,24 @@ function knownHostsLine(key: Pick<SshHostKey, "keyType" | "key">): string {
   return `[${SSH_HOST}]:${SSH_PORT} ${key.keyType} ${Buffer.from(key.key).toString("base64")}\n`;
 }
 
+/** The key the SSH server presented, once {@link presentedSshKey} has asked. */
+let presentedKey: Promise<SshHostKey> | undefined;
+
 /**
- * The key the SSH server presents. The check runs before the login, so a probe
+ * The key the SSH server presents. It does not change during a run, so it is
+ * probed once: every probe is another connection, and TeamSpeak 3 lets an
+ * address hold only five at a time.
+ */
+function presentedSshKey(): Promise<SshHostKey> {
+  presentedKey ??= probeSshKey();
+  return presentedKey;
+}
+
+/**
+ * Ask the SSH server for its key. The check runs before the login, so a probe
  * that refuses the key has seen it and sent nothing.
  */
-async function presentedSshKey(): Promise<SshHostKey> {
+async function probeSshKey(): Promise<SshHostKey> {
   let presented: SshHostKey | undefined;
   await connectSsh({
     host: SSH_HOST,
