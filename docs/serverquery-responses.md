@@ -39,6 +39,17 @@ three on, the same suite passing over each:
   lifetime=0`. With no key the answer is 401 with code 5124 ("missing apikey"),
   where TS6 serves a guest, and a wrong key is 401 with 5122. A key of `manage`
   scope is still refused `servernotifyregister`, with 5120.
+- TS3's WebQuery runs every command on a virtual server, the first one when the
+  path names none, so a command that differs between the instance and a server
+  has only its server form there: `queryloginadd client_login_name=…` makes a
+  global login over raw TCP and SSH with no server selected, and answers 1539
+  over WebQuery. An unknown command is 1538 over WebQuery (as on TS6) and 256
+  over raw TCP and SSH.
+- TS3's SSH server offers `rsa-sha2-512`, `rsa-sha2-256` and `ssh-rsa` for its
+  host key and signs the key exchange with `rsa-sha2-512` whichever the client
+  chose, so a client that asks for `rsa-sha2-256` first is refused by its own
+  library. OpenSSH and `ssh2` agree with it; Go's library needs `rsa-sha2-512`
+  put first.
 - A TS3 SSH session whose client closes the connection without `quit` can stay
   on the server, as a query client in `clientlist`, for minutes at least; enough of them and the address gets no new connections (an address is
   allowed five at once). The SSH and raw transports therefore say `quit`
