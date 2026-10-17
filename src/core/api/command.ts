@@ -436,6 +436,11 @@ export function readFields(
  * indistinguishable from ours, channel groups as much as server groups, and
  * the id returned may be theirs rather than the one we just made. That is a
  * limit of what the notification reports, not of this function.
+ *
+ * TeamSpeak 6's WebQuery occasionally answers a create that succeeded with no
+ * row at all. That case is not handled here: see {@link recoveredGroupID},
+ * which the four group-creating functions use, and which looks the group up by
+ * name and type.
  */
 export function createdGroupID(
   rows: ReadonlyArray<Record<string, string>>,
@@ -454,6 +459,33 @@ export function createdGroupID(
     throw new NoDataError(command, `the server did not report the new group "${name}"`);
   }
   return id;
+}
+
+/**
+ * The id of the group a create or copy just made, as {@link createdGroupID}
+ * finds it, or, when the answer carries no group row and no id, by listing the
+ * groups and taking the one with the requested name and type.
+ *
+ * TeamSpeak 6's WebQuery occasionally answers a successful create with no data.
+ * A server refuses a duplicate name within one type, so a group matching both
+ * is the one just created. A NoDataError is thrown only when none matches.
+ */
+export async function recoveredGroupID(
+  rows: ReadonlyArray<Record<string, string>>,
+  idKey: "sgid" | "cgid",
+  name: string,
+  type: number,
+  command: string,
+  listGroups: () => Promise<ReadonlyArray<{ id: bigint; name: string; type: number }>>,
+): Promise<bigint> {
+  if (rows.some((row) => row["name"] !== undefined || (row[idKey] ?? "") !== "")) {
+    return createdGroupID(rows, idKey, name, command);
+  }
+  const found = (await listGroups()).find((g) => g.name === name && g.type === type);
+  if (found === undefined) {
+    throw new NoDataError(command, `the server did not report the new group "${name}"`);
+  }
+  return found.id;
 }
 
 /**

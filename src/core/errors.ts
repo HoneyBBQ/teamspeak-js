@@ -189,6 +189,14 @@ export class AlreadyConnectedError extends TeamspeakError {
  *
  * Without it the caller would get an id of 0 or an object of empty fields,
  * which reads like a real answer.
+ *
+ * From a command that creates something, this means the command took effect:
+ * TS6 WebQuery occasionally answers a successful create with no data. Do not
+ * retry blindly, or a second object is made — or the retry is refused as a
+ * duplicate. Creating a channel or a group looks the new one up by name, and
+ * throws this only when none is found; a privilege key cannot be told apart
+ * from an identical one, and an API key's secret is never listed, so those two
+ * throw it whenever the answer lacks the key.
  */
 export class NoDataError extends TeamspeakError {
   /** {@inheritDoc TeamspeakError.kind} */

@@ -35,6 +35,20 @@ import {
   TextMessageTarget,
   addAPIKey,
   addBan,
+  copyChannelGroup,
+  copyServerGroup,
+  createChannelGroup,
+  createServerGroup,
+  deleteChannelGroup,
+  deleteServerGroup,
+  listChannelGroups,
+  listServerGroups,
+  asChannelGroupID,
+  asServerGroupID,
+  GroupType,
+  type ChannelGroupID,
+  type CommandExecutor,
+  type ServerGroupID,
   addQueryLogin,
   createChannel,
   createServerSnapshot,
@@ -899,5 +913,68 @@ describe.skipIf(SKIP)("Integration — ServerQuery client", () => {
       }
     },
     40_000,
+  );
+});
+
+describe.skipIf(SKIP)("Integration — group creates whose answer carries no data", () => {
+  it.each(KINDS)(
+    "finds the new group by name and type over %s",
+    async (kind) => {
+      const client = new QueryClient(optionsFor(kind));
+      if (kind === "ssh") sshKnownHosts ||= knownHostsLine(await presentedSshKey());
+      await connectWithRetries(client);
+      // The server's quirk cannot be forced, so the answer's rows are dropped
+      // for the create commands alone.
+      const dropping: CommandExecutor = {
+        send: async (request, options) => {
+          const rows = await client.send(request, options);
+          return /^(servergroup|channelgroup)(add|copy)$/.test(request.command) ? [] : rows;
+        },
+      };
+      const name = `recover-${Date.now()}`;
+      const sgids: ServerGroupID[] = [];
+      const cgids: ChannelGroupID[] = [];
+      try {
+        const sg = await createServerGroup(dropping, name, GroupType.Regular);
+        sgids.push(sg);
+        const listedSG = (await listServerGroups(client)).find((g) => g.id === sg);
+        console.log(`${kind}: servergrouplist type=${String(listedSG?.type)}`);
+        expect(listedSG).toMatchObject({ name, type: GroupType.Regular });
+        const sgCopy = await copyServerGroup(
+          dropping,
+          sg,
+          asServerGroupID(0n),
+          `${name}-c`,
+          GroupType.Regular,
+        );
+        sgids.push(sgCopy);
+        expect(sgCopy).not.toBe(sg);
+        expect((await listServerGroups(client)).find((g) => g.id === sgCopy)?.name).toBe(
+          `${name}-c`,
+        );
+
+        const cg = await createChannelGroup(dropping, name, GroupType.Regular);
+        cgids.push(cg);
+        const listedCG = (await listChannelGroups(client)).find((g) => g.id === cg);
+        console.log(`${kind}: channelgrouplist type=${String(listedCG?.type)}`);
+        expect(listedCG).toMatchObject({ name, type: GroupType.Regular });
+        const cgCopy = await copyChannelGroup(
+          dropping,
+          cg,
+          asChannelGroupID(0n),
+          `${name}-c`,
+          GroupType.Regular,
+        );
+        cgids.push(cgCopy);
+        expect(cgCopy).not.toBe(cg);
+      } finally {
+        for (const id of sgids)
+          await deleteServerGroup(client, id, { force: true }).catch(() => {});
+        for (const id of cgids)
+          await deleteChannelGroup(client, id, { force: true }).catch(() => {});
+        await client.disconnect().catch(() => {});
+      }
+    },
+    60_000,
   );
 });

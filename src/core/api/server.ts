@@ -20,7 +20,7 @@ import {
   parsePermission,
   permissionParam,
   rawProperties,
-  createdGroupID,
+  recoveredGroupID,
   str,
   big,
   num,
@@ -379,6 +379,10 @@ export async function getServerIDByPort(
  * `type` is required, and always sent: the server's own default is
  * `GroupType.Regular`, while the type's first value is `Template`, so leaving
  * it to a default on either side is a trap.
+ *
+ * When the server reports success without the new id, as TS6 WebQuery
+ * occasionally does, the group is found by name and type ({@link listServerGroups}); a
+ * NoDataError is thrown only when none matches.
  */
 export async function createServerGroup(
   client: CommandExecutor,
@@ -395,7 +399,11 @@ export async function createServerGroup(
     ],
     options,
   );
-  return asServerGroupID(createdGroupID(rows, "sgid", name, "servergroupadd"));
+  return asServerGroupID(
+    await recoveredGroupID(rows, "sgid", name, type, "servergroupadd", () =>
+      listServerGroups(client, options),
+    ),
+  );
 }
 
 /** Delete a server group. */
@@ -436,6 +444,10 @@ export async function renameServerGroup(
 /**
  * Copy a server group's permissions onto another; a `targetGroupID` of 0 makes
  * the server create a new group named `name`, of `type`.
+ *
+ * When the server reports success without the new id, as TS6 WebQuery
+ * occasionally does, the group is found by name and type ({@link listServerGroups}); a
+ * NoDataError is thrown only when none matches.
  */
 export async function copyServerGroup(
   client: CommandExecutor,
@@ -458,7 +470,11 @@ export async function copyServerGroup(
   );
   // Copying onto an existing group keeps that group's id.
   if (targetGroupID !== 0n) return targetGroupID;
-  return asServerGroupID(createdGroupID(rows, "sgid", name, "servergroupcopy"));
+  return asServerGroupID(
+    await recoveredGroupID(rows, "sgid", name, type, "servergroupcopy", () =>
+      listServerGroups(client, options),
+    ),
+  );
 }
 
 /** Add a client to a server group. */

@@ -14,7 +14,7 @@ import {
   nonEmpty,
   parsePermission,
   permissionParam,
-  createdGroupID,
+  recoveredGroupID,
   str,
   big,
   num,
@@ -96,6 +96,10 @@ export async function listChannelGroups(
  * `type` is required, and always sent: the server's own default is
  * `GroupType.Regular`, while the type's first value is `Template`, so leaving
  * it to a default on either side is a trap.
+ *
+ * When the server reports success without the new id, as TS6 WebQuery
+ * occasionally does, the group is found by name and type ({@link listChannelGroups}); a
+ * NoDataError is thrown only when none matches.
  */
 export async function createChannelGroup(
   client: CommandExecutor,
@@ -112,7 +116,11 @@ export async function createChannelGroup(
     ],
     options,
   );
-  return asChannelGroupID(createdGroupID(rows, "cgid", name, "channelgroupadd"));
+  return asChannelGroupID(
+    await recoveredGroupID(rows, "cgid", name, type, "channelgroupadd", () =>
+      listChannelGroups(client, options),
+    ),
+  );
 }
 
 /** How a group is deleted. */
@@ -159,6 +167,10 @@ export async function renameChannelGroup(
 /**
  * Copy a channel group's permissions onto another; a `targetGroupID` of 0
  * makes the server create a new group named `name`, of `type`.
+ *
+ * When the server reports success without the new id, as TS6 WebQuery
+ * occasionally does, the group is found by name and type ({@link listChannelGroups}); a
+ * NoDataError is thrown only when none matches.
  */
 export async function copyChannelGroup(
   client: CommandExecutor,
@@ -181,7 +193,11 @@ export async function copyChannelGroup(
   );
   // Copying onto an existing group keeps that group's id.
   if (targetGroupID !== 0n) return targetGroupID;
-  return asChannelGroupID(createdGroupID(rows, "cgid", name, "channelgroupcopy"));
+  return asChannelGroupID(
+    await recoveredGroupID(rows, "cgid", name, type, "channelgroupcopy", () =>
+      listChannelGroups(client, options),
+    ),
+  );
 }
 
 /**
@@ -674,7 +690,14 @@ function keyParams(key: PrivilegeKeyOptions): Params {
   throw new TypeError("a key grants a server group, or a channel group in a channel");
 }
 
-/** Create a privilege key. Returns the key as the server generated it. */
+/**
+ * Create a privilege key. Returns the key as the server generated it.
+ *
+ * A NoDataError from this means the command took effect: TS6 WebQuery
+ * occasionally answers a successful create with no data. The key exists, and
+ * cannot be told apart from an identical one, so it is not looked up: do not
+ * retry blindly, or a second key is made. List the keys to find it.
+ */
 export async function addPrivilegeKey(
   client: CommandExecutor,
   key: PrivilegeKeyOptions,

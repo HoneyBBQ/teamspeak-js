@@ -112,6 +112,12 @@ const apiKeyNames: WireNames<APIKeyOptions> = {
  *
  * Returns the key with its record. The key grants access to the server and is
  * shown only this once: store it, and do not log it.
+ *
+ * A NoDataError from this means the command took effect: TS6 WebQuery
+ * occasionally answers a successful create with no data. The key exists but its
+ * secret is lost, since a key's secret is never listed, and a retry makes a
+ * second key. Find the orphan with {@link listAPIKeys} and remove it with
+ * {@link deleteAPIKey}.
  */
 export async function addAPIKey(
   client: CommandExecutor,
