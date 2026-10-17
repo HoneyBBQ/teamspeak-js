@@ -36,6 +36,8 @@ export type IconID = number & { readonly __brand: "IconID" };
 
 /** A ban (`banid`). */
 export type BanID = bigint & { readonly __brand: "BanID" };
+/** An API key (`id` of `apikeyadd` and `apikeylist`), not the key itself. */
+export type APIKeyID = bigint & { readonly __brand: "APIKeyID" };
 /** An offline message (`msgid`). */
 export type MessageID = bigint & { readonly __brand: "MessageID" };
 /** A virtual server on an instance (`sid`, `virtualserver_id`). */
@@ -73,6 +75,8 @@ function uint64(v: bigint | number, what: string): bigint {
 
 /** Brand a ban id, an integer from 0 to 2^64-1, from a number or a bigint. */
 export const asBanID = (v: bigint | number): BanID => uint64(v, "a ban id") as BanID;
+/** Brand an API key id, an integer from 0 to 2^64-1. */
+export const asAPIKeyID = (v: bigint | number): APIKeyID => uint64(v, "an API key id") as APIKeyID;
 /** Brand an offline message id, an integer from 0 to 2^64-1. */
 export const asMessageID = (v: bigint | number): MessageID =>
   uint64(v, "a message id") as MessageID;

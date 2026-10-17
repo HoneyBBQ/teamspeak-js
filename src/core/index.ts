@@ -20,6 +20,7 @@ export type {
 
 // Branded ids: a ChannelID cannot be passed where a ClientID is meant.
 export {
+  asAPIKeyID,
   asBanID,
   asChannelID,
   asClientFileTransferID,
@@ -36,6 +37,7 @@ export {
   asChannelUID,
 } from "./command/ids.js";
 export type {
+  APIKeyID,
   BanID,
   ClientFileTransferID,
   MessageID,
@@ -65,8 +67,10 @@ export { Reason } from "./reason.js";
 
 // Small-integer enumerations, as named values and types.
 export {
+  APIKeyScope,
   ClientType,
   Codec,
+  GroupAutoUpdateType,
   GroupNameMode,
   GroupType,
   HostMessageMode,
@@ -129,5 +133,6 @@ export * from "./api/server.js";
 export * from "./api/groups.js";
 export * from "./api/moderation.js";
 export * from "./api/files.js";
+export * from "./api/credentials.js";
 export { applyChannelChanges } from "./api/command.js";
 export type { Channel, ChannelChanges, PagingOptions, PermissionEntry } from "./api/command.js";

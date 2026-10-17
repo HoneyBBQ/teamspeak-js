@@ -37,6 +37,10 @@ import type {
 import { asClientFileTransferID, asClientID, asServerFileTransferID } from "../command/ids.js";
 import type { FileDownloadInfo, FileUploadInfo } from "../types.js";
 
+/** The `ip` of a negotiation answer, when the server sent one. */
+const ipField = (row: Record<string, string>): { readonly ip?: string } =>
+  str(row, "ip") === "" ? {} : { ip: str(row, "ip") };
+
 const asPath = (path: string): string => (path.startsWith("/") ? path : `/${path}`);
 
 /** One entry of a directory listing, or one file's details. */
@@ -357,6 +361,7 @@ export async function initFileUpload(
     seekPosition: big(row, "seekpos"),
     clientFileTransferID: asClientFileTransferID(uint(row, "clientftfid", U16)),
     serverFileTransferID: asServerFileTransferID(uint(row, "serverftfid", U16)),
+    ...ipField(row),
   };
 }
 
@@ -401,5 +406,6 @@ export async function initFileDownload(
     size: big(row, "size"),
     clientFileTransferID: asClientFileTransferID(uint(row, "clientftfid", U16)),
     serverFileTransferID: asServerFileTransferID(uint(row, "serverftfid", U16)),
+    ...ipField(row),
   };
 }

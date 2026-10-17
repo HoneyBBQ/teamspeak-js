@@ -41,6 +41,8 @@ export interface BanEntry {
   readonly name: string;
   /** The unique identifier the ban matches, or "". */
   readonly uid: UID;
+  /** The myTeamSpeak id the ban matches, or "" (`mytsid`); TS6 only, TS3 sends none. */
+  readonly mytsid: string;
   /** The nickname of the last client the ban caught. */
   readonly lastNickname: string;
   /** When the ban was made. */
@@ -67,6 +69,7 @@ const parseBan = (row: Record<string, string>): BanEntry => ({
   ip: str(row, "ip"),
   name: str(row, "name"),
   uid: asUID(str(row, "uid")),
+  mytsid: str(row, "mytsid"),
   lastNickname: str(row, "lastnickname"),
   createdAt: date(row, "created"),
   durationMs: durationMs(row, "duration", SECOND),
@@ -77,12 +80,77 @@ const parseBan = (row: Record<string, string>): BanEntry => ({
   enforcements: num(row, "enforcements"),
 });
 
-/** Every active ban. A server with none answers an empty list. */
+/** Which bans {@link listBans} reports. */
+export interface BanListOptions extends CommandOptions {
+  /** Skip this many bans (`start`). */
+  readonly start?: number | undefined;
+  /**
+   * Report at most this many bans (`duration`). The server caps it at 200;
+   * unset reports every ban.
+   */
+  readonly limit?: number | undefined;
+}
+
+const banListNames: WireNames<BanListOptions> = { start: "start", limit: "duration" };
+
+/**
+ * Every active ban, or a page of them with `start` and `limit`. A server with
+ * none, or a `start` past the last, answers an empty list.
+ *
+ * `-count`, which adds the total number of bans to the first row, is not sent:
+ * the function returns the bans, and the total would be a second result.
+ */
 export async function listBans(
   client: CommandExecutor,
+  options: BanListOptions = {},
+): Promise<BanEntry[]> {
+  return (await list(client, "banlist", encodeFields(options, banListNames), options)).map(
+    parseBan,
+  );
+}
+
+/**
+ * What {@link findBans} looks a ban up by. Set at least one; an empty string is
+ * treated as unset, never sent.
+ */
+export interface BanCriteria {
+  /** An address; matches the bans whose address pattern it fits (`ip`). */
+  readonly ip?: string | undefined;
+  /** A nickname; matches the bans whose nickname pattern it fits (`name`). */
+  readonly name?: string | undefined;
+  /** A unique identifier (`uid`). */
+  readonly uid?: UID | undefined;
+  /** A myTeamSpeak id (`mytsid`). */
+  readonly mytsid?: string | undefined;
+}
+
+const banCriteriaNames: WireNames<BanCriteria> = {
+  ip: ["ip", nonEmpty],
+  name: ["name", nonEmpty],
+  uid: ["uid", nonEmpty],
+  mytsid: ["mytsid", nonEmpty],
+};
+
+/**
+ * The bans that would catch a client with this address, nickname, uid or
+ * myTeamSpeak id. None is an empty list.
+ *
+ * TeamSpeak 6 only, over the voice protocol and SSH: TS3 has no `banfind`, and
+ * TS6's WebQuery answers it as an unknown command (1538). Needs
+ * `b_client_ban_list`. The server refuses a call with no criteria with error
+ * 1542, so that is refused here first.
+ */
+export async function findBans(
+  client: CommandExecutor,
+  criteria: BanCriteria,
   options?: CommandOptions,
 ): Promise<BanEntry[]> {
-  return (await list(client, "banlist", [], options)).map(parseBan);
+  if (!criteria.ip && !criteria.name && !criteria.uid && !criteria.mytsid) {
+    throw new TypeError("finding a ban needs an ip, a name, a uid or a mytsid");
+  }
+  return (await list(client, "banfind", encodeFields(criteria, banCriteriaNames), options)).map(
+    parseBan,
+  );
 }
 
 /**
@@ -107,6 +175,10 @@ export interface BanFields {
   readonly name?: string | undefined;
   /** The unique identifier to ban (`uid`). */
   readonly uid?: UID | undefined;
+  /** The myTeamSpeak id to ban (`mytsid`); TS6 only, and a 44-character base64 value (the server refuses others with 1538). */
+  readonly mytsid?: string | undefined;
+  /** The nickname to record as the last one the ban caught (`lastnickname`). */
+  readonly lastNickname?: string | undefined;
   /** The reason, shown to the banned client (`banreason`). */
   readonly reason?: string | undefined;
   /**
@@ -118,7 +190,7 @@ export interface BanFields {
 }
 
 /**
- * A ban to add: {@link BanFields}, at least one of `ip`, `name` or `uid` set; a
+ * A ban to add: {@link BanFields}, at least one of `ip`, `name`, `uid` or `mytsid` set; a
  * ban matching nothing is refused before anything is sent. It carries no
  * signal or timeoutMs: those are addBan's separate last argument.
  */
@@ -128,6 +200,8 @@ const banNames: WireNames<BanFields> = {
   ip: ["ip", nonEmpty],
   name: ["name", nonEmpty],
   uid: ["uid", nonEmpty],
+  mytsid: ["mytsid", nonEmpty],
+  lastNickname: ["lastnickname", nonEmpty],
   reason: ["banreason", nonEmpty],
   durationMs: ["time", banTime],
 };
@@ -156,8 +230,8 @@ export async function addBan(
   ban: BanOptions,
   options?: CommandOptions,
 ): Promise<BanID | undefined> {
-  if (!ban.ip && !ban.name && !ban.uid) {
-    throw new TypeError("a ban needs an ip, a name or a uid to match");
+  if (!ban.ip && !ban.name && !ban.uid && !ban.mytsid) {
+    throw new TypeError("a ban needs an ip, a name, a uid or a mytsid to match");
   }
   const rows = await query(client, "banadd", encodeFields(ban, banNames), options);
   return rows[0]?.["banid"] === undefined ? undefined : asBanID(big(rows[0], "banid"));
@@ -334,6 +408,36 @@ export async function getMessage(
 ): Promise<OfflineMessage> {
   const rows = await query(client, "messageget", [["msgid", messageID]], options);
   return { ...parseMessage(firstRow(rows, "messageget")), id: messageID };
+}
+
+/**
+ * Leave an offline message for a client by its unique identifier, whether or
+ * not it is online. It lands in the recipient's inbox, which `listMessages`
+ * reads when connected as that client.
+ *
+ * Needs `b_client_offline_textmessage_send`, which the server's own command
+ * reference does not list: a client without it gets error 2568. The server
+ * refuses a uid it has no client record for with error 512 (invalid clientID);
+ * it accepts an empty subject or message.
+ * Works over the voice protocol and ServerQuery on TS3 and TS6.
+ */
+export async function sendOfflineMessage(
+  client: CommandExecutor,
+  uid: UID,
+  subject: string,
+  message: string,
+  options?: CommandOptions,
+): Promise<void> {
+  await exec(
+    client,
+    "messageadd",
+    [
+      ["cluid", uid],
+      ["subject", subject],
+      ["message", message],
+    ],
+    options,
+  );
 }
 
 /** Delete an offline message. */

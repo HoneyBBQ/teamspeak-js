@@ -238,6 +238,12 @@ export function encodeFields<T extends object>(fields: T, names: WireNames<T>): 
   return out;
 }
 
+/** Raw wire properties, sent as given; a value that is not a string is left out. */
+export const rawProperties = (settings: Readonly<Record<string, string>>): Params =>
+  Object.entries(settings).filter(
+    (entry): entry is [string, string] => typeof entry[1] === "string",
+  );
+
 /** An encoder that omits an empty string instead of sending it. */
 export const nonEmpty = (value: string): string | undefined => (value === "" ? undefined : value);
 
@@ -360,6 +366,28 @@ const date = (row: Record<string, string>, key: string): Date | undefined => {
 /** Read a duration sent as a count of `unitMs`, in milliseconds. */
 const durationMs = (row: Record<string, string>, key: string, unitMs: number): number =>
   num(row, key) * unitMs;
+
+/**
+ * `fields` with a secret property that is there to read but not to enumerate.
+ *
+ * A key or password the server generates once must not reach a log line by
+ * way of `console.log(result)`, `util.inspect` or `JSON.stringify(result)`, as
+ * `Identity` keeps its key out of them: the property is defined, not
+ * enumerable, so none of those print it. Read it by name. A spread of the
+ * result does not copy it.
+ */
+export function withSecret<T extends object, K extends string>(
+  fields: T,
+  key: K,
+  value: string,
+): T & { readonly [P in K]: string } {
+  return Object.defineProperty(fields, key, {
+    value,
+    enumerable: false,
+    writable: false,
+    configurable: false,
+  }) as T & { readonly [P in K]: string };
+}
 
 export { str, big, num, uint, U16, U32, bool, icon, date, durationMs };
 

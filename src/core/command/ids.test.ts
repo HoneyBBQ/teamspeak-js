@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  asAPIKeyID,
   asBanID,
   asChannelGroupID,
   asChannelID,
@@ -50,6 +51,7 @@ describe("id constructors", () => {
     asClientDBID,
     asServerGroupID,
     asChannelGroupID,
+    asAPIKeyID,
     asBanID,
     asMessageID,
     asServerID,

@@ -22,6 +22,8 @@
   // `__object.*` entries are the members of those helpers that other types
   // refer to, as KickReason does to Reason.KickChannel.
   "intentionallyNotExported": [
+    "apiKeyScopeValues",
+    "groupAutoUpdateTypeValues",
     "clientStatusValues",
     "connectPhaseValues",
     "clientTypeValues",

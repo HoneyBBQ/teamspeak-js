@@ -29,13 +29,14 @@ import type { CommandExecutor, CommandOptions } from "../command/request.js";
 import type {
   ChannelGroupID,
   ChannelID,
+  ChannelUID,
   ClientDBID,
   ClientID,
   IconID,
   ServerGroupID,
   UID,
 } from "../command/ids.js";
-import { asClientDBID, asClientID, asUID } from "../command/ids.js";
+import { asChannelID, asChannelUID, asClientDBID, asClientID, asUID } from "../command/ids.js";
 import type { Permission } from "../permission.js";
 import { Reason } from "../reason.js";
 import { ErrorCode } from "../errorcode.js";
@@ -442,24 +443,48 @@ export interface ClientMatch {
   readonly id: ClientID;
   /** The client's nickname. */
   readonly nickname: string;
+  /** The channel the client is in, from `findClients` with `channelID`, on TS6; undefined otherwise. */
+  readonly channelID?: ChannelID | undefined;
+  /** That channel's unique identifier, from `findClients` with `channelUID`, on TS6; undefined otherwise. */
+  readonly channelUID?: ChannelUID | undefined;
 }
+
+/** Which extra fields {@link findClients} reports, where the server has them (TS6). */
+export interface ClientFindOptions extends CommandOptions {
+  /** Report the channel each client is in, as `channelID` (`-cid`). */
+  readonly channelID?: boolean | undefined;
+  /** Report the unique identifier of that channel, as `channelUID` (`-chuid`). */
+  readonly channelUID?: boolean | undefined;
+}
+
+const findFlags: WireNames<ClientFindOptions> = { channelID: "-cid", channelUID: "-chuid" };
 
 /**
  * Clients whose nickname contains `pattern`; none is an empty list. The server
  * reports finding no one as error 512 (invalid clientID), which this answers
  * as `[]`.
+ *
+ * `channelID` and `channelUID` add where each client is. They report, they do
+ * not filter: every match is returned either way. TS3 accepts the flags and
+ * sends neither field, so on TS3 the fields stay undefined.
  */
 export async function findClients(
   client: CommandExecutor,
   pattern: string,
-  options?: CommandOptions,
+  options: ClientFindOptions = {},
 ): Promise<ClientMatch[]> {
-  const rows = await list(client, "clientfind", [["pattern", pattern]], options, {
-    noMatch: ErrorCode.ClientInvalidID,
-  });
+  const rows = await list(
+    client,
+    "clientfind",
+    [["pattern", pattern], ...encodeFields(options, findFlags)],
+    options,
+    { noMatch: ErrorCode.ClientInvalidID },
+  );
   return rows.map((row) => ({
     id: asClientID(uint(row, "clid", U16)),
     nickname: str(row, "client_nickname"),
+    ...(row["cid"] === undefined ? {} : { channelID: asChannelID(big(row, "cid")) }),
+    ...(row["chuid"] === undefined ? {} : { channelUID: asChannelUID(str(row, "chuid")) }),
   }));
 }
 
@@ -752,4 +777,113 @@ export async function deleteClientPermission(
   options?: CommandOptions,
 ): Promise<void> {
   await exec(client, "clientdelperm", [["cldbid", cldbid], permissionParam(permission)], options);
+}
+
+// ---- Custom properties --------------------------------------------------------
+
+/** One custom property of a client: a key and a value, both free text. */
+export interface CustomProperty {
+  /** The property's name (`ident`). */
+  readonly ident: string;
+  /** Its value (`value`). */
+  readonly value: string;
+}
+
+/** A custom property found by {@link findCustomProperty}, and whose it is. */
+export interface CustomPropertyMatch extends CustomProperty {
+  /** The client that has it (`cldbid`). */
+  readonly databaseID: ClientDBID;
+}
+
+/**
+ * Set a custom property on a client, creating or replacing it. The server does
+ * not check that the client exists.
+ *
+ * Needs `b_client_modify_dbproperties`. Works over the voice protocol and
+ * ServerQuery on TS3 and TS6.
+ */
+export async function setCustomProperty(
+  client: CommandExecutor,
+  cldbid: ClientDBID,
+  ident: string,
+  value: string,
+  options?: CommandOptions,
+): Promise<void> {
+  await exec(
+    client,
+    "customset",
+    [
+      ["cldbid", cldbid],
+      ["ident", ident],
+      ["value", value],
+    ],
+    options,
+  );
+}
+
+/**
+ * Remove a custom property from a client. Removing one it does not have is not
+ * an error.
+ *
+ * Needs `b_client_delete_dbproperties`.
+ */
+export async function deleteCustomProperty(
+  client: CommandExecutor,
+  cldbid: ClientDBID,
+  ident: string,
+  options?: CommandOptions,
+): Promise<void> {
+  await exec(
+    client,
+    "customdelete",
+    [
+      ["cldbid", cldbid],
+      ["ident", ident],
+    ],
+    options,
+  );
+}
+
+/**
+ * A client's custom properties. None is an empty list.
+ *
+ * The server reports a client with no properties as error 512 (invalid
+ * clientID), the same as a client that does not exist, so both answer `[]`
+ * here; `getClientDatabaseInfo` tells them apart.
+ */
+export async function listCustomProperties(
+  client: CommandExecutor,
+  cldbid: ClientDBID,
+  options?: CommandOptions,
+): Promise<CustomProperty[]> {
+  const rows = await list(client, "custominfo", [["cldbid", cldbid]], options, {
+    noMatch: ErrorCode.ClientInvalidID,
+  });
+  return rows.map((row) => ({ ident: str(row, "ident"), value: str(row, "value") }));
+}
+
+/**
+ * Every client with a custom property `ident` whose value matches `pattern`,
+ * which may hold the SQL wildcard `%`. None is an empty list.
+ */
+export async function findCustomProperty(
+  client: CommandExecutor,
+  ident: string,
+  pattern: string,
+  options?: CommandOptions,
+): Promise<CustomPropertyMatch[]> {
+  const rows = await list(
+    client,
+    "customsearch",
+    [
+      ["ident", ident],
+      ["pattern", pattern],
+    ],
+    options,
+  );
+  return rows.map((row) => ({
+    databaseID: asClientDBID(big(row, "cldbid")),
+    ident: str(row, "ident"),
+    value: str(row, "value"),
+  }));
 }

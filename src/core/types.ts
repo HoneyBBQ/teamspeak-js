@@ -85,6 +85,13 @@ export interface FileUploadInfo {
   readonly serverFileTransferID: ServerFileTransferID;
   /** The file transfer port to dial. */
   readonly port: number;
+  /**
+   * The address to dial instead of the one the connection uses (`ip`): the
+   * server sends it when it finds the file transfer unreachable at the address
+   * of the command connection, such as behind NAT. Undefined when it sends
+   * none, which is every answer measured on TS3 and TS6.
+   */
+  readonly ip?: string | undefined;
 }
 
 /** A negotiated download, as `initFileDownload` returns it: what to dial and receive. */
@@ -99,6 +106,11 @@ export interface FileDownloadInfo {
   readonly serverFileTransferID: ServerFileTransferID;
   /** The file transfer port to dial. */
   readonly port: number;
+  /**
+   * The address to dial instead of the one the connection uses (`ip`); see
+   * {@link FileUploadInfo.ip}.
+   */
+  readonly ip?: string | undefined;
 }
 
 /** Removes a listener; calling it again does nothing. Also a `Disposable`, for `using`. */

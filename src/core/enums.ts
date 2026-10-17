@@ -80,6 +80,54 @@ export const PrivilegeKeyType: typeof privilegeKeyTypeValues =
 export type PrivilegeKeyType = (typeof PrivilegeKeyType)[keyof typeof PrivilegeKeyType];
 
 /** The values of the table below, before freezing. */
+const apiKeyScopeValues = {
+  /** Read-only access to the query API. */
+  Read: "read",
+  /** Read and change what a query client may change. */
+  Write: "write",
+  /** Everything the owner may do, including managing API keys. */
+  Manage: "manage",
+} as const;
+/** What an API key may do (`scope`). */
+export const APIKeyScope: typeof apiKeyScopeValues =
+  /* @__PURE__ */ Object.freeze(apiKeyScopeValues);
+
+/** An API key scope. */
+export type APIKeyScope = (typeof APIKeyScope)[keyof typeof APIKeyScope];
+
+/** The values of the table below, before freezing. */
+const groupAutoUpdateTypeValues = {
+  /** The channel guest groups. */
+  ChannelGuest: 10,
+  /** The server guest groups. */
+  ServerGuest: 15,
+  /** The query guest groups. */
+  QueryGuest: 20,
+  /** The channel voice groups. */
+  ChannelVoice: 25,
+  /** The server normal groups. */
+  ServerNormal: 30,
+  /** The channel operator groups. */
+  ChannelOperator: 35,
+  /** The channel admin groups. */
+  ChannelAdmin: 40,
+  /** The server admin groups. */
+  ServerAdmin: 45,
+  /** The query admin groups. */
+  QueryAdmin: 50,
+} as const;
+/**
+ * Which regular groups a permission change reaches on every virtual server:
+ * the groups whose `i_group_auto_update_type` permission has this value
+ * (`sgtype`).
+ */
+export const GroupAutoUpdateType: typeof groupAutoUpdateTypeValues =
+  /* @__PURE__ */ Object.freeze(groupAutoUpdateTypeValues);
+
+/** A group auto update type. */
+export type GroupAutoUpdateType = (typeof GroupAutoUpdateType)[keyof typeof GroupAutoUpdateType];
+
+/** The values of the table below, before freezing. */
 const clientTypeValues = {
   /** A voice client, such as the TeamSpeak application or this SDK's client. */
   Voice: 0,

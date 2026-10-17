@@ -42,6 +42,8 @@ import {
 import { PermissionTarget, PrivilegeKeyType } from "../enums.js";
 import type { GroupType } from "../enums.js";
 import type { Permission } from "../permission.js";
+import { escape, unescape } from "../command/command.js";
+import type { CustomProperty } from "./clients.js";
 
 /** A channel group as `channelgrouplist` reports it. */
 export interface ChannelGroup {
@@ -423,6 +425,41 @@ export async function findPermission(
   return rows.flatMap((row) => parseLocation(row) ?? []);
 }
 
+/** One of this connection's own permissions, as `permget` reports it. */
+export interface OwnPermission {
+  /** The permission's numeric id (`permid`); it differs between server builds. */
+  readonly id: PermissionID;
+  /** The permission's name (`permsid`). */
+  readonly name: string;
+  /** The value this connection holds (`permvalue`). */
+  readonly value: number;
+}
+
+/**
+ * The value of one permission for this connection, with every group, channel
+ * and client setting resolved: what a client can check before trying
+ * something.
+ *
+ * Needs `b_client_permissionoverview_own`. A permission the server does not
+ * know is refused with error 2562 (invalid permission ID). Over the voice
+ * protocol TS3 answers with plain rows and TS6 with a notification, which the
+ * client pairs with this command. TS6's `forauthenticationtoken` and `cid`
+ * forms are not sent.
+ */
+export async function getOwnPermission(
+  client: CommandExecutor,
+  permission: Permission,
+  options?: CommandOptions,
+): Promise<OwnPermission> {
+  const rows = await query(client, "permget", [permissionParam(permission)], options);
+  const row = firstRow(rows, "permget", "permvalue");
+  return {
+    id: asPermissionID(uint(row, "permid", U32)),
+    name: str(row, "permsid"),
+    value: num(row, "permvalue"),
+  };
+}
+
 /** How a permission applies, in a {@link PermissionOverviewEntry}. */
 export interface PermissionOverviewValue {
   /** The permission's value there (`v`). */
@@ -502,6 +539,11 @@ export interface PrivilegeKey {
   readonly description: string;
   /** When the key was created. */
   readonly createdAt: Date | undefined;
+  /**
+   * The custom client properties a client gets by using the key
+   * (`token_customset`); empty for a key with none.
+   */
+  readonly customSet: readonly CustomProperty[];
 }
 
 /**
@@ -520,8 +562,37 @@ const parseKey = (row: Record<string, string>): PrivilegeKey => {
     channelID: channelGroup ? asChannelID(big(row, "token_id2")) : undefined,
     description: str(row, "token_description"),
     createdAt: date(row, "token_created"),
+    customSet: parseCustomSet(str(row, "token_customset")),
   };
 };
+
+/**
+ * Read a key's custom set, `ident=a value=b|ident=c value=d`. The server stores
+ * the text as it was given, so a value with a space in it is escaped inside it
+ * (see {@link encodeCustomSet}) for it to be read back whole; a set made some
+ * other way is read as well as it parses, and an entry that is not
+ * `ident=… value=…` is skipped.
+ */
+function parseCustomSet(raw: string): CustomProperty[] {
+  if (raw === "") return [];
+  return raw.split("|").flatMap((entry) => {
+    const match = /^ident=(.*?) value=(.*)$/s.exec(entry);
+    return match === null ? [] : [{ ident: unescape(match[1]!), value: unescape(match[2]!) }];
+  });
+}
+
+/**
+ * Write a custom set for `tokencustomset`.
+ *
+ * The text is escaped twice: here, so each ident and value survives the
+ * server splitting the set on spaces and pipes, and again as the parameter
+ * goes on the wire. The server's own example escapes only once, which cuts a
+ * value at its first space.
+ */
+function encodeCustomSet(set: readonly CustomProperty[]): string | undefined {
+  if (set.length === 0) return undefined;
+  return set.map((p) => `ident=${escape(p.ident)} value=${escape(p.value)}`).join("|");
+}
 
 /** Every privilege key on the server. */
 export async function listPrivilegeKeys(
@@ -543,6 +614,12 @@ export type PrivilegeKeyOptions =
       readonly channelID?: never;
       /** Shown in the key list; unset or "" sends none. */
       readonly description?: string | undefined;
+      /**
+       * Custom client properties to set on whoever uses the key, such as an
+       * account id from another system; unset or empty sends none
+       * (`tokencustomset`).
+       */
+      readonly customSet?: readonly CustomProperty[] | undefined;
     }
   | {
       readonly serverGroupID?: never;
@@ -552,6 +629,11 @@ export type PrivilegeKeyOptions =
       readonly channelID: ChannelID;
       /** Shown in the key list; unset or "" sends none. */
       readonly description?: string | undefined;
+      /**
+       * Custom client properties to set on whoever uses the key; unset or
+       * empty sends none (`tokencustomset`).
+       */
+      readonly customSet?: readonly CustomProperty[] | undefined;
     };
 
 /**
@@ -570,12 +652,14 @@ function keyParams(key: PrivilegeKeyOptions): Params {
   };
   const isID = (v: unknown): v is bigint => typeof v === "bigint" && v > 0n;
   const description = nonEmpty(key.description ?? "");
+  const customSet = encodeCustomSet(key.customSet ?? []);
   if (isID(serverGroupID) && channelGroupID === undefined && channelID === undefined) {
     return [
       ["tokentype", PrivilegeKeyType.ServerGroup],
       ["tokenid1", serverGroupID],
       ["tokenid2", 0],
       ["tokendescription", description],
+      ["tokencustomset", customSet],
     ];
   }
   if (serverGroupID === undefined && isID(channelGroupID) && isID(channelID)) {
@@ -584,6 +668,7 @@ function keyParams(key: PrivilegeKeyOptions): Params {
       ["tokenid1", channelGroupID],
       ["tokenid2", channelID],
       ["tokendescription", description],
+      ["tokencustomset", customSet],
     ];
   }
   throw new TypeError("a key grants a server group, or a channel group in a channel");
