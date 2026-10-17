@@ -1042,33 +1042,38 @@ describe.skipIf(SKIP || !GUEST)("Integration — guest ServerQuery", () => {
     rmSync(scratch, { recursive: true, force: true });
   });
 
-  it.each(["ssh", "web"] as const)(
-    "a guest connects over %s, and is refused what is admin-only",
-    async (kind, ctx) => {
-      if (!guestKinds.includes(kind)) {
-        ctx.skip(`no ${kind} endpoint was provisioned`);
-        return;
-      }
-      const client = new QueryClient(guestOptions(kind));
-      await connectWithRetries(client);
-      try {
-        expect(client.status).toBe(ClientStatus.Connected);
-        expect((await getVersion(client)).version).not.toBe("");
-        // The guest is its own account, not the administrator.
-        const me = await whoAmI(client);
-        expect(me.loginName).not.toBe("serveradmin");
+  /** Connect as a guest over `kind`, then check one admin-only command is refused. */
+  async function guestIsRefusedWhatIsAdminOnly(kind: "ssh" | "web"): Promise<void> {
+    const client = new QueryClient(guestOptions(kind));
+    await connectWithRetries(client);
+    try {
+      expect(client.status).toBe(ClientStatus.Connected);
+      expect((await getVersion(client)).version).not.toBe("");
+      // The guest is its own account, not the administrator.
+      const me = await whoAmI(client);
+      expect(me.loginName).not.toBe("serveradmin");
 
-        const refused = await (
-          kind === "ssh" ? getInstanceInfo(client) : listAPIKeys(client)
-        ).catch((failure: unknown) => failure);
-        expect(refused).toMatchObject({ code: kind === "ssh" ? 2568 : NOT_IN_API_KEY_SCOPE });
-        console.log(
-          `guest over ${kind}: an admin-only command refused with ${String((refused as { code?: unknown }).code)}`,
-        );
-      } finally {
-        await client.disconnect();
-      }
-    },
+      const refused = await (kind === "ssh" ? getInstanceInfo(client) : listAPIKeys(client)).catch(
+        (failure: unknown) => failure,
+      );
+      expect(refused).toMatchObject({ code: kind === "ssh" ? 2568 : NOT_IN_API_KEY_SCOPE });
+      console.log(
+        `guest over ${kind}: an admin-only command refused with ${String((refused as { code?: unknown }).code)}`,
+      );
+    } finally {
+      await client.disconnect();
+    }
+  }
+
+  it.skipIf(!guestKinds.includes("ssh"))(
+    "a guest connects over ssh, and is refused what is admin-only",
+    () => guestIsRefusedWhatIsAdminOnly("ssh"),
+    60_000,
+  );
+
+  it.skipIf(!guestKinds.includes("web"))(
+    "a guest connects over web, and is refused what is admin-only",
+    () => guestIsRefusedWhatIsAdminOnly("web"),
     60_000,
   );
 
