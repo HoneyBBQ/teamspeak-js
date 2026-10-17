@@ -54,10 +54,14 @@ describe("the Init1 puzzle in a connect", () => {
 
     let ticks = 0;
     const timer = setInterval(() => ticks++, 5);
-    while (socket.sent.length === before) await settle();
+    // The answer is the packet that records the puzzle; the handshake's resends
+    // of the previous step may go out meanwhile and are not it.
+    while (puzzleOf(clientInternals(client).crypt).level === 0) await settle();
     clearInterval(timer);
-
-    expect(socket.sent.length - before).toBe(1);
+    await settle();
+    expect(socket.sent.slice(before).some((p) => Buffer.from(p).includes("clientinitiv"))).toBe(
+      true,
+    );
     expect(puzzleOf(clientInternals(client).crypt).level).toBe(1_000_000);
     expect(puzzleOf(clientInternals(client).crypt).durationMs).toBeGreaterThan(0);
     // 1,000,000 squarings is some 300 ms here; a blocked loop would tick once.
@@ -101,9 +105,13 @@ describe("the Init1 puzzle in a connect", () => {
     socket.deliver(puzzleStep(300_000));
     socket.deliver(puzzleStep(300_000));
     socket.deliver(puzzleStep(300_001));
-    while (socket.sent.length === before) await settle();
+    while (puzzleOf(clientInternals(client).crypt).level === 0) await settle();
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(socket.sent.length - before).toBe(1);
+    // One answer: a clientinitiv, whatever else the handshake resent.
+    const answers = socket.sent
+      .slice(before)
+      .filter((p) => Buffer.from(p).includes("clientinitiv"));
+    expect(answers.length).toBe(1);
     await client.disconnect({ signal: AbortSignal.timeout(1) });
   });
 });
