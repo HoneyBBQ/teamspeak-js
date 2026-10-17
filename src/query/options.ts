@@ -76,6 +76,21 @@ export type QueryEventCategory =
  * declares that itself, see {@link QueryTransport.supportsNotifications} — so
  * asking for categories on one that cannot is an error rather than a silent
  * no-op.
+ *
+ * What each category delivers, as events of the client (measured on TeamSpeak 3
+ * over raw TCP and TeamSpeak 6 over SSH, which agree):
+ *
+ * | Category                                | Events                                                                                                                                      |
+ * | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+ * | `server`                                | `serverEdited`                                                                                                                              |
+ * | `channel` (registered for every channel) | `channelCreated`, `channelEdited`, `channelMoved`, `channelDeleted`, `channelDescriptionChanged`, `channelPasswordChanged`, `clientEnter`, `clientLeave`, `clientMoved` |
+ * | `textserver`, `textchannel`, `textprivate` | `textMessage`, for the server, the channel and private messages                                                                         |
+ * | `bans`                                  | none                                                                                                                                        |
+ *
+ * Leaving a category out leaves its events out: `{ categories: ["textprivate"] }`
+ * delivers no channel event. The voice client's events about clients' updates,
+ * group changes, subscriptions, plugin commands and typing are not sent to a
+ * ServerQuery connection by either server, so this client does not offer them.
  */
 export type QueryEventsOption = boolean | { readonly categories?: readonly QueryEventCategory[] };
 

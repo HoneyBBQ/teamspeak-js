@@ -1,7 +1,10 @@
 import type {
   ChannelGroupID,
   ChannelID,
+  ChannelSubscribedEvent,
+  ChannelUnsubscribedEvent,
   ClientChannelGroupChangedEvent,
+  ClientChatComposingEvent,
   ClientID,
   ServerGroupID,
   ClientServerGroupAddedEvent,
@@ -10,6 +13,7 @@ import type {
   ClientVersion,
   CommandMiddleware,
   Logger,
+  PluginCommandEvent,
   PokeEvent,
   ReconnectOptions,
   ServerEventMap,
@@ -62,6 +66,31 @@ export interface EventMap extends ServerEventMap, SessionEventMap {
    * in.
    */
   clientChannelGroupChanged: ClientChannelGroupChangedEvent;
+  /**
+   * This client being subscribed to a channel, by `subscribeChannel`,
+   * `subscribeAllChannels` or the server. Only the voice protocol has
+   * subscriptions: a ServerQuery client hears every channel, and its server
+   * sends it nothing of the kind.
+   */
+  channelSubscribed: ChannelSubscribedEvent;
+  /**
+   * This client no longer being subscribed to a channel, by request or because
+   * the server withdrew the subscription. Unsubscribing from a channel
+   * the client is not subscribed to sends nothing.
+   */
+  channelUnsubscribed: ChannelUnsubscribedEvent;
+  /**
+   * A plugin command, from `sendPluginCommand`. The sender receives its own
+   * command when it was sent to the channel or the server. A TeamSpeak 3 or 6
+   * ServerQuery connection is sent none, so the ServerQuery client does not
+   * offer it.
+   */
+  pluginCommand: PluginCommandEvent;
+  /**
+   * A client typing a private message to this client, which `sendChatComposing`
+   * sends. Only the target receives it.
+   */
+  clientChatComposing: ClientChatComposingEvent;
 }
 
 /**
@@ -161,6 +190,20 @@ const eventNameValues = {
   ClientLeave: "clientLeave",
   /** A client changing channel. */
   ClientMoved: "clientMoved",
+  /** A channel being created. */
+  ChannelCreated: "channelCreated",
+  /** A channel's properties being edited. */
+  ChannelEdited: "channelEdited",
+  /** A channel being moved or reordered. */
+  ChannelMoved: "channelMoved",
+  /** A channel being deleted. */
+  ChannelDeleted: "channelDeleted",
+  /** A channel's description changing; the text is not in it. */
+  ChannelDescriptionChanged: "channelDescriptionChanged",
+  /** A channel's password being set, changed or removed. */
+  ChannelPasswordChanged: "channelPasswordChanged",
+  /** The server's settings being edited. */
+  ServerEdited: "serverEdited",
   /** A client's properties changing; carries only the changed ones. */
   ClientUpdated: "clientUpdated",
   /** A client added to a server group. */
@@ -169,6 +212,14 @@ const eventNameValues = {
   ClientServerGroupRemoved: "clientServerGroupRemoved",
   /** A client's channel group changing in a channel. */
   ClientChannelGroupChanged: "clientChannelGroupChanged",
+  /** This client being subscribed to a channel. */
+  ChannelSubscribed: "channelSubscribed",
+  /** This client no longer being subscribed to a channel. */
+  ChannelUnsubscribed: "channelUnsubscribed",
+  /** A plugin command from a client. */
+  PluginCommand: "pluginCommand",
+  /** A client typing a private message to this client. */
+  ClientChatComposing: "clientChatComposing",
   /** This client being poked. */
   Poked: "poked",
   /** Audio from another client. Only decoded with a listener or event middleware. */
@@ -217,10 +268,21 @@ export type ServerEventName =
   | "clientEnter"
   | "clientLeave"
   | "clientMoved"
+  | "channelCreated"
+  | "channelEdited"
+  | "channelMoved"
+  | "channelDeleted"
+  | "channelDescriptionChanged"
+  | "channelPasswordChanged"
+  | "serverEdited"
   | "clientUpdated"
   | "clientServerGroupAdded"
   | "clientServerGroupRemoved"
   | "clientChannelGroupChanged"
+  | "channelSubscribed"
+  | "channelUnsubscribed"
+  | "pluginCommand"
+  | "clientChatComposing"
   | "poked"
   | "voiceData"
   | "notification";

@@ -1601,6 +1601,39 @@ export class Client implements CommandExecutor, AsyncDisposable {
       case "clientChannelGroupChanged":
         this.#emitServerEvent({ name: "clientChannelGroupChanged", payload: result.event });
         break;
+      case "channelCreated":
+        this.#emitServerEvent({ name: "channelCreated", payload: result.event });
+        break;
+      case "channelEdited":
+        this.#emitServerEvent({ name: "channelEdited", payload: result.event });
+        break;
+      case "channelMoved":
+        this.#emitServerEvent({ name: "channelMoved", payload: result.event });
+        break;
+      case "channelDeleted":
+        this.#emitServerEvent({ name: "channelDeleted", payload: result.event });
+        break;
+      case "channelDescriptionChanged":
+        this.#emitServerEvent({ name: "channelDescriptionChanged", payload: result.event });
+        break;
+      case "channelPasswordChanged":
+        this.#emitServerEvent({ name: "channelPasswordChanged", payload: result.event });
+        break;
+      case "serverEdited":
+        this.#emitServerEvent({ name: "serverEdited", payload: result.event });
+        break;
+      case "channelSubscribed":
+        this.#emitServerEvent({ name: "channelSubscribed", payload: result.event });
+        break;
+      case "channelUnsubscribed":
+        this.#emitServerEvent({ name: "channelUnsubscribed", payload: result.event });
+        break;
+      case "pluginCommand":
+        this.#emitServerEvent({ name: "pluginCommand", payload: result.event });
+        break;
+      case "clientChatComposing":
+        this.#emitServerEvent({ name: "clientChatComposing", payload: result.event });
+        break;
       case "poked":
         this.#emitServerEvent({ name: "poked", payload: result.event });
         break;

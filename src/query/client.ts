@@ -66,6 +66,10 @@ export type {
  * So a typed event added here is additive — the notification it names stays on
  * the catch-all — and none of these keys is removed in a minor release.
  *
+ * `TextMessageEvent.invokerGroups` is, for this client, what it knew when it
+ * listed the clients on connecting or saw the sender enter: a ServerQuery
+ * connection is not told when a client's groups change later.
+ *
  * @experimental Part of the `@honeybbq/teamspeak/query` entry, which may
  * change in a minor release.
  */
@@ -792,15 +796,20 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
    * List the clients once, so that `invokerGroups` and the invoker fields of a
    * self-move can be filled: an enter notification is only seen for clients
    * that arrive after registering, and the ones already there arrive as none.
+   * `-away` and `-voice` make the records carry away and mute state as well,
+   * in the same one command. The groups are as of this listing: a ServerQuery
+   * connection is not sent `clientupdated`, so they do not follow later changes.
    */
   async #learnClients(signal: AbortSignal | undefined): Promise<void> {
-    const rows = await this.exec("clientlist -uid -groups", { signal }).catch((error: unknown) => {
-      // A registration that worked and a list that did not leaves the client
-      // usable: a sender it has never seen simply has no known groups, which
-      // the event type already allows for.
-      this.#logger.warn("listing clients after registering failed", { error: String(error) });
-      return [] as Array<Record<string, string>>;
-    });
+    const rows = await this.exec("clientlist -uid -groups -away -voice", { signal }).catch(
+      (error: unknown) => {
+        // A registration that worked and a list that did not leaves the client
+        // usable: a sender it has never seen simply has no known groups, which
+        // the event type already allows for.
+        this.#logger.warn("listing clients after registering failed", { error: String(error) });
+        return [] as Array<Record<string, string>>;
+      },
+    );
     for (const row of rows) {
       handleNotification({ name: "notifycliententerview", params: row }, 0, this.#clients);
     }
@@ -923,13 +932,39 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
       case "textMessage":
         this.#emit("textMessage", result.message);
         break;
+      case "channelCreated":
+        this.#emit("channelCreated", result.event);
+        break;
+      case "channelEdited":
+        this.#emit("channelEdited", result.event);
+        break;
+      case "channelMoved":
+        this.#emit("channelMoved", result.event);
+        break;
+      case "channelDeleted":
+        this.#emit("channelDeleted", result.event);
+        break;
+      case "channelDescriptionChanged":
+        this.#emit("channelDescriptionChanged", result.event);
+        break;
+      case "channelPasswordChanged":
+        this.#emit("channelPasswordChanged", result.event);
+        break;
+      case "serverEdited":
+        this.#emit("serverEdited", result.event);
+        break;
       case "clientUpdated":
       case "clientServerGroupAdded":
       case "clientServerGroupRemoved":
       case "clientChannelGroupChanged":
-      // A TeamSpeak 3 ServerQuery connection is not sent these, so a query
-      // client does not offer them. Should a server send one, the clients it
-      // knows are still kept current by the core; `notification` has it.
+      case "channelSubscribed":
+      case "channelUnsubscribed":
+      case "pluginCommand":
+      case "clientChatComposing":
+      // Neither a TeamSpeak 3 ServerQuery connection nor a TeamSpeak 6 one over
+      // SSH is sent these (measured), so a query client does not offer them.
+      // Should a server send one, the clients it knows are still kept current
+      // by the core; `notification` has it.
       case "poked":
       case "unknown":
         // A query client is never poked, and anything else is not an event the
@@ -1143,6 +1178,13 @@ const SERVER_EVENTS: ReadonlySet<string> = new Set([
   "clientEnter",
   "clientLeave",
   "clientMoved",
+  "channelCreated",
+  "channelEdited",
+  "channelMoved",
+  "channelDeleted",
+  "channelDescriptionChanged",
+  "channelPasswordChanged",
+  "serverEdited",
   "notification",
   "kicked",
 ]);

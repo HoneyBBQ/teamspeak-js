@@ -19,10 +19,21 @@ import {
   asUID,
 } from "./command/ids.js";
 import { parseClient, parseClientChanges } from "./api/parse.js";
+import { parseChannelChanges } from "./api/command.js";
+import { Reason } from "./reason.js";
 import { applyClientChanges } from "./api/clients.js";
 import { parseInt10, parseUint16, parseUint64 } from "./helpers.js";
 import type { Command } from "./command/command.js";
 import type {
+  ChannelCreatedEvent,
+  ChannelDeletedEvent,
+  ChannelDescriptionChangedEvent,
+  ChannelEditedEvent,
+  ChannelMovedEvent,
+  ChannelPasswordChangedEvent,
+  ChannelSubscribedEvent,
+  ChannelUnsubscribedEvent,
+  ClientChatComposingEvent,
   ClientEnterEvent,
   ClientChannelGroupChangedEvent,
   ClientLeaveEvent,
@@ -31,7 +42,9 @@ import type {
   ClientServerGroupRemovedEvent,
   ClientUpdatedEvent,
   Invoked,
+  PluginCommandEvent,
   PokeEvent,
+  ServerEditedEvent,
   TextMessageEvent,
 } from "./events.js";
 
@@ -46,6 +59,17 @@ export type NotificationResult =
   | { kind: "clientServerGroupAdded"; event: ClientServerGroupAddedEvent }
   | { kind: "clientServerGroupRemoved"; event: ClientServerGroupRemovedEvent }
   | { kind: "clientChannelGroupChanged"; event: ClientChannelGroupChangedEvent }
+  | { kind: "channelCreated"; event: ChannelCreatedEvent }
+  | { kind: "channelEdited"; event: ChannelEditedEvent }
+  | { kind: "channelMoved"; event: ChannelMovedEvent }
+  | { kind: "channelDeleted"; event: ChannelDeletedEvent }
+  | { kind: "channelDescriptionChanged"; event: ChannelDescriptionChangedEvent }
+  | { kind: "channelPasswordChanged"; event: ChannelPasswordChangedEvent }
+  | { kind: "serverEdited"; event: ServerEditedEvent }
+  | { kind: "channelSubscribed"; event: ChannelSubscribedEvent }
+  | { kind: "channelUnsubscribed"; event: ChannelUnsubscribedEvent }
+  | { kind: "pluginCommand"; event: PluginCommandEvent }
+  | { kind: "clientChatComposing"; event: ClientChatComposingEvent }
   | { kind: "unknown" };
 
 /**
@@ -84,6 +108,35 @@ export function handleNotification(
       return handleServerGroupMember(cmd, "clientServerGroupRemoved");
     case "notifyclientchannelgroupchanged":
       return handleClientChannelGroupChanged(cmd, clients);
+    case "notifychannelcreated":
+      return handleChannelCreated(cmd);
+    case "notifychanneledited":
+      return handleChannelEdited(cmd);
+    case "notifychannelmoved":
+      return handleChannelMoved(cmd);
+    case "notifychanneldeleted":
+      return channelNotification(cmd, "channelDeleted", invoked(cmd.params));
+    case "notifychanneldescriptionchanged":
+      return channelNotification(cmd, "channelDescriptionChanged", {});
+    case "notifychannelpasswordchanged":
+      return channelNotification(cmd, "channelPasswordChanged", {});
+    case "notifyserveredited":
+      return handleServerEdited(cmd);
+    case "notifychannelsubscribed":
+      return channelNotification(cmd, "channelSubscribed", {});
+    case "notifychannelunsubscribed":
+      return channelNotification(cmd, "channelUnsubscribed", {});
+    case "notifyplugincmd":
+      return {
+        kind: "pluginCommand",
+        event: {
+          name: cmd.params["name"] ?? "",
+          data: cmd.params["data"] ?? "",
+          ...invoked(cmd.params),
+        },
+      };
+    case "notifyclientchatcomposing":
+      return handleChatComposing(cmd);
     default:
       return { kind: "unknown" };
   }
@@ -257,5 +310,95 @@ function handleClientChannelGroupChanged(
       channelGroupInheritedChannelID: inherited,
       ...invoked(cmd.params),
     },
+  };
+}
+
+/** A channel id from a notification; 0 for a row that has none, which no channel has. */
+function channelIDOf(params: Readonly<Record<string, string>>, key = "cid") {
+  return asChannelID(parseUint64(params[key] ?? ""));
+}
+
+/**
+ * A notification that names a channel and nothing else of note: `fields` is
+ * what else its event holds. A row without a channel describes nothing.
+ */
+function channelNotification<
+  K extends
+    | "channelDeleted"
+    | "channelDescriptionChanged"
+    | "channelPasswordChanged"
+    | "channelSubscribed"
+    | "channelUnsubscribed",
+>(
+  cmd: Command,
+  kind: K,
+  fields: Partial<Invoked>,
+): Extract<NotificationResult, { kind: K }> | { kind: "unknown" } {
+  const channelID = channelIDOf(cmd.params);
+  if (channelID === 0n) return { kind: "unknown" };
+  return { kind, event: { channelID, ...fields } } as Extract<NotificationResult, { kind: K }>;
+}
+
+function handleChannelCreated(cmd: Command): NotificationResult {
+  const channelID = channelIDOf(cmd.params);
+  if (channelID === 0n) return { kind: "unknown" };
+  return {
+    kind: "channelCreated",
+    event: {
+      channelID,
+      parentID: channelIDOf(cmd.params, "cpid"),
+      changes: parseChannelChanges(cmd.params),
+      ...invoked(cmd.params),
+    },
+  };
+}
+
+function handleChannelEdited(cmd: Command): NotificationResult {
+  const channelID = channelIDOf(cmd.params);
+  if (channelID === 0n) return { kind: "unknown" };
+  const reason = parseInt10(cmd.params["reasonid"] ?? "");
+  // The server answers `channelgetdescription` with an edit of this kind that
+  // names no invoker: the description it was asked for, not a change. Told
+  // apart by what it holds, not by whether a command is waiting, so a real
+  // edit that arrives meanwhile is not swallowed. It still reaches the
+  // catch-all, and the command's answer.
+  if (reason === Reason.ChannelUpdate && cmd.params["invokerid"] === undefined) {
+    return { kind: "unknown" };
+  }
+  return {
+    kind: "channelEdited",
+    event: { channelID, reason, changes: parseChannelChanges(cmd.params), ...invoked(cmd.params) },
+  };
+}
+
+function handleChannelMoved(cmd: Command): NotificationResult {
+  const channelID = channelIDOf(cmd.params);
+  if (channelID === 0n) return { kind: "unknown" };
+  return {
+    kind: "channelMoved",
+    event: {
+      channelID,
+      parentID: channelIDOf(cmd.params, "cpid"),
+      order: channelIDOf(cmd.params, "order"),
+      reason: parseInt10(cmd.params["reasonid"] ?? ""),
+      ...invoked(cmd.params),
+    },
+  };
+}
+
+function handleServerEdited(cmd: Command): NotificationResult {
+  const changes: Record<string, string> = {};
+  for (const [key, value] of Object.entries(cmd.params)) {
+    if (key.startsWith("virtualserver_")) changes[key] = value;
+  }
+  return { kind: "serverEdited", event: { changes, ...invoked(cmd.params) } };
+}
+
+function handleChatComposing(cmd: Command): NotificationResult {
+  const clid = asClientID(parseUint16(cmd.params["clid"] ?? ""));
+  if (clid === 0) return { kind: "unknown" };
+  return {
+    kind: "clientChatComposing",
+    event: { clientID: clid, uid: asUID(cmd.params["cluid"] ?? "") },
   };
 }

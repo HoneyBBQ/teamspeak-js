@@ -5,6 +5,7 @@
 
 import type { ChannelGroupID, ChannelID, ClientID, ServerGroupID, UID } from "./command/ids.js";
 import type { ClientChanges, ClientEntry } from "./api/clients.js";
+import type { ChannelChanges } from "./api/command.js";
 import type { NotificationName } from "./notification-name.js";
 
 /** A text message, sent privately, to a channel, or to the whole server. */
@@ -165,6 +166,126 @@ export interface ClientChannelGroupChangedEvent extends Invoked {
   readonly channelGroupInheritedChannelID: ChannelID;
 }
 
+/** A channel being created. */
+export interface ChannelCreatedEvent extends Invoked {
+  /** The new channel. */
+  readonly channelID: ChannelID;
+  /** The channel it sits under, or 0 at the top level. */
+  readonly parentID: ChannelID;
+  /**
+   * The properties the server sent, which are the ones that differ from a new
+   * channel's defaults: a property that is absent is the server's default,
+   * not unknown. The name is always there and the description never is, since
+   * the server does not send it; `channelDescriptionChanged` follows when the
+   * channel has one. `parentID` is among them as well, since the server sent
+   * it. Merge it into a record with `applyChannelChanges`.
+   */
+  readonly changes: ChannelChanges;
+}
+
+/** A channel's properties being edited. */
+export interface ChannelEditedEvent extends Invoked {
+  /** The channel that changed. */
+  readonly channelID: ChannelID;
+  /** Why it changed; `Reason.ChannelEdit` for an edit. A plain number, like every reason. */
+  readonly reason: number;
+  /**
+   * Only the properties the notification carried; a property that is absent
+   * did not change. It is empty for a change of the description, which
+   * `channelDescriptionChanged` reports instead, and a password change carries
+   * `hasPassword` only when the password was set or removed.
+   */
+  readonly changes: ChannelChanges;
+}
+
+/** A channel being moved under another channel, or reordered. */
+export interface ChannelMovedEvent extends Invoked {
+  /** The channel that moved. */
+  readonly channelID: ChannelID;
+  /** The channel it now sits under, or 0 at the top level. */
+  readonly parentID: ChannelID;
+  /** The sibling it now sorts after, or 0 for first; the channel's `order`. */
+  readonly order: ChannelID;
+  /** Why it moved; compare it with `Reason`. */
+  readonly reason: number;
+}
+
+/**
+ * A channel being deleted: by someone, or by the server when an empty
+ * temporary channel expired, which names the invoker "Server" with id 0.
+ */
+export interface ChannelDeletedEvent extends Invoked {
+  /** The channel that was deleted. */
+  readonly channelID: ChannelID;
+}
+
+/**
+ * A channel's description changing. The new text is not in it, nor in the
+ * `channelEdited` that goes with it: fetch it with `getChannelInfo`, or with
+ * the voice client's `getChannelDescription`.
+ */
+export interface ChannelDescriptionChangedEvent {
+  /** The channel whose description changed. */
+  readonly channelID: ChannelID;
+}
+
+/**
+ * A channel's password being set, changed or removed. It always follows a
+ * password change, while the `channelEdited` that goes with it carries
+ * `hasPassword` only when the password was set or removed.
+ */
+export interface ChannelPasswordChangedEvent {
+  /** The channel whose password changed. */
+  readonly channelID: ChannelID;
+}
+
+/** The server's own settings being edited. */
+export interface ServerEditedEvent extends Invoked {
+  /**
+   * The changed properties by the names the server sends
+   * (`virtualserver_name`), which are the keys `getServerInfo` has and
+   * `PropertyName` names. It is empty for a change of a property the server
+   * does not report here, such as the welcome message. There is no `reason`:
+   * TeamSpeak 6 sends none.
+   */
+  readonly changes: Readonly<Record<string, string>>;
+}
+
+/** This client being subscribed to a channel. Delivered by the voice client only. */
+export interface ChannelSubscribedEvent {
+  /** The channel. */
+  readonly channelID: ChannelID;
+}
+
+/**
+ * This client no longer being subscribed to a channel, by its own request or
+ * because the server withdrew it. Delivered by the voice client only.
+ */
+export interface ChannelUnsubscribedEvent {
+  /** The channel. */
+  readonly channelID: ChannelID;
+}
+
+/**
+ * A plugin command from a client, to the channel, the server or this client
+ * alone. The sender receives its own command too, when it was addressed to
+ * the sender's channel or the server. Delivered by the voice client only.
+ */
+export interface PluginCommandEvent extends Invoked {
+  /** The command's name, which the plugins agree on. */
+  readonly name: string;
+  /** Its payload, unescaped; "" when the sender sent none. */
+  readonly data: string;
+}
+
+/** A client typing a private message to this client. Delivered by the voice client only. */
+export interface ClientChatComposingEvent {
+  /** The client that is typing. */
+  readonly clientID: ClientID;
+  /** Its unique identifier. */
+  readonly uid: UID;
+}
+
 /** Audio from another client, in the channel or whispered. */
 export interface VoiceDataEvent {
   /** Who is speaking. */
@@ -237,6 +358,24 @@ export interface ServerEventMap {
   clientLeave: ClientLeaveEvent;
   /** A client changing channel. */
   clientMoved: ClientMovedEvent;
+  /** A channel being created. */
+  channelCreated: ChannelCreatedEvent;
+  /**
+   * A channel's properties being edited. The answer to a description fetch
+   * is not one: the server sends it as an edit with reason `Reason.ChannelUpdate`
+   * and no invoker, which produces no event here and reaches `notification`.
+   */
+  channelEdited: ChannelEditedEvent;
+  /** A channel being moved or reordered. */
+  channelMoved: ChannelMovedEvent;
+  /** A channel being deleted. */
+  channelDeleted: ChannelDeletedEvent;
+  /** A channel's description changing; the text is not in it. */
+  channelDescriptionChanged: ChannelDescriptionChangedEvent;
+  /** A channel's password being set, changed or removed. */
+  channelPasswordChanged: ChannelPasswordChangedEvent;
+  /** The server's settings being edited. */
+  serverEdited: ServerEditedEvent;
   /**
    * Every notification the server sends, modelled or not, after any event it
    * produces. A notification with an event of its own still arrives here: this
