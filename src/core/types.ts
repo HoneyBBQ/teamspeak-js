@@ -148,3 +148,17 @@ export type ClientStatus = (typeof ClientStatus)[keyof typeof ClientStatus];
  * default case.
  */
 export type ServerFamily = "ts3" | "ts6" | "unknown";
+
+/**
+ * Pick the server generation from a `virtualserver_version` string such as
+ * "6.0.0-beta13.1" or "3.13.8 [Build: 1779874471]": major version 3 is TS3,
+ * 6 and later TS6, anything else, including a string with no number, unknown.
+ * Both clients use it, so they cannot disagree about the same server.
+ */
+export function serverFamilyForVersion(version: string): ServerFamily {
+  const major = Number.parseInt(version, 10);
+  if (Number.isNaN(major)) return "unknown";
+  if (major === 3) return "ts3";
+  if (major >= 6) return "ts6";
+  return "unknown";
+}

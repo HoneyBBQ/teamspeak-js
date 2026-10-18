@@ -94,5 +94,7 @@ export {
   generateIdentity,
   generateIdentitySync,
   uidFromPublicKey,
+  uidAlgorithmForVersion,
+  MAX_SECURITY_LEVEL,
 } from "./crypto/index.js";
 export type { UIDAlgorithm } from "./crypto/index.js";

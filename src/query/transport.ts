@@ -1,4 +1,35 @@
 /**
+ * What a connection reports about itself, enough for a metrics exporter to
+ * publish without reaching into the client.
+ *
+ * @experimental Part of the `@honeybbq/teamspeak/query` entry, which may
+ * change in a minor release.
+ */
+export interface QueryTransportStats {
+  /** When the current connection was opened; undefined when there is none. */
+  readonly connectedAt: Date | undefined;
+  /** The kind of connection; undefined when there is none, or for a transport that does not say. */
+  readonly transport: "tcp" | "ssh" | "web" | undefined;
+  /**
+   * Where it points: `host:port` for raw TCP, `user@host:port` for SSH, the
+   * base URL for WebQuery. Never a password or an api key; "" when there is
+   * no connection.
+   */
+  readonly address: string;
+  /**
+   * What the line protocol has written, line terminators included; for
+   * WebQuery, the request bodies. It is what the transport sent, not what the
+   * socket did: headers and retries are not counted.
+   */
+  readonly bytesSent: number;
+  /**
+   * What the server has sent, banner included: the bytes read from the stream
+   * for raw TCP and SSH, the response bodies for WebQuery.
+   */
+  readonly bytesReceived: number;
+}
+
+/**
  * The connection a ServerQuery client talks over.
  *
  * ServerQuery is a line protocol on three transports: raw TCP (10011), SSH
@@ -33,4 +64,9 @@ export interface QueryTransport {
   onClose: ((error: Error | undefined) => void) | null;
   /** End the connection. */
   close(): Promise<void>;
+  /**
+   * What the connection reports about itself, for `QueryClient.stats`. A
+   * transport that does not keep counts leaves it out.
+   */
+  stats?(): QueryTransportStats;
 }

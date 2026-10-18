@@ -2896,6 +2896,9 @@ export interface ServerEventMap {
 export type ServerFamily = "ts3" | "ts6" | "unknown";
 
 // @public
+export function serverFamilyForVersion(version: string): ServerFamily;
+
+// @public
 export type ServerFileTransferID = number & {
     readonly __brand: "ServerFileTransferID";
 };
