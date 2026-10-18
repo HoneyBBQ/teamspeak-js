@@ -44,6 +44,11 @@ export interface ClientMovedEvent {
   readonly invokerUID: UID;
   /** The channel the client is now in. */
   readonly targetChannelID: ChannelID;
+  /**
+   * The channel the client came from (`cfid`). Absent when the server sends
+   * none: TS3 3.13.8 sends no `cfid` on a move, TS6 6.0.0-beta13.1 does.
+   */
+  readonly fromChannelID?: ChannelID | undefined;
   /** Why the client moved; compare it with `Reason`. */
   readonly reason: number;
   /** The message that came with the move, such as a channel kick's reason; "" when none. */
@@ -65,6 +70,16 @@ export interface ClientLeaveEvent {
   readonly reason: number;
   /** The client that left. */
   readonly clientID: ClientID;
+  /**
+   * The channel the client was in (`cfid`); absent when the server sent none.
+   * Both servers sent it on every leave measured.
+   */
+  readonly fromChannelID?: ChannelID | undefined;
+  /**
+   * The channel the client went to (`ctid`), named as on the move event; 0
+   * when it left the server, and absent when the server sent none.
+   */
+  readonly targetChannelID?: ChannelID | undefined;
   /** Who kicked or banned the client; empty otherwise. */
   readonly invokerName: string;
   /** The kicker's unique identifier; empty unless kicked or banned. */
@@ -96,12 +111,28 @@ export interface KickedEvent {
 }
 
 /**
- * A client coming into view: the same record `listClients` returns, so one
- * type describes a client however it was learned of; its own id is `id`, as
- * in every record. The fields only `clientlist -times` reports are undefined
- * here.
+ * A client coming into view: the record `listClients` returns, so one type
+ * describes a client however it was learned of, with what only the
+ * notification says. Its own id is `id`, as in every record. The fields only
+ * `clientlist -times` reports are undefined here.
+ *
+ * `fromChannelID` and `reason` belong to the event: the roster and
+ * `view.clients` keep the record without them.
  */
-export type ClientEnterEvent = ClientEntry;
+export interface ClientEnterEvent extends ClientEntry {
+  /**
+   * The channel the client came from (`cfid`); 0 for a client that joined the
+   * server, and absent when the server sent none. Measured on TS3 3.13.8 and
+   * TS6 6.0.0-beta13.1: 0 on a join and on a client listed by a subscription.
+   */
+  readonly fromChannelID?: ChannelID | undefined;
+  /**
+   * Why the client came into view (`reasonid`); compare it with `Reason`.
+   * Measured on both servers: 0 on a join, 2 (`Reason.Subscription`) for a
+   * client that was already there and came into view by a subscription.
+   */
+  readonly reason?: number | undefined;
+}
 
 /** This client being poked. */
 export interface PokeEvent {
@@ -306,6 +337,18 @@ export interface PluginCommandEvent extends Invoked {
 /** A client typing a private message to this client. Delivered by the voice client only. */
 export interface ClientChatComposingEvent {
   /** The client that is typing. */
+  readonly clientID: ClientID;
+  /** Its unique identifier. */
+  readonly uid: UID;
+}
+
+/**
+ * A client closed its private chat with this client. It is delivered only to a
+ * client the sender has sent a private message to. Delivered by the voice
+ * client only.
+ */
+export interface ClientChatClosedEvent {
+  /** The client that closed the chat. */
   readonly clientID: ClientID;
   /** Its unique identifier. */
   readonly uid: UID;

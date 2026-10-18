@@ -142,7 +142,10 @@ describe("notifications from the server", () => {
         if (result.kind === "clientEnter") {
           expect(result.info.id).toBeGreaterThanOrEqual(1);
           expect(result.info.id).toBeLessThanOrEqual(65535);
-          expect(clients.get(result.info.id)).toBe(result.info);
+          // The roster keeps the record without what only the event carries.
+          const { fromChannelID: _from, reason: _reason, ...record } = result.info;
+          expect(clients.get(result.info.id)).toEqual(record);
+          expect(Object.keys(clients.get(result.info.id) ?? {})).not.toContain("reason");
           expect(gained.length).toBeLessThanOrEqual(1);
           expect(lost).toEqual([]);
         } else if (result.kind === "clientLeave") {

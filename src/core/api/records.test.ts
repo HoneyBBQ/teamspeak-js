@@ -140,7 +140,10 @@ describe("record names against the options that write them", () => {
     for (const table of [clientFields, channelFields] as Array<
       Record<string, { keys: readonly string[] }>
     >) {
-      const seen = Object.values(table).flatMap((spec) => spec.keys);
+      // `client_talk_request` is both the flag and the time of the request.
+      const seen = Object.values(table)
+        .flatMap((spec) => spec.keys)
+        .filter((key) => key !== "client_talk_request");
       expect(new Set(seen).size).toBe(seen.length);
     }
   });
@@ -149,6 +152,7 @@ describe("record names against the options that write them", () => {
 // ---- Records -----------------------------------------------------------------
 
 const newFields = [
+  "talkRequestedAt",
   "databaseID",
   "awayMessage",
   "isInputMuted",

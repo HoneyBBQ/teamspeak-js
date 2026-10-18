@@ -60,6 +60,14 @@ export interface VirtualServer {
   readonly machineID: string | undefined;
   /** Its unique identifier, with `uid`; "" otherwise (`virtualserver_unique_identifier`). */
   readonly uid: string;
+  /** Its UUID, with `uid`; TS6 only (`virtualserver_uuid`). */
+  readonly uuid?: string | undefined;
+  /** Whether guests may create channels; TS6 only (`guest_can_create_channels`). */
+  readonly guestCanCreateChannels?: boolean | undefined;
+  /** Whether guests may create a homebase; TS6 only (`guest_can_create_homebase`). */
+  readonly guestCanCreateHomebase?: boolean | undefined;
+  /** Whether the server is on the public server list; TS6 only (`virtualserver_weblist_enabled`). */
+  readonly weblistEnabled?: boolean | undefined;
 }
 
 const optional = <T>(row: Record<string, string>, key: string, read: () => T): T | undefined =>
@@ -83,6 +91,16 @@ const parseVirtualServer = (row: Record<string, string>): VirtualServer => ({
   autoStart: optional(row, "virtualserver_autostart", () => bool(row, "virtualserver_autostart")),
   machineID: row["virtualserver_machine_id"],
   uid: str(row, "virtualserver_unique_identifier"),
+  uuid: row["virtualserver_uuid"],
+  guestCanCreateChannels: optional(row, "guest_can_create_channels", () =>
+    bool(row, "guest_can_create_channels"),
+  ),
+  guestCanCreateHomebase: optional(row, "guest_can_create_homebase", () =>
+    bool(row, "guest_can_create_homebase"),
+  ),
+  weblistEnabled: optional(row, "virtualserver_weblist_enabled", () =>
+    bool(row, "virtualserver_weblist_enabled"),
+  ),
 });
 
 /** Which servers {@link listServers} reports, and with what. */
@@ -109,8 +127,8 @@ const serverListFlags: WireNames<ServerListOptions> = {
  *
  * Needs `b_serverinstance_virtualserver_list`, which a voice client's Server
  * Admin lacks (error 2568). TS6 also reports `guest_can_create_channels`,
- * `guest_can_create_homebase` and `virtualserver_weblist_enabled`, which are
- * not read here.
+ * `guest_can_create_homebase` and `virtualserver_weblist_enabled`, and its
+ * UUID with `uid`; TS3 sends none of them.
  */
 export async function listServers(
   client: CommandExecutor,

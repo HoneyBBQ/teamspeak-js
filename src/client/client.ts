@@ -16,7 +16,7 @@ import { callHook } from "./hooks.js";
 import { puzzleOf } from "./handshake/crypt-handshake.js";
 import {
   type ChannelID,
-  type ClientEnterEvent,
+  type ClientEntry,
   type ClientID,
   type Codec,
   type KickedEvent,
@@ -152,7 +152,7 @@ export interface ClientInternals {
   nickname: string;
   clid: number;
   /** The clients this one knows of, as its events and `invokerGroups` read them. */
-  readonly clients: ReadonlyMap<number, ClientEnterEvent>;
+  readonly clients: ReadonlyMap<number, ClientEntry>;
   capabilities: ServerCapabilities;
   /** Mark the attempt in progress connected. */
   markConnected(initServer?: Readonly<Record<string, string>>): void;
@@ -428,7 +428,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
   #throttle = new CommandThrottle();
   #cmdTrack = new CommandTracker(() => this.#clid);
   #viewStore: ViewStore;
-  #clients: Map<number, ClientEnterEvent>;
+  #clients: Map<number, ClientEntry>;
   #attempt: ConnectAttempt = newConnectAttempt();
 
   #listeners = new Map<keyof EventMap, Subscription[]>();
@@ -1666,7 +1666,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     }
   }
 
-  #processNotificationResult(result: NotificationResult, leaving?: ClientEnterEvent): void {
+  #processNotificationResult(result: NotificationResult, leaving?: ClientEntry): void {
     switch (result.kind) {
       case "clientEnter": {
         const info = result.info;
@@ -1778,6 +1778,9 @@ export class Client implements CommandExecutor, AsyncDisposable {
         break;
       case "clientChatComposing":
         this.#emitServerEvent({ name: "clientChatComposing", payload: result.event });
+        break;
+      case "clientChatClosed":
+        this.#emitServerEvent({ name: "clientChatClosed", payload: result.event });
         break;
       case "poked":
         this.#emitServerEvent({ name: "poked", payload: result.event });

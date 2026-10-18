@@ -9,7 +9,6 @@ import {
   type ChannelEditedEvent,
   type ChannelID,
   type ChannelMovedEvent,
-  type ClientEnterEvent,
   type ClientEntry,
   type ChannelGroup,
   type ChannelGroupID,
@@ -186,7 +185,7 @@ export interface ServerView {
  * The clients a client knows, by id. Every change to it, whoever makes it, is
  * a change to the view, so it counts them.
  */
-export class Roster extends Map<number, ClientEnterEvent> {
+export class Roster extends Map<number, ClientEntry> {
   #changed: () => void = () => {};
 
   /** Call `changed` after each change from now on. */
@@ -194,7 +193,7 @@ export class Roster extends Map<number, ClientEnterEvent> {
     this.#changed = changed;
   }
 
-  override set(id: number, entry: ClientEnterEvent): this {
+  override set(id: number, entry: ClientEntry): this {
     super.set(id, entry);
     this.#changed();
     return this;

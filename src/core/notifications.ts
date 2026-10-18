@@ -24,6 +24,8 @@ import { Reason } from "./reason.js";
 import { applyClientChanges } from "./api/clients.js";
 import { parseInt10, parseUint16, parseUint64 } from "./helpers.js";
 import type { Command } from "./command/command.js";
+import type { ChannelID } from "./command/ids.js";
+import type { ClientEntry } from "./api/clients.js";
 import type {
   ChannelCreatedEvent,
   ChannelDeletedEvent,
@@ -33,6 +35,7 @@ import type {
   ChannelPasswordChangedEvent,
   ChannelSubscribedEvent,
   ChannelUnsubscribedEvent,
+  ClientChatClosedEvent,
   ClientChatComposingEvent,
   ClientEnterEvent,
   ClientChannelGroupChangedEvent,
@@ -70,6 +73,7 @@ export type NotificationResult =
   | { kind: "channelUnsubscribed"; event: ChannelUnsubscribedEvent }
   | { kind: "pluginCommand"; event: PluginCommandEvent }
   | { kind: "clientChatComposing"; event: ClientChatComposingEvent }
+  | { kind: "clientChatClosed"; event: ClientChatClosedEvent }
   | { kind: "unknown" };
 
 /**
@@ -87,7 +91,7 @@ export type NotificationResult =
 export function handleNotification(
   cmd: Command,
   selfCLID: number,
-  clients: Map<number, ClientEnterEvent>,
+  clients: Map<number, ClientEntry>,
 ): NotificationResult {
   switch (cmd.name) {
     case "notifycliententerview":
@@ -137,6 +141,8 @@ export function handleNotification(
       };
     case "notifyclientchatcomposing":
       return handleChatComposing(cmd);
+    case "notifyclientchatclosed":
+      return handleChatClosed(cmd);
     default:
       return { kind: "unknown" };
   }
@@ -144,19 +150,41 @@ export function handleNotification(
 
 function handleClientEnterView(
   cmd: Command,
-  clients: Map<number, ClientEnterEvent>,
+  clients: Map<number, ClientEntry>,
 ): NotificationResult {
   const info = parseClient(cmd.params);
   // No client has id 0: a row without one describes nobody.
   if (info.id === 0) return { kind: "unknown" };
+  // The roster keeps the record alone; the event adds where it came from and why.
   clients.set(info.id, info);
-  return { kind: "clientEnter", info };
+  return {
+    kind: "clientEnter",
+    info: {
+      ...info,
+      ...channelOf(cmd.params, "cfid", "fromChannelID"),
+      ...(cmd.params["reasonid"] === undefined
+        ? {}
+        : { reason: parseInt10(cmd.params["reasonid"]) }),
+    },
+  };
+}
+
+/** A channel id the row names under `key`, as `{ [name]: id }`; nothing when the row lacks the key. */
+function channelOf<N extends string>(
+  params: Readonly<Record<string, string>>,
+  key: string,
+  name: N,
+): { [K in N]?: ChannelID } {
+  const raw = params[key];
+  return raw === undefined
+    ? {}
+    : ({ [name]: asChannelID(parseUint64(raw)) } as { [K in N]?: ChannelID });
 }
 
 function handleClientLeftView(
   cmd: Command,
   selfCLID: number,
-  clients: Map<number, ClientEnterEvent>,
+  clients: Map<number, ClientEntry>,
 ): NotificationResult {
   const clid = asClientID(parseUint16(cmd.params["clid"] ?? ""));
   if (clid === 0) return { kind: "unknown" };
@@ -166,6 +194,8 @@ function handleClientLeftView(
     kind: "clientLeave",
     event: {
       clientID: clid,
+      ...channelOf(cmd.params, "cfid", "fromChannelID"),
+      ...channelOf(cmd.params, "ctid", "targetChannelID"),
       reason: parseInt10(cmd.params["reasonid"] ?? ""),
       reasonMessage: cmd.params["reasonmsg"] ?? "",
       invokerID: asClientID(parseUint16(cmd.params["invokerid"] ?? "")),
@@ -176,10 +206,7 @@ function handleClientLeftView(
   };
 }
 
-function handleClientMoved(
-  cmd: Command,
-  clients: Map<number, ClientEnterEvent>,
-): NotificationResult {
+function handleClientMoved(cmd: Command, clients: Map<number, ClientEntry>): NotificationResult {
   const clid = asClientID(parseUint16(cmd.params["clid"] ?? ""));
   const ctid = asChannelID(parseUint64(cmd.params["ctid"] ?? ""));
   if (clid === 0) return { kind: "unknown" };
@@ -197,6 +224,7 @@ function handleClientMoved(
     event: {
       clientID: clid,
       targetChannelID: ctid,
+      ...channelOf(cmd.params, "cfid", "fromChannelID"),
       reason: parseInt10(cmd.params["reasonid"] ?? ""),
       reasonMessage: cmd.params["reasonmsg"] ?? "",
       invokerID,
@@ -206,10 +234,7 @@ function handleClientMoved(
   };
 }
 
-function handleTextMessage(
-  cmd: Command,
-  clients: Map<number, ClientEnterEvent>,
-): NotificationResult {
+function handleTextMessage(cmd: Command, clients: Map<number, ClientEntry>): NotificationResult {
   const invokerID = asClientID(parseUint16(cmd.params["invokerid"] ?? ""));
   const invokerInfo = clients.get(invokerID);
 
@@ -246,10 +271,7 @@ function invoked(params: Readonly<Record<string, string>>): Invoked {
   };
 }
 
-function handleClientUpdated(
-  cmd: Command,
-  clients: Map<number, ClientEnterEvent>,
-): NotificationResult {
+function handleClientUpdated(cmd: Command, clients: Map<number, ClientEntry>): NotificationResult {
   const clid = asClientID(parseUint16(cmd.params["clid"] ?? ""));
   if (clid === 0) return { kind: "unknown" };
   const changes = parseClientChanges(cmd.params);
@@ -282,7 +304,7 @@ function handleServerGroupMember(
 
 function handleClientChannelGroupChanged(
   cmd: Command,
-  clients: Map<number, ClientEnterEvent>,
+  clients: Map<number, ClientEntry>,
 ): NotificationResult {
   const clid = asClientID(parseUint16(cmd.params["clid"] ?? ""));
   if (clid === 0) return { kind: "unknown" };
@@ -399,6 +421,15 @@ function handleChatComposing(cmd: Command): NotificationResult {
   if (clid === 0) return { kind: "unknown" };
   return {
     kind: "clientChatComposing",
+    event: { clientID: clid, uid: asUID(cmd.params["cluid"] ?? "") },
+  };
+}
+
+function handleChatClosed(cmd: Command): NotificationResult {
+  const clid = asClientID(parseUint16(cmd.params["clid"] ?? ""));
+  if (clid === 0) return { kind: "unknown" };
+  return {
+    kind: "clientChatClosed",
     event: { clientID: clid, uid: asUID(cmd.params["cluid"] ?? "") },
   };
 }

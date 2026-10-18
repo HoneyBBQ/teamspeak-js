@@ -21,6 +21,8 @@ const notificationNameValues = {
   BanFind: "notifybanfind",
   /** `notifybanlist`: Reply to banlist: one row per ban rule on the virtual server. */
   BanList: "notifybanlist",
+  /** `notifybanupdate`: A ban changed; sent to a ServerQuery connection registered for `bans`. An addition carries the ban row, a deletion its `banid`, a delete-all neither (TS6 6.0.0-beta13.1, `op` says which). */
+  BanUpdate: "notifybanupdate",
   /** `notifychannelchanged`: A channel's properties changed and this client should fetch them again. */
   ChannelChanged: "notifychannelchanged",
   /** `notifychannelclientpermlist`: Reply to channelclientpermlist: one row per permission set for a client in a channel. */

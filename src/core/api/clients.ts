@@ -22,6 +22,7 @@ import {
   str,
   big,
   num,
+  optNum,
   date,
 } from "./command.js";
 import type { PagingOptions, Params, PermissionEntry, WireNames } from "./command.js";
@@ -108,6 +109,11 @@ export interface ClientEntry {
    * the request (`client_talk_request`); any non-zero value is true. No flag.
    */
   readonly isRequestingTalk?: boolean | undefined;
+  /**
+   * When the client asked to talk (`client_talk_request`, a unix time; 0 on
+   * the wire when there is no request, which reads as undefined); no flag.
+   */
+  readonly talkRequestedAt?: Date | undefined;
   /** The message sent with a talk request (`client_talk_request_msg`); no flag. */
   readonly talkRequestMessage?: string | undefined;
   /** The client's description (`client_description`); no flag. */
@@ -177,6 +183,11 @@ export function applyClientChanges(entry: ClientEntry, changes: ClientChanges): 
   const next: Record<string, unknown> = { ...entry };
   for (const [key, value] of Object.entries(changes)) {
     if (value !== undefined) next[key] = value;
+  }
+  // A withdrawn request is a 0 on the wire, which reads as no time and so is
+  // never in `changes`; the flag going false is what says so.
+  if (changes.isRequestingTalk === false && !("talkRequestedAt" in changes)) {
+    delete next["talkRequestedAt"];
   }
   return next as unknown as ClientEntry;
 }
@@ -726,6 +737,37 @@ export async function getClientUIDByID(
   return asUID(str(firstRow(rows, "clientgetuidfromclid", "cluid"), "cluid"));
 }
 
+/** What `clientgetuidfromclid` says about a connected client. */
+export interface ClientUIDInfo {
+  /** The client's id (`clid`). */
+  readonly clientID: ClientID;
+  /** The client's unique identifier (`cluid`). */
+  readonly uid: UID;
+  /** The client's nickname (`nickname`). */
+  readonly nickname: string;
+  /** The client's myTeamSpeak id (`mytsid`); "" for none, as TS3 3.13.8 and TS6 6.0.0-beta13.1 sent it for a client without one. */
+  readonly mytsid: string;
+}
+
+/**
+ * The uid, nickname and myTeamSpeak id of a connected client.
+ * {@link getClientUIDByID} is the same command, keeping only the uid.
+ */
+export async function getClientUIDInfoByID(
+  client: CommandExecutor,
+  clid: ClientID,
+  options?: CommandOptions,
+): Promise<ClientUIDInfo> {
+  const rows = await query(client, "clientgetuidfromclid", [["clid", clid]], options);
+  const row = firstRow(rows, "clientgetuidfromclid", "cluid");
+  return {
+    clientID: asClientID(uint(row, "clid", U16)),
+    uid: asUID(str(row, "cluid")),
+    nickname: str(row, "nickname"),
+    mytsid: str(row, "mytsid"),
+  };
+}
+
 /** The persistent database id behind a uid. */
 export async function getClientDBIDByUID(
   client: CommandExecutor,
@@ -742,10 +784,16 @@ export interface ClientDatabaseName {
   readonly databaseID: ClientDBID;
   /** The nickname the client last used. */
   readonly name: string;
+  /** The client's unique identifier (`cluid`); "" when the server sent none. */
+  readonly uid: UID;
 }
 
 function parseDatabaseName(row: Record<string, string>): ClientDatabaseName {
-  return { databaseID: asClientDBID(big(row, "cldbid")), name: str(row, "name") };
+  return {
+    databaseID: asClientDBID(big(row, "cldbid")),
+    name: str(row, "name"),
+    uid: asUID(str(row, "cluid")),
+  };
 }
 
 /** The database id and nickname recorded for a database id. */
@@ -808,7 +856,21 @@ export interface ClientDatabaseEntry {
   readonly description: string;
   /** The address the client last connected from. */
   readonly lastIP: string;
+  /** The client's query account name (`client_login_name`); "" for none; `clientdblist` rows only. */
+  readonly loginName?: string | undefined;
+  /** The MD5 of the client's avatar (`client_flag_avatar`), "" for none; `getClientDatabaseInfo` only. */
+  readonly avatarHash?: string | undefined;
+  /** Bytes the client has uploaded in all (`client_total_bytes_uploaded`); `getClientDatabaseInfo` only. */
+  readonly totalBytesUploaded?: number | undefined;
+  /** Bytes the client has downloaded in all (`client_total_bytes_downloaded`); `getClientDatabaseInfo` only. */
+  readonly totalBytesDownloaded?: number | undefined;
+  /** Bytes the client has uploaded this month (`client_month_bytes_uploaded`); `getClientDatabaseInfo` only. */
+  readonly monthBytesUploaded?: number | undefined;
+  /** Bytes the client has downloaded this month (`client_month_bytes_downloaded`); `getClientDatabaseInfo` only. */
+  readonly monthBytesDownloaded?: number | undefined;
 }
+
+const optStr = (row: Record<string, string>, key: string): string | undefined => row[key];
 
 const parseDatabaseEntry = (row: Record<string, string>): ClientDatabaseEntry => ({
   databaseID: asClientDBID(big(row, "cldbid")),
@@ -819,6 +881,12 @@ const parseDatabaseEntry = (row: Record<string, string>): ClientDatabaseEntry =>
   totalConnections: num(row, "client_totalconnections"),
   description: str(row, "client_description"),
   lastIP: str(row, "client_lastip"),
+  loginName: optStr(row, "client_login_name"),
+  avatarHash: optStr(row, "client_flag_avatar"),
+  totalBytesUploaded: optNum(row, "client_total_bytes_uploaded"),
+  totalBytesDownloaded: optNum(row, "client_total_bytes_downloaded"),
+  monthBytesUploaded: optNum(row, "client_month_bytes_uploaded"),
+  monthBytesDownloaded: optNum(row, "client_month_bytes_downloaded"),
 });
 
 /** Which slice of the client database {@link listClientDatabase} reads. */

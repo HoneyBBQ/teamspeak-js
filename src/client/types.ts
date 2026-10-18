@@ -4,6 +4,7 @@ import type {
   ChannelSubscribedEvent,
   ChannelUnsubscribedEvent,
   ClientChannelGroupChangedEvent,
+  ClientChatClosedEvent,
   ClientChatComposingEvent,
   ClientID,
   ServerGroupID,
@@ -122,6 +123,11 @@ export interface EventMap extends ServerEventMap, SessionEventMap {
    * sends. Only the target receives it.
    */
   clientChatComposing: ClientChatComposingEvent;
+  /**
+   * A client closing its private chat with this client, which `closePrivateChat`
+   * sends. Only a client the sender has messaged privately is told.
+   */
+  clientChatClosed: ClientChatClosedEvent;
 }
 
 /**
@@ -251,6 +257,8 @@ const eventNameValues = {
   PluginCommand: "pluginCommand",
   /** A client typing a private message to this client. */
   ClientChatComposing: "clientChatComposing",
+  /** A client closing its private chat with this client. */
+  ClientChatClosed: "clientChatClosed",
   /** The view being complete; see `ServerView`. */
   ViewReady: "viewReady",
   /** The view changing; see `ServerView`. */
@@ -318,6 +326,7 @@ export type ServerEventName =
   | "channelUnsubscribed"
   | "pluginCommand"
   | "clientChatComposing"
+  | "clientChatClosed"
   | "poked"
   | "voiceData"
   | "notification";
