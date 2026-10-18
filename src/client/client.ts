@@ -217,6 +217,27 @@ interface AttemptTrace {
   welcomeDone: boolean;
   /** The channel rows the welcome sequence has delivered so far. */
   channels: number;
+  /** Where the key exchange stands, before the shared secret exists. */
+  stage: "init1" | "puzzleSolving" | "puzzleAnswered";
+  /** The last Init1 step of the server's that was answered; -1 for none. */
+  init1Step: number;
+}
+
+/** What an attempt is waiting for now, for the report of an attempt that ended. */
+function describeWaiting(trace: AttemptTrace, clientEkPending: boolean): string {
+  if (trace.phase === ConnectPhase.Open) {
+    return trace.target === "" ? "the server address to resolve" : "the connection to open";
+  }
+  if (trace.phase === ConnectPhase.Join) {
+    return clientEkPending
+      ? "the server's answer to clientek"
+      : "the server's answer to clientinit";
+  }
+  if (trace.stage === "puzzleSolving") return "the RSA puzzle to be solved";
+  if (trace.stage === "puzzleAnswered") return "the server's answer to the RSA puzzle";
+  return trace.init1Step < 0
+    ? "the server's first answer to init1"
+    : `the server's init1 step after step ${trace.init1Step}`;
 }
 
 /** A session that began with `sessionStart`, until its `sessionEnd`. */
@@ -577,17 +598,27 @@ export class Client implements CommandExecutor, AsyncDisposable {
       sessionStarted: false,
       welcomeDone: false,
       channels: 0,
+      stage: "init1",
+      init1Step: -1,
     };
     attempt.trace = trace;
-    attempt.onFail = (error) =>
+    attempt.onFail = (error) => {
+      const waitingFor = describeWaiting(trace, this.#handler.clientEkPending);
+      this.#logger.info("connection attempt ended", {
+        phase: trace.phase,
+        waitingFor,
+        error: String(error),
+      });
       this.#callHook(this.#trace?.attemptFailed, () => ({
         attempt: trace.attempt,
         reconnect: trace.reconnect,
         phase: trace.phase,
         error,
         target: trace.target,
+        waitingFor,
         durationMs: performance.now() - trace.startedAt,
       }));
+    };
 
     // The handshake may complete just as the signal fires, in which case
     // #failConnection leaves the session alone and the caller gets the
@@ -1376,12 +1407,18 @@ export class Client implements CommandExecutor, AsyncDisposable {
       if (this.#crypt.cryptoInitComplete) return;
       const signal = this.#attempt.signal;
       const handler = this.#handler;
+      const trace = this.#attempt.trace;
+      const step = p.data[0] ?? 0x7f;
       const response = processInit1(this.#crypt, p.data, signal);
       if (response instanceof Promise) {
         // The puzzle: solved in slices, so the loop keeps running meanwhile.
+        if (trace !== undefined) trace.stage = "puzzleSolving";
         response.then(
           (answer) => {
-            if (answer && !signal.aborted) handler.sendPacket(PacketType.Init1, answer, 0);
+            if (answer && !signal.aborted) {
+              handler.sendPacket(PacketType.Init1, answer, 0);
+              if (trace !== undefined) trace.stage = "puzzleAnswered";
+            }
           },
           (error: unknown) => {
             // An attempt that ended did so for its own reason; the abandoned
@@ -1391,6 +1428,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
         );
       } else if (response) {
         handler.sendPacket(PacketType.Init1, response, 0);
+        if (trace !== undefined) trace.init1Step = step === 0x7f ? -1 : step;
       }
       return;
     }

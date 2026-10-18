@@ -432,6 +432,144 @@ describe("a failed attempt", () => {
   });
 });
 
+describe("an attempt the caller's signal ended", () => {
+  /** A step of the server's Init1 exchange: a type byte, then `rest` zeros. */
+  const init1Step = (type: number, length: number): Uint8Array => {
+    const data = new Uint8Array(length);
+    data[0] = type;
+    return data;
+  };
+  /** The RSA puzzle with x = 2, a 64-byte odd modulus and `level` squarings. */
+  const puzzle = (level: number): Uint8Array => {
+    const data = init1Step(3, 1 + 64 + 64 + 4 + 100);
+    data[64] = 2;
+    data.fill(0xff, 65, 129);
+    new DataView(data.buffer).setUint32(129, level, false);
+    return data;
+  };
+
+  const cases: Array<{
+    name: string;
+    phase: ConnectPhase;
+    waitingFor: string;
+    drive: (client: Client, socket: FakeSocket) => Promise<void>;
+  }> = [
+    {
+      name: "the server's first answer",
+      phase: ConnectPhase.Handshake,
+      waitingFor: "the server's first answer to init1",
+      drive: async () => {},
+    },
+    {
+      name: "an Init1 step",
+      phase: ConnectPhase.Handshake,
+      waitingFor: "the server's init1 step after step 0",
+      drive: async (_client, socket) => {
+        socket.deliver(init1Packet(init1Step(0, 21)));
+      },
+    },
+    {
+      name: "the puzzle being solved",
+      phase: ConnectPhase.Handshake,
+      waitingFor: "the RSA puzzle to be solved",
+      drive: async (_client, socket) => {
+        socket.deliver(init1Packet(puzzle(2_000_000)));
+      },
+    },
+    {
+      name: "the answer to the puzzle",
+      phase: ConnectPhase.Handshake,
+      waitingFor: "the server's answer to the RSA puzzle",
+      drive: async (_client, socket) => {
+        const before = socket.sent.length;
+        socket.deliver(init1Packet(puzzle(1)));
+        await until(() => socket.sent.length > before);
+        // The stage is set just after the answer is sent.
+        await settle();
+      },
+    },
+    {
+      name: "the answer to clientek",
+      phase: ConnectPhase.Join,
+      waitingFor: "the server's answer to clientek",
+      drive: async (client) => {
+        const internals = clientInternals(client);
+        // As the key exchange does: clientek under the dummy key, then the secret.
+        internals.handler.sendPacket(2, Buffer.from("clientek ek=AAAA proof=AAAA"), 0);
+        completeCryptoInit(internals.crypt);
+        internals.markHandshakeDone("");
+      },
+    },
+    {
+      name: "the answer to clientinit",
+      phase: ConnectPhase.Join,
+      waitingFor: "the server's answer to clientinit",
+      drive: async (client) => {
+        const internals = clientInternals(client);
+        completeCryptoInit(internals.crypt);
+        internals.markHandshakeDone("");
+      },
+    },
+  ];
+
+  for (const c of cases) {
+    it(`names ${c.name}, and rejects with the signal's own reason`, async () => {
+      const { trace, calls } = recordingTrace();
+      const { client, sockets } = makeClient({ trace: trace });
+      const controller = new AbortController();
+      const reason = new Error("caller went away");
+      const connecting = client.connect({ signal: controller.signal });
+      await until(() => clientInternals(client).handler.isOpen);
+      await c.drive(client, sockets[0]!);
+      controller.abort(reason);
+
+      await expect(connecting).rejects.toBe(reason);
+      const failed = calls.filter((call) => call.name === "attemptFailed");
+      expect(failed).toHaveLength(1);
+      expect(failed[0]!.info).toMatchObject({
+        phase: c.phase,
+        waitingFor: c.waitingFor,
+        error: reason,
+      });
+    });
+  }
+
+  it("names the connection that never opened", async () => {
+    const { trace, calls } = recordingTrace();
+    const client = new Client(identity, "127.0.0.1:9987", "Bot", {
+      trace,
+      socketFactory: () => new SlowSocket(),
+    });
+    const controller = new AbortController();
+    const reason = new Error("gave up");
+    const connecting = client.connect({ signal: controller.signal });
+    await settle();
+    controller.abort(reason);
+    await expect(connecting).rejects.toBe(reason);
+    expect(calls.find((call) => call.name === "attemptFailed")!.info).toMatchObject({
+      phase: ConnectPhase.Open,
+      waitingFor: "the connection to open",
+    });
+  });
+
+  it("names the address that never resolved", async () => {
+    const { trace, calls } = recordingTrace();
+    const { client } = makeClient({
+      trace,
+      resolver: { resolve: () => new Promise(() => {}) },
+    });
+    const controller = new AbortController();
+    const reason = new Error("gave up");
+    const connecting = client.connect({ signal: controller.signal });
+    await settle();
+    controller.abort(reason);
+    await expect(connecting).rejects.toBe(reason);
+    expect(calls.find((call) => call.name === "attemptFailed")!.info).toMatchObject({
+      waitingFor: "the server address to resolve",
+    });
+  });
+});
+
 describe("reconnecting", () => {
   it("reports reconnectScheduled, and numbers the attempts it makes", async () => {
     const { trace, calls, names } = recordingTrace();

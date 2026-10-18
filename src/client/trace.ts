@@ -136,6 +136,13 @@ export interface AttemptFailedInfo extends AttemptInfo {
   readonly error: unknown;
   /** The `host:port` being dialled; empty when the attempt failed before `resolveDone`. */
   readonly target: string;
+  /**
+   * What the attempt was waiting for when it ended, in words for a person or a
+   * log, such as `the server's answer to clientek`. It is finer than
+   * {@link AttemptFailedInfo.phase}, and its wording may change in any release:
+   * do not match on it.
+   */
+  readonly waitingFor: string;
   /** Milliseconds since `resolveStart`. */
   readonly durationMs: number;
 }
