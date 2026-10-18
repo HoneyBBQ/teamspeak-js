@@ -27,8 +27,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { utils } from "ssh2";
-import { describe, it, expect, beforeAll, afterAll, type TestContext } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, type TestContext } from "vitest";
 import {
   ClientStatus,
   ErrorCode,
@@ -97,6 +96,7 @@ import { GuestAccessError, QueryAuthError, SshHostKeyError } from "./errors.js";
 import type { QueryClientOptions } from "./options.js";
 import { connectSsh } from "./ssh.js";
 import type { SshHostKey } from "./ssh.js";
+import { newSshKeyPair } from "./testing/ssh-keys.js";
 import type {
   ClientEnterEvent,
   ClientMovedEvent,
@@ -158,8 +158,7 @@ let presentedKey: Promise<SshHostKey> | undefined;
 
 /**
  * The key the SSH server presents. It does not change during a run, so it is
- * probed once: every probe is another connection, and TeamSpeak 3 lets an
- * address hold only five at a time.
+ * probed once.
  */
 function presentedSshKey(): Promise<SshHostKey> {
   presentedKey ??= probeSshKey();
@@ -171,25 +170,21 @@ function presentedSshKey(): Promise<SshHostKey> {
  * that refuses the key has seen it and sent nothing.
  */
 async function probeSshKey(): Promise<SshHostKey> {
-  for (let attempt = 1; ; attempt++) {
-    let presented: SshHostKey | undefined;
-    await connectSsh({
-      host: SSH_HOST,
-      port: SSH_PORT,
-      username: SSH_USER,
-      password: SSH_PASSWORD,
-      hostKey: (key) => {
-        presented = key;
-        throw new Error("recorded, and not trusted yet");
-      },
-    }).catch(() => {});
-    if (presented !== undefined) return presented;
-    // A server at its connection limit resets the handshake before any key.
-    if (attempt === CONNECT_ATTEMPTS) {
-      throw new Error(`the server at ${SSH_HOST}:${SSH_PORT} sent no key`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+  let presented: SshHostKey | undefined;
+  await connectSsh({
+    host: SSH_HOST,
+    port: SSH_PORT,
+    username: SSH_USER,
+    password: SSH_PASSWORD,
+    hostKey: (key) => {
+      presented = key;
+      throw new Error("recorded, and not trusted yet");
+    },
+  }).catch(() => {});
+  if (presented === undefined) {
+    throw new Error(`the server at ${SSH_HOST}:${SSH_PORT} sent no key`);
   }
+  return presented;
 }
 
 /** The options for one transport kind. */
@@ -247,6 +242,24 @@ async function connectWithRetries(client: QueryClient): Promise<void> {
     }
   }
 }
+
+/**
+ * Time to let a TeamSpeak 3 server finish closing an SSH query session.
+ *
+ * A connection made within a few milliseconds of an SSH session ending is
+ * accepted and closed at once, with nothing read from it: the client sees
+ * "socket hang up" before any response byte, whatever the request is (measured
+ * on 3.13.8 for POST and GET, 200 and 401, with and without a body: 4 to 14 of
+ * every 100 requests sent straight after an SSH close, none from 3 ms on). The
+ * server logs "Bad file descriptor" for them. TeamSpeak 6 and a raw session's
+ * end do not do it. The server is what drops the connection, so the suite
+ * waits rather than retrying: a retry cannot know the command was not run.
+ */
+const SSH_TEARDOWN_MS = 50;
+
+afterEach(async () => {
+  if (KINDS.includes("ssh")) await new Promise((resolve) => setTimeout(resolve, SSH_TEARDOWN_MS));
+});
 
 /** Reject rather than hang when a pushed event never arrives. */
 function withTimeout<T>(promise: Promise<T>, timeoutMs = EVENT_TIMEOUT_MS): Promise<T> {
@@ -591,7 +604,7 @@ describe.skipIf(SKIP)("Integration — ServerQuery client", () => {
   it.skipIf(!KINDS.includes("ssh"))(
     "refuses an SSH server whose host key is not the recorded one",
     async () => {
-      const stranger = utils.generateKeyPairSync("ed25519");
+      const stranger = newSshKeyPair();
       const [keyType, encoded] = stranger.public.trim().split(/\s+/);
       const wrongKey = knownHostsFile(
         "stranger",
@@ -1189,27 +1202,16 @@ describe.skipIf(SKIP || GUEST)("Integration — a server with no guest access", 
     rmSync(scratch, { recursive: true, force: true });
   });
 
-  /**
-   * The error a guest connection ends in. TeamSpeak 3 lets an address hold five
-   * connections across all its query ports, and resets a sixth, so an attempt
-   * that fails for any reason but the refusal under test is tried again, as the
-   * rest of the suite does; the refusal itself is the answer and is never
-   * retried.
-   */
+  /** The error a guest connection ends in. */
   async function refusal(options: QueryClientOptions): Promise<unknown> {
-    for (let attempt = 1; ; attempt++) {
-      const client = new QueryClient(options);
-      try {
-        await client.connect({ signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) });
-      } catch (error) {
-        if (error instanceof GuestAccessError || attempt === CONNECT_ATTEMPTS) return error;
-        console.warn(`guest connect attempt ${attempt} of ${CONNECT_ATTEMPTS}: ${String(error)}`);
-        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
-        continue;
-      }
-      await client.disconnect();
-      throw new Error("the guest connection was accepted");
+    const client = new QueryClient(options);
+    try {
+      await client.connect({ signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) });
+    } catch (error) {
+      return error;
     }
+    await client.disconnect();
+    throw new Error("the guest connection was accepted");
   }
 
   it.skipIf(!KINDS.includes("web"))(

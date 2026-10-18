@@ -3,11 +3,12 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Server, utils } from "ssh2";
+import { Server } from "ssh2";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { QueryClient } from "./client.js";
 import { GuestAccessError, QueryAuthError, SshHostKeyError } from "./errors.js";
 import { connectSsh } from "./ssh.js";
+import { newSshKeyPair } from "./testing/ssh-keys.js";
 import type { SshConnectOptions, SshHostKey, SshHostKeyPolicy } from "./ssh.js";
 
 /**
@@ -20,18 +21,14 @@ import type { SshConnectOptions, SshHostKey, SshHostKeyPolicy } from "./ssh.js";
 const USER = "serveradmin";
 const PASSWORD = "the-query-password";
 
-function newKeyPair(): { readonly private: string; readonly public: string } {
-  return utils.generateKeyPairSync("ed25519");
-}
-
 /** The `<type> <base64>` of an OpenSSH public key line, without its comment. */
 function publicKeyFields(line: string): { readonly type: string; readonly encoded: string } {
   const [type, encoded] = line.trim().split(/\s+/);
   return { type: type!, encoded: encoded! };
 }
 
-const hostKeys = newKeyPair();
-const otherKeys = newKeyPair();
+const hostKeys = newSshKeyPair();
+const otherKeys = newSshKeyPair();
 
 /** What the server has been sent, in order: one entry per authentication message. */
 const authentications: string[] = [];
