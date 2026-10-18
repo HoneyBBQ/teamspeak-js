@@ -46,9 +46,17 @@ export type QueryTransportOptions =
   | ({
       /** WebQuery, the HTTP interface of TeamSpeak 3 (3.12 and later) and TeamSpeak 6. */
       readonly kind: "web";
-      /** The server's base URL, such as `http://127.0.0.1:10080`. */
+      /**
+       * The server's base URL, such as `http://127.0.0.1:10080` or
+       * `https://ts.example.com:10443`.
+       */
       readonly url: string;
-      /** The `fetch` to use; a small one over `node:http` by default. */
+      /**
+       * The `fetch` to use; by default a small one over `node:http` or
+       * `node:https` by the URL's scheme, verifying an HTTPS certificate
+       * against Node's trust store. For a private CA, pass a `fetch` that
+       * trusts it, or start Node with `NODE_EXTRA_CA_CERTS`.
+       */
       readonly fetch?: typeof fetch | undefined;
     } & WebCredentials)
   | {

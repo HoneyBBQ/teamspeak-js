@@ -537,11 +537,11 @@ the way the voice protocol cannot: the same typed commands the core exports,
 plus the ones only an administrator may run, over the three transports a
 ServerQuery speaks.
 
-| Transport | Where        | Server           | Login             | Notifications |
-| --------- | ------------ | ---------------- | ----------------- | ------------- |
-| `tcp`     | 10011        | TeamSpeak 3 only | `transport.login` | yes           |
-| `ssh`     | 10022        | both             | the SSH login     | yes           |
-| `web`     | 10080 (HTTP) | both             | the api key       | **no**        |
+| Transport | Where                       | Server           | Login             | Notifications |
+| --------- | --------------------------- | ---------------- | ----------------- | ------------- |
+| `tcp`     | 10011                       | TeamSpeak 3 only | `transport.login` | yes           |
+| `ssh`     | 10022                       | both             | the SSH login     | yes           |
+| `web`     | 10080 (HTTP), 10443 (HTTPS) | both             | the api key       | **no**        |
 
 TeamSpeak 3 (3.12 and later for WebQuery, 3.3 and later for SSH) serves SSH and
 WebQuery as well as raw TCP, but only the raw port is on until
@@ -549,6 +549,41 @@ WebQuery as well as raw TCP, but only the raw port is on until
 `TS3SERVER_QUERY_PROTOCOLS=raw,ssh,http`. TeamSpeak 6 has no raw port. Its
 WebQuery also answers a request with no api key as a guest; TeamSpeak 3 refuses
 one.
+
+WebQuery is reached over `http:` or `https:`, by the scheme of `url`. TeamSpeak 3
+serves HTTPS on 10443 once `query_protocols` lists `https` and
+`query_https_certificate_file` and `query_https_private_key_file` are set. The
+built-in `fetch` verifies the certificate against the trust store Node uses and
+never skips that. A certificate from a private CA, or a self-signed one, is
+trusted by starting Node with `NODE_EXTRA_CA_CERTS=ca.pem`, or by a `fetch`
+that trusts the CA:
+
+```typescript
+import { readFileSync } from "node:fs";
+import { Agent, request } from "node:https";
+
+const agent = new Agent({ ca: readFileSync("ca.pem") });
+const trusting = ((url: string, init: RequestInit) =>
+  new Promise<Response>((resolve, reject) => {
+    const req = request(
+      url,
+      { method: init.method, headers: init.headers as never, agent },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer) => chunks.push(chunk));
+        res.on("end", () =>
+          resolve(new Response(Buffer.concat(chunks), { status: res.statusCode })),
+        );
+      },
+    );
+    req.on("error", reject);
+    req.end(init.body as string);
+  })) as typeof fetch;
+
+new QueryClient({
+  transport: { kind: "web", url: "https://ts.example.com:10443", apiKey, fetch: trusting },
+});
+```
 
 Only raw TCP and SSH carry notifications: the server pushes them down the same
 connection. WebQuery has no session to push to and refuses to register, so the
