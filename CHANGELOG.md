@@ -4,6 +4,47 @@ Until 1.0.0-beta.4 this package was published as `@honeybbq/teamspeak-core`, and
 `@honeybbq/teamspeak-client` was a second package. The sections below, down to
 the last version heading, are the core's history; the client's is at the bottom.
 
+## 1.0.0-beta.12
+
+### Major Changes
+
+- [#90](https://github.com/HoneyBBQ/teamspeak-js/pull/90) [`53fe50d`](https://github.com/HoneyBBQ/teamspeak-js/commit/53fe50d41b1a80df1210006c22e79e5f9fc0f26f) - The raw TCP login moves from the `QueryClient` options into the `tcp` transport. `QueryClientOptions.login` is gone; give the account as `transport.login`, next to the `host`, the way SSH and WebQuery already carry their credentials. How to connect and authenticate is the transport's, and what to do on the session (`server`, `nickname`, `events`, `reconnect`) stays on the client. The type now says what was only a runtime rule before: `login` exists on the `tcp` arm and on no other, so a login beside an SSH or WebQuery transport no longer type-checks.
+
+  ```ts
+  // before
+  new QueryClient({
+    transport: { kind: "tcp", host: "ts.example.com" },
+    login: { name: "serveradmin", password },
+    server: { id: 1 },
+  });
+
+  // after
+  new QueryClient({
+    transport: { kind: "tcp", host: "ts.example.com", login: { name: "serveradmin", password } },
+    server: { id: 1 },
+  });
+  ```
+
+  A caller in plain JavaScript who still passes the top-level `login` gets a `TypeError` that names `transport.login`, rather than a client that connects without logging in. `transport.login` on any kind other than `tcp` throws too. The login is still sent after every reconnect, and `client.login(name, password)` is unchanged.
+
+  A `custom` transport no longer takes a `login`: its `open` builds the connection, so it logs in there, or the application calls `client.login()` once connected. To keep the client's own login and reconnects, open the connection with `kind: "tcp"` and its `connect` function instead.
+
+### Minor Changes
+
+- [#87](https://github.com/HoneyBBQ/teamspeak-js/pull/87) [`9124332`](https://github.com/HoneyBBQ/teamspeak-js/commit/912433236b87cf80827c26fd3bb4c57ac3d342b7) - The view of a voice client now holds the groups and the server's properties, and tells you when it changed. `view.serverGroups` and `view.channelGroups` are the server's group lists in its order, replaced whole when the server sends a new one (after a group is added, renamed, copied or deleted); `view.groupsLoaded` is `true` once both have arrived, which is just after `viewReady`, so a UI that needs them waits for it. A group's permissions are not announced and are not in the view. `view.server` holds the `virtualserver_*` properties by the names `getServerInfo` uses, from the server's welcome, patched by `serverEdited` and merged with every `getServerVariables` answer. The server does not spell out every edit: a new welcome message, host message or client limit arrives as an empty `serverEdited`, so call the new `getServerVariables(client)` after one to bring those up to date. It returns the whole answer, counters included; `view.server` never holds the counters and statistics that change by themselves, such as clients online and uptime.
+
+  The new `viewChanged` event, `{ revision }`, is delivered once after the typed events of whatever arrived together, so a UI that redraws from the view needs one listener. It is not sent while the view is loading, nor when the revision is the one `viewReady` or the last `viewChanged` gave, and it is sent once when the view goes stale. It never replaces the typed events.
+
+  `channelDeleted` and `clientLeave` now carry `previous`, the channel or client as the view held it just before, so a listener can say what was removed. It is absent when the client did not know it, and always absent on a ServerQuery client. All of this is experimental.
+
+### Patch Changes
+
+- [#89](https://github.com/HoneyBBQ/teamspeak-js/pull/89) [`a9cedaa`](https://github.com/HoneyBBQ/teamspeak-js/commit/a9cedaa417cebf8aec2ec700fb1ab12c434829ca) - A client can now connect to a TeamSpeak server that is under a burst of connections. Such a server raises its protection level and asks for a bigger Init1 puzzle: 100000 squarings at level 1 and 1000000 at level 2, where it asks for 10000 when calm. The client refused anything above 100000, so it could not connect at all. The cap is now 4000000, four times the highest level either server asks for. The puzzle is solved in slices that give the event loop back, so timers and other connections keep running meanwhile, and a cancelled `connect()` stops solving and rejects with its own reason. A level above the cap rejects with the new `PuzzleTooHardError`, a `HandshakeError` that carries the `level` asked for and the `maxLevel` allowed.
+
+- [#88](https://github.com/HoneyBBQ/teamspeak-js/pull/88) [`9e4776d`](https://github.com/HoneyBBQ/teamspeak-js/commit/9e4776dffdacd7ba2c8640168932c092db2393a8) - `ErrorCode` now names the codes WebQuery refuses access with: `APIKeyOutOfScope` (5120), `APIKeyInvalid` (5122) and `APIKeyMissing` (5124). A query client connecting with `guest: true` to a server that offers no guest access, such as any TeamSpeak 3 server, now rejects with a `GuestAccessError` that says so and keeps the server's refusal as its `cause` (and its code, over WebQuery). The `serverID` option of the WebQuery transport is documented correctly: TeamSpeak 3 runs every command on a virtual server even when none is named.
+
+- [#88](https://github.com/HoneyBBQ/teamspeak-js/pull/88) [`9e4776d`](https://github.com/HoneyBBQ/teamspeak-js/commit/9e4776dffdacd7ba2c8640168932c092db2393a8) - A query client now says `quit` before it closes a raw TCP or SSH connection, and waits a moment for the server to end the session. A TeamSpeak 3 server could keep an SSH session whose client had simply gone away, and enough of them locked the address out of new connections.
+
 ## 1.0.0-beta.11
 
 ### Minor Changes
