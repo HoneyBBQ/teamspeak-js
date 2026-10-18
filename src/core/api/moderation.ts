@@ -252,8 +252,11 @@ export async function addBan(
  *
  * Measured on TS3 3.13.8 and TS6 beta13.1: two bans, one for the uid and one
  * for the address. TS6 has also answered with no `banid` at all though both
- * bans were made (about once in a hundred calls over SSH and WebQuery), so an
- * empty result does not mean no ban. A caller that must undo the ban lists the
+ * bans were made (about once in a hundred calls over WebQuery), so an empty
+ * result does not mean no ban, and no lookup of the ids is made: a ban has no
+ * field that ties it to this call. Over SSH, TS6 may write the `banid` rows
+ * after the `error` line; the ServerQuery client waits briefly for them, so
+ * they are not lost to that. A caller that must undo the ban lists the
  * bans before and after and removes what is new: a ban on the address refuses
  * every later connection from it.
  */

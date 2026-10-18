@@ -39,6 +39,7 @@ import { connectTcp } from "./tcp.js";
 import { connectSsh } from "./ssh.js";
 import { WebQueryTransport } from "./web.js";
 import { GuestAccessError, QueryAuthError } from "./errors.js";
+import { LATE_ROW_GRACE_MS, LATE_ROW_QUIET_MS, hasLateRow, lateRowsOf } from "./late-rows.js";
 import {
   assertEventsSupported,
   normalizeQueryOptions,
@@ -103,6 +104,16 @@ interface Pending {
   readonly rows: Array<Record<string, string>>;
   resolve(rows: Array<Record<string, string>>): void;
   reject(error: unknown): void;
+  /** Set once the `error` line has been read: what follows is a late row or nothing. */
+  held?: {
+    readonly keys: readonly string[];
+    readonly several: boolean;
+    readonly any: boolean;
+    timer: ReturnType<typeof setTimeout>;
+    /** Wait for another row, or for the rows to stop. */
+    wait(ms: number): void;
+    finish(): void;
+  };
 }
 
 /**
@@ -132,6 +143,12 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
   #version = "";
 
   #pending: Pending | null = null;
+  /**
+   * The key of a row that was waited for and did not come before its answer
+   * was given up on. Should it arrive later, it belongs to that command and is
+   * dropped rather than handed to the next one.
+   */
+  #strayKey: string | undefined;
   /**
    * Answers still to come for commands that gave up waiting. ServerQuery has
    * no return_code, only order, so each is read and discarded when it arrives
@@ -392,6 +409,7 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     this.#closed = false;
     this.#abandoned = 0;
     this.#pending = null;
+    this.#strayKey = undefined;
     this.#clients.clear();
     this.#clid = 0;
     this.#serverFamily = "unknown";
@@ -933,8 +951,12 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
       clearTimeout(nudger);
       if (onAbort) signal?.removeEventListener("abort", onAbort);
       if (this.#pending !== null) {
+        const gone = this.#pending;
         this.#pending = null;
-        if (!sending.failed) {
+        if (gone.held) {
+          // Its `error` line was read already, so no answer is still to come.
+          clearTimeout(gone.held.timer);
+        } else if (!sending.failed) {
           this.#abandoned++;
           abandonedByUs = true;
         }
@@ -957,9 +979,49 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
       this.#pending = null;
       if (!pending) return;
       const { err } = parseServerError(cmd.params);
+      this.#strayKey = undefined;
       const refusal = err ?? transferRefusal(pending.command, pending.rows);
-      if (refusal) pending.reject(refusal);
-      else pending.resolve(pending.rows);
+      if (refusal) {
+        pending.reject(refusal);
+        return;
+      }
+      const late = this.#options.transport.kind === "web" ? undefined : lateRowsOf(pending.command);
+      const hasRow = late !== undefined && hasLateRow(late, pending.rows);
+      if (late === undefined || (hasRow && late.several !== true)) {
+        pending.resolve(pending.rows);
+        return;
+      }
+      // A create that succeeded, with its row not here yet or perhaps not all
+      // of them: the server may write them just after this line. Wait briefly,
+      // with the command still the one on the wire, so the rows are its own and
+      // the next command is not sent before them.
+      this.#pending = pending;
+      const finish = (): void => {
+        clearTimeout(pending.held?.timer);
+        if (this.#pending === pending) this.#pending = null;
+        pending.resolve(pending.rows);
+      };
+      const held: NonNullable<Pending["held"]> = {
+        keys: late.keys,
+        several: late.several === true,
+        any: late.any === true,
+        timer: setTimeout(() => {}, 0),
+        finish,
+        wait: (ms) => {
+          clearTimeout(held.timer);
+          held.timer = setTimeout(() => {
+            // Given up on, with no row at all: one that still comes is not the
+            // next command's.
+            const got = hasLateRow(late, pending.rows);
+            if (!got && this.#pending === pending && held.keys[0] !== undefined) {
+              this.#strayKey = held.keys[0];
+            }
+            finish();
+          }, ms);
+        },
+      };
+      pending.held = held;
+      held.wait(hasRow || late.any === true ? LATE_ROW_QUIET_MS : LATE_ROW_GRACE_MS);
       return;
     }
     if (cmd.name.startsWith("notify")) {
@@ -973,7 +1035,23 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     if (this.#abandoned > 0) return;
     for (const row of splitRows(trimmed)) {
       const parsed = parseCommand(row);
-      if (parsed) this.#pending?.rows.push(parsed.params);
+      if (!parsed) continue;
+      const keys = Object.keys(parsed.params);
+      if (this.#strayKey !== undefined && keys.length === 1 && keys[0] === this.#strayKey) {
+        const own = this.#pending === null ? undefined : lateRowsOf(this.#pending.command);
+        this.#strayKey = undefined;
+        // The late row of an earlier command, which gave up waiting for it. A
+        // command whose own answer carries that key keeps it: the two cannot be
+        // told apart, and lateness was measured at under a millisecond against
+        // a wait of 250, so it almost certainly belongs to the command asking.
+        if (!own?.keys.includes(keys[0])) continue;
+      }
+      this.#pending?.rows.push(parsed.params);
+      const held = this.#pending?.held;
+      if (held && (held.any || keys.some((k) => held.keys.includes(k)))) {
+        if (held.several || held.any) held.wait(LATE_ROW_QUIET_MS);
+        else held.finish();
+      }
     }
   }
 

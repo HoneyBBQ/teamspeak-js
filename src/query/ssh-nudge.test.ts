@@ -102,6 +102,8 @@ describe("the SSH nudge for a held reply", () => {
     await vi.advanceTimersByTimeAsync(2_000);
     expect(nudges(channel)).toBe(3);
     channel.feed(OK);
+    // An empty answer to a read is held a moment for rows that may follow it.
+    await vi.advanceTimersByTimeAsync(30);
     await done;
     await vi.advanceTimersByTimeAsync(10_000);
     expect(nudges(channel)).toBe(3);
@@ -160,15 +162,18 @@ describe("the SSH nudge for a held reply", () => {
     expect(channel.writes.filter((w) => w !== "\n")).toEqual(["version\n"]);
     expect(nudges(channel)).toBe(1);
     channel.feed(OK);
+    await vi.advanceTimersByTimeAsync(30);
     await first;
     await flush();
     expect(channel.writes.filter((w) => w !== "\n")).toEqual(["version\n", "whoami\n"]);
-    // The first command's schedule (3 s) is gone; the second counts from now.
-    await vi.advanceTimersByTimeAsync(1_999);
+    // The first command's schedule (3 s) is gone; the second counts from when it
+    // was sent, 25 ms into the 30 that were just waited.
+    await vi.advanceTimersByTimeAsync(1_994);
     expect(nudges(channel)).toBe(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(nudges(channel)).toBe(2);
     channel.feed(OK);
+    await vi.advanceTimersByTimeAsync(30);
     await second;
   });
 
@@ -190,6 +195,7 @@ describe("the SSH nudge for a held reply", () => {
     await vi.advanceTimersByTimeAsync(5_000);
     expect(nudges(plain)).toBe(0);
     plain.feed(OK);
+    await vi.advanceTimersByTimeAsync(30);
     await done;
     await other.disconnect();
   });
