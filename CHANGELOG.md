@@ -4,6 +4,28 @@ Until 1.0.0-beta.4 this package was published as `@honeybbq/teamspeak-core`, and
 `@honeybbq/teamspeak-client` was a second package. The sections below, down to
 the last version heading, are the core's history; the client's is at the bottom.
 
+## 1.0.0-beta.13
+
+### Minor Changes
+
+- [#96](https://github.com/HoneyBBQ/teamspeak-js/pull/96) [`a6d8daf`](https://github.com/HoneyBBQ/teamspeak-js/commit/a6d8daf7e8aa583a844874a3e972d4c9ddec0132) - Events: `ClientMovedEvent.fromChannelID` (`cfid`; absent on TS3, which sends none on a move), and `ClientLeaveEvent.fromChannelID` and `targetChannelID`. `ClientEnterEvent` is now an interface extending `ClientEntry` with `fromChannelID` and `reason`, which the roster and `view.clients` records do not carry. The voice client delivers `clientChatClosed`. `NotificationName.BanUpdate` names `notifybanupdate`, which stays untyped: its forms differ (an addition carries the row, a deletion the id, a delete-all neither). `"tokenused"` is a `QueryEventCategory`, never registered by default.
+
+  Records: `Channel.emptyForMs` (undefined for a channel with a client in it, which both servers report as -1), `storageQuota` and `filePath`; `ClientEntry.talkRequestedAt`; `ClientDatabaseEntry.loginName`, `avatarHash` and the four traffic totals of `getClientDatabaseInfo`; `ClientDatabaseName.uid`; `getClientUIDInfoByID` for the nickname and myTeamSpeak id beside the uid; `WhoAmI.serverUUID` and `originServerID`; `VirtualServer.uuid`, `guestCanCreateChannels`, `guestCanCreateHomebase` and `weblistEnabled`; `TempPassword.targetChannelPassword`, a secret.
+
+- [#97](https://github.com/HoneyBBQ/teamspeak-js/pull/97) [`559e536`](https://github.com/HoneyBBQ/teamspeak-js/commit/559e536c124dcdd7e6d3d9bde552673f3e2a8ce7) - Query: `QueryClient.stats` reports the current connection: its kind (`tcp`, `ssh` or `web`), where it points (never a password or an api key), when it opened and the bytes written and read, for a metrics exporter; a client with no connection, or a `custom` transport that keeps no counts, reports zeros. A `custom` transport may offer `stats()` to take part.
+
+  Version helpers: `serverFamilyForVersion` (from the package) names the generation a version string belongs to, as `QueryClient.serverFamily` and the voice client's capabilities do; `uidAlgorithmForVersion` and `MAX_SECURITY_LEVEL` (from `/client`) are now exported.
+
+### Patch Changes
+
+- [#95](https://github.com/HoneyBBQ/teamspeak-js/pull/95) [`5340eaa`](https://github.com/HoneyBBQ/teamspeak-js/commit/5340eaa13628e396ddf5c9a865ebf9da88e01117) - `findBans` on a voice client returned no rows on TeamSpeak 6, because its answer, `notifybanfind`, was not in the response table; it now returns the matching bans, and `NotificationName.BanFind` names the notification. `listClients` takes `icon: true` to send `-icon`, which fills `ClientEntry.iconID`. `createChannel` and `editChannel` take `bannerURL` and `bannerMode`. `ServerCapabilities.hostMessageMode` is typed as `HostMessageMode`; a value the table does not name still passes through as sent.
+
+- [#99](https://github.com/HoneyBBQ/teamspeak-js/pull/99) [`f5d9ec7`](https://github.com/HoneyBBQ/teamspeak-js/commit/f5d9ec7ce749be87619d5b9ee3b530ce33d387b7) - `banClient`'s documentation says what the servers do: two bans, one for the uid and one for the address, and an answer that TeamSpeak 6 has left without any `banid` though both bans were made, so the bans are found by listing them before and after.
+
+- [#93](https://github.com/HoneyBBQ/teamspeak-js/pull/93) [`31d412b`](https://github.com/HoneyBBQ/teamspeak-js/commit/31d412b14fb81ef90f68b90848d13fa0f487c387) - Client: a `connect()` that the caller's signal ends says what it was waiting for. `connect()` still rejects with the signal's own reason, as before, so nothing that matches it changes. The `attemptFailed` trace hook gets `waitingFor`, such as `the server's answer to clientek`, finer than `phase`, and the client logs the same when an attempt ends. A TeamSpeak 6 server sometimes never answers `clientek`, and the attempt then ended on the caller's deadline with no sign of where it stopped.
+
+- [#92](https://github.com/HoneyBBQ/teamspeak-js/pull/92) [`db7c5d2`](https://github.com/HoneyBBQ/teamspeak-js/commit/db7c5d2acbe1cc86f3412e13d69578b38d881e8a) - Query: the `web` transport reaches WebQuery over HTTPS. The built-in `fetch` uses `node:https` for an `https:` URL, such as TeamSpeak 3's port 10443, and verifies the certificate against Node's trust store; it never skips that check. A private CA is trusted with `NODE_EXTRA_CA_CERTS` or a `fetch` you pass. A URL with any scheme but `http:` or `https:` now throws a `TypeError` when the client is built, unless you pass your own `fetch`.
+
 ## 1.0.0-beta.12
 
 ### Major Changes
