@@ -174,6 +174,13 @@ describe("flags", () => {
 
     expect(execCommandWithResponse).toHaveBeenCalledWith("clientlist -uid -away", 10_000);
   });
+
+  it("asks for the icon with -icon", async () => {
+    const { client, execCommandWithResponse } = fakeClient();
+    await listClients(client, { icon: true });
+
+    expect(execCommandWithResponse).toHaveBeenCalledWith("clientlist -uid -icon", 10_000);
+  });
 });
 
 describe("string fields", () => {
@@ -336,6 +343,21 @@ describe("field tables", () => {
     expect(sent[0]).toBe(
       "channelcreate channel_name=Room channel_topic= channel_codec=4 channel_delete_delay=30",
     );
+  });
+
+  it("writes the channel banner on create and edit", async () => {
+    const { client, sent } = recordingClient([{ cid: "7" }]);
+    await createChannel(client, {
+      name: "Room",
+      bannerURL: "https://example.com/b.png",
+      bannerMode: 2,
+    });
+    await editChannel(client, asChannelID(3), { bannerURL: "", bannerMode: 0 });
+
+    expect(sent).toEqual([
+      "channelcreate channel_name=Room channel_banner_gfx_url=https:\\/\\/example.com\\/b.png channel_banner_mode=2",
+      "channeledit cid=3 channel_banner_gfx_url= channel_banner_mode=0",
+    ]);
   });
 
   it("clears a password with an empty string, and leaves it alone when unset", async () => {
