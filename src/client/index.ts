@@ -43,6 +43,7 @@ export {
 // Commands only the voice protocol has.
 export * from "./api/voice.js";
 export * from "./api/avatars.js";
+export * from "./api/files.js";
 
 // File transfer data
 export { dialFileTransfer, uploadFileData, downloadFileData } from "./transfer.js";

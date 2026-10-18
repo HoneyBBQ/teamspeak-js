@@ -296,7 +296,25 @@ sends a raw command line and resolves to the rows that answer it.
 
 ### File Transfers
 
-Negotiate with the `files` module, then move the bytes over TCP:
+`uploadFile` and `downloadFile` (from `@honeybbq/teamspeak/client`) negotiate the
+transfer and move the bytes in one call, and `listFilesRecursive` (from the
+package) lists a directory and everything under it, each entry with its full path:
+
+```typescript
+import { downloadFile, uploadFile } from "@honeybbq/teamspeak/client";
+import { listFilesRecursive } from "@honeybbq/teamspeak";
+
+await uploadFile(client, cid, "/docs/notes.txt", data);
+const bytes = await downloadFile(client, cid, "/docs/notes.txt");
+const tree = await listFilesRecursive(client, cid, "/", { maxDepth: 4 });
+```
+
+They work over a voice `Client`, and over a `QueryClient` on raw TCP or SSH when
+passed the file transfer host as `{ host }`; WebQuery refuses every file command.
+`downloadFile` takes `{ dest }` to stream into a `Writable` instead of holding
+the file, and refuses a file over `maxSize` (256 MiB) in memory.
+
+To control the two halves, negotiate with the `files` module, then move the bytes over TCP:
 
 ```typescript
 import { Readable } from "node:stream";

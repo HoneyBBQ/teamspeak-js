@@ -1156,7 +1156,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     host: string,
     info: FileUploadInfo,
     data: Readable,
-    options: Pick<FileTransferOptions, "signal" | "trace"> = {},
+    options: Pick<FileTransferOptions, "signal" | "trace" | "idleTimeoutMs"> = {},
   ): Promise<void> {
     return uploadFileData(host, info, data, {
       ...options,
@@ -1172,7 +1172,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     host: string,
     info: FileDownloadInfo,
     dest: Writable,
-    options: Pick<FileTransferOptions, "signal" | "trace"> = {},
+    options: Pick<FileTransferOptions, "signal" | "trace" | "idleTimeoutMs"> = {},
   ): Promise<void> {
     return downloadFileData(host, info, dest, {
       ...options,
