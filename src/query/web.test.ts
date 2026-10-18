@@ -2,7 +2,19 @@ import { createServer } from "node:http";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
-import { ErrorCode, ServerError, listBans, listChannels } from "@honeybbq/teamspeak";
+import {
+  ErrorCode,
+  Reason,
+  ServerError,
+  addChannelPermissions,
+  asChannelID,
+  asClientID,
+  banClients,
+  kickClients,
+  listBans,
+  listChannels,
+  permissionByName,
+} from "@honeybbq/teamspeak";
 import { QueryClient } from "./client.js";
 import { GuestAccessError } from "./errors.js";
 import { WebQueryHttpError, WebQueryTransport } from "./web.js";
@@ -123,6 +135,37 @@ describe("WebQueryTransport", () => {
     expect(calls[0]?.body).toEqual([
       { cid: "1", cpw: "", name: "/a" },
       { cid: "1", cpw: "", name: "/b" },
+    ]);
+  });
+
+  // Measured on TeamSpeak 3 and 6: WebQuery takes an array with one object per
+  // row, and reads `-continueonerror` from the first object.
+  it("sends a batch as an array of rows, the shared parameters and the switch in each", async () => {
+    const { calls, fetchFn } = fakeFetch([ok(), ok(), ok([{ banid: "4" }, { banid: "5" }])]);
+    const client = await webClient(
+      new WebQueryTransport({ url: "http://h", apiKey: "K", serverID: 1, fetch: fetchFn }),
+      calls,
+    );
+    await kickClients(client, [asClientID(5), asClientID(6)], Reason.KickChannel, {
+      continueOnError: true,
+    });
+    await addChannelPermissions(client, asChannelID(2n), [
+      { permission: permissionByName("i_a"), value: 1 },
+      { permission: permissionByName("i_b"), value: 2 },
+    ]);
+    expect(await banClients(client, [asClientID(5), asClientID(6)])).toEqual([4n, 5n]);
+    expect(calls.map((call) => call.url.replace("http://h/1", ""))).toEqual([
+      "/clientkick",
+      "/channeladdperm",
+      "/banclient",
+    ]);
+    expect(calls[0]?.body).toEqual([
+      { "-continueonerror": "", reasonid: "4", clid: "5" },
+      { "-continueonerror": "", reasonid: "4", clid: "6" },
+    ]);
+    expect(calls[1]?.body).toEqual([
+      { cid: "2", permsid: "i_a", permvalue: "1" },
+      { cid: "2", permsid: "i_b", permvalue: "2" },
     ]);
   });
 

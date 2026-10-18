@@ -54,6 +54,47 @@ function commandOptions(options: CommandOptions | undefined): CommandOptions | u
   return { signal: options.signal, timeoutMs: options.timeoutMs };
 }
 
+/**
+ * Send a command that takes a list and produces no data: `params` are the
+ * parameters of the first row, and every entry of `rows` is one more row of
+ * the list (`a=1 b=2|b=3`). With no rows, nothing is sent.
+ */
+async function execRows(
+  client: CommandExecutor,
+  command: string,
+  params: Params,
+  rows: readonly Params[],
+  options?: CommandOptions,
+  passwords: readonly string[] = [],
+): Promise<void> {
+  if (rows.length === 0) return;
+  await client.send({ command, params, rows, passwords }, commandOptions(options));
+}
+
+/**
+ * Send a list command that answers with rows, as {@link execRows} sends one.
+ * With no rows nothing is sent, and the answer is empty.
+ */
+async function queryRows(
+  client: CommandExecutor,
+  command: string,
+  params: Params,
+  rows: readonly Params[],
+  options?: CommandOptions,
+): Promise<Array<Record<string, string>>> {
+  if (rows.length === 0) return [];
+  return client.send({ command, params, rows, passwords: [] }, commandOptions(options));
+}
+
+/**
+ * The `-continueonerror` switch, as a command's first parameter: the server
+ * reads it from the first row only, so a switch written after the last row
+ * does nothing.
+ */
+const continueOnErrorParams = (options: {
+  readonly continueOnError?: boolean | undefined;
+}): Params => (options.continueOnError === true ? [["-continueonerror", true]] : []);
+
 /** Send a command and return its response rows. */
 async function query(
   client: CommandExecutor,
@@ -187,7 +228,17 @@ function firstRow(
   return row;
 }
 
-export { exec, query, list, pages, commandOptions, firstRow };
+export {
+  exec,
+  execRows,
+  query,
+  queryRows,
+  list,
+  pages,
+  commandOptions,
+  continueOnErrorParams,
+  firstRow,
+};
 export type { ParamValue };
 
 // ---- Field tables -----------------------------------------------------------
@@ -721,6 +772,28 @@ function parseChannelChanges(row: Record<string, string>): ChannelChanges {
 }
 
 export { parseChannel, parseChannelChanges };
+
+/**
+ * What a command that takes a list of options carries beside the usual signal
+ * and timeout: whether the server keeps going past an item that fails.
+ */
+export interface BatchOptions extends CommandOptions {
+  /**
+   * Send `-continueonerror`, which the server documents for this command: it
+   * processes every item and skips the ones that fail, instead of stopping at
+   * the first. What it then answers differs by command, and each function says.
+   * False by default.
+   */
+  readonly continueOnError?: boolean | undefined;
+}
+
+/** One permission to set, with its value: an entry of a batch that adds permissions. */
+export interface PermissionValue {
+  /** The permission to set. */
+  readonly permission: Permission;
+  /** Its value (`permvalue`). */
+  readonly value: number;
+}
 
 /** One entry of a permission list. */
 export interface PermissionEntry {

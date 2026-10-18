@@ -12,6 +12,8 @@ import {
   U16,
   firstRow,
   exec,
+  execRows,
+  continueOnErrorParams,
   query,
   list,
   pages,
@@ -25,7 +27,14 @@ import {
   optNum,
   date,
 } from "./command.js";
-import type { PagingOptions, Params, PermissionEntry, WireNames } from "./command.js";
+import type {
+  BatchOptions,
+  PagingOptions,
+  Params,
+  PermissionEntry,
+  PermissionValue,
+  WireNames,
+} from "./command.js";
 import type { CommandExecutor, CommandOptions } from "../command/request.js";
 import type {
   ChannelGroupID,
@@ -419,6 +428,43 @@ export async function moveClient(
   );
 }
 
+/** How {@link moveClients} enters the channel. */
+export interface ClientsMoveOptions extends ClientMoveOptions, BatchOptions {}
+
+/**
+ * Move several clients to one channel, in one command, such as
+ * `clientmove clid=5|clid=6 cid=3`. With no ids nothing is sent.
+ *
+ * The server reports one answer for the whole call, never one per client, so
+ * this resolves to nothing and a failure says only what the server said.
+ * Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 beta13.1, over raw
+ * ServerQuery, SSH, WebQuery and the voice protocol alike:
+ *
+ * - Without `continueOnError`, the server checks every client first: one id it
+ *   cannot move (no such client, error 512; a client already in the channel,
+ *   770) refuses the call, and no client is moved.
+ * - With it (`-continueonerror`), a client that cannot be moved is skipped, the
+ *   others are moved, and the answer is success, even when none could be moved.
+ *   Read the channel back, as `listClients` reports it, to know who moved.
+ *
+ * A channel that does not exist fails the call either way (768).
+ */
+export async function moveClients(
+  client: CommandExecutor,
+  clientIDs: readonly ClientID[],
+  channelID: ChannelID,
+  options: ClientsMoveOptions = {},
+): Promise<void> {
+  await execRows(
+    client,
+    "clientmove",
+    [...continueOnErrorParams(options), ["cid", channelID], ["cpw", options.password]],
+    clientIDs.map((clid) => [["clid", clid]]),
+    options,
+    ["cpw"],
+  );
+}
+
 /** The reasons a client can be kicked for. */
 export type KickReason = typeof Reason.KickChannel | typeof Reason.KickServer;
 
@@ -452,6 +498,51 @@ export async function kickClient(
       ["reasonid", reason],
       ["reasonmsg", nonEmpty(options.reasonMessage ?? "")],
     ],
+    options,
+  );
+}
+
+/** What {@link kickClients} tells the kicked clients, and whether it goes on past a failure. */
+export interface ClientsKickOptions extends ClientKickOptions, BatchOptions {}
+
+/**
+ * Kick several clients for one reason, in one command, such as
+ * `clientkick reasonid=4 clid=5|clid=6`. The reason is as for
+ * {@link kickClient}; with no ids nothing is sent.
+ *
+ * The server reports one answer for the whole call, never one per client, so
+ * this resolves to nothing and a failure says only what the server said.
+ * Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 beta13.1, over raw
+ * ServerQuery, SSH, WebQuery and the voice protocol alike:
+ *
+ * - Without `continueOnError`, the clients are kicked in the order given and
+ *   the call stops at the first one that fails (an id no client has, 512):
+ *   the clients before it are kicked, the ones after it are not, and the
+ *   error is that client's.
+ * - With it (`-continueonerror`), every client is tried, a failing one is
+ *   skipped, and the answer is success, even when none could be kicked. Read
+ *   the clients back, as `listClients` reports them, to know who was kicked.
+ */
+export async function kickClients(
+  client: CommandExecutor,
+  clientIDs: readonly ClientID[],
+  reason: KickReason,
+  options: ClientsKickOptions = {},
+): Promise<void> {
+  if (reason !== Reason.KickChannel && reason !== Reason.KickServer) {
+    throw new RangeError(
+      `a kick's reason is Reason.KickChannel or Reason.KickServer, not ${String(reason)}`,
+    );
+  }
+  await execRows(
+    client,
+    "clientkick",
+    [
+      ...continueOnErrorParams(options),
+      ["reasonid", reason],
+      ["reasonmsg", nonEmpty(options.reasonMessage ?? "")],
+    ],
+    clientIDs.map((clid) => [["clid", clid]]),
     options,
   );
 }
@@ -1049,6 +1140,43 @@ export async function addClientPermission(
   );
 }
 
+/** One permission to set on a client, server-wide, as {@link addClientPermissions} takes it. */
+export interface ClientPermissionValue extends PermissionValue {
+  /** Whether it skips channel and client overrides; false by default. Always sent (`permskip`). */
+  readonly skip?: boolean | undefined;
+}
+
+/**
+ * Set several permissions on a client, server-wide, in one command: each
+ * permission is a row (`permsid=…  permvalue=…  permskip=0|…`). With none,
+ * nothing is sent.
+ *
+ * The server checks every row before it applies any: a permission it does not
+ * know (2562) or a value it cannot read (1540) refuses the call, and none is
+ * set, with or without `continueOnError`. Measured on TeamSpeak 3 3.13.8 and
+ * TeamSpeak 6 beta13.1, over raw ServerQuery, SSH, WebQuery and the voice
+ * protocol alike. Resolves to nothing: the server never reports one answer
+ * per row.
+ */
+export async function addClientPermissions(
+  client: CommandExecutor,
+  cldbid: ClientDBID,
+  permissions: readonly ClientPermissionValue[],
+  options: BatchOptions = {},
+): Promise<void> {
+  await execRows(
+    client,
+    "clientaddperm",
+    [...continueOnErrorParams(options), ["cldbid", cldbid]],
+    permissions.map((entry) => [
+      permissionParam(entry.permission),
+      ["permvalue", entry.value],
+      ["permskip", entry.skip ?? false],
+    ]),
+    options,
+  );
+}
+
 /** Remove a permission from a client. */
 export async function deleteClientPermission(
   client: CommandExecutor,
@@ -1057,6 +1185,30 @@ export async function deleteClientPermission(
   options?: CommandOptions,
 ): Promise<void> {
   await exec(client, "clientdelperm", [["cldbid", cldbid], permissionParam(permission)], options);
+}
+
+/**
+ * Remove several permissions from a client, in one command: each permission is
+ * a row (`permsid=…|permsid=…`). With none, nothing is sent.
+ *
+ * The server checks every row before it removes any: one permission it does
+ * not know (2562) refuses the call and none is removed. Removing a permission
+ * the client does not have succeeds. The server documents no
+ * `-continueonerror` for this command, so none is offered.
+ */
+export async function deleteClientPermissions(
+  client: CommandExecutor,
+  cldbid: ClientDBID,
+  permissions: readonly Permission[],
+  options?: CommandOptions,
+): Promise<void> {
+  await execRows(
+    client,
+    "clientdelperm",
+    [["cldbid", cldbid]],
+    permissions.map((permission) => [permissionParam(permission)]),
+    options,
+  );
 }
 
 // ---- Custom properties --------------------------------------------------------

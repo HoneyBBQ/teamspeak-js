@@ -8,6 +8,8 @@ import {
   U32,
   firstRow,
   exec,
+  execRows,
+  continueOnErrorParams,
   query,
   list,
   encodeFields,
@@ -21,7 +23,13 @@ import {
   bool,
   date,
 } from "./command.js";
-import type { Params, PermissionEntry, WireNames } from "./command.js";
+import type {
+  BatchOptions,
+  Params,
+  PermissionEntry,
+  PermissionValue,
+  WireNames,
+} from "./command.js";
 import type { CommandExecutor, CommandOptions } from "../command/request.js";
 import type {
   ChannelGroupID,
@@ -267,6 +275,49 @@ export async function addChannelGroupPermission(
   );
 }
 
+/**
+ * Set several permissions on a channel group, in one command: each permission
+ * is a row. With none, nothing is sent. The server's answer is as for
+ * {@link addChannelPermissions}: every row is checked first, and one it
+ * refuses leaves none set, with or without `continueOnError`.
+ */
+export async function addChannelGroupPermissions(
+  client: CommandExecutor,
+  cgid: ChannelGroupID,
+  permissions: readonly PermissionValue[],
+  options: BatchOptions = {},
+): Promise<void> {
+  await execRows(
+    client,
+    "channelgroupaddperm",
+    [...continueOnErrorParams(options), ["cgid", cgid]],
+    permissions.map((entry) => [permissionParam(entry.permission), ["permvalue", entry.value]]),
+    options,
+  );
+}
+
+/**
+ * Remove several permissions from a channel group, in one command: each
+ * permission is a row. With none, nothing is sent. Every row is checked
+ * first: one the server refuses (an unknown permission, 2562) leaves none
+ * removed, with or without `continueOnError`. Removing a permission the group
+ * does not have succeeds.
+ */
+export async function deleteChannelGroupPermissions(
+  client: CommandExecutor,
+  cgid: ChannelGroupID,
+  permissions: readonly Permission[],
+  options: BatchOptions = {},
+): Promise<void> {
+  await execRows(
+    client,
+    "channelgroupdelperm",
+    [...continueOnErrorParams(options), ["cgid", cgid]],
+    permissions.map((permission) => [permissionParam(permission)]),
+    options,
+  );
+}
+
 /** Remove a permission from a channel group. */
 export async function deleteChannelGroupPermission(
   client: CommandExecutor,
@@ -314,8 +365,12 @@ export async function listPermissions(
 }
 
 /**
- * Resolve a permission name to its numeric id, or undefined when the server
- * knows no such permission.
+ * Resolve a permission name to its numeric id.
+ *
+ * A name the server does not know is not an `undefined` result: both TS3 3.13.8
+ * and TS6 beta13.1 refuse it with a ServerError 2562 (invalid permission ID),
+ * which is thrown. `undefined` is only for a server that acknowledges the
+ * command with no row, which neither measured server does.
  *
  * Needs an instance-level permission (`b_serverinstance_*`), which not even the
  * Server Admin group holds by default — expect error 2568 until it is granted.
