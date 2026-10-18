@@ -12,7 +12,13 @@
  * round trip.
  */
 
-import { asServerID, type IconID, type ServerFamily, type ServerID } from "@honeybbq/teamspeak";
+import {
+  asServerID,
+  HostMessageMode,
+  type IconID,
+  type ServerFamily,
+  type ServerID,
+} from "@honeybbq/teamspeak";
 import { parseIconID, parseUint64 } from "../core/internal.js";
 import { uidAlgorithmForVersion, type UIDAlgorithm } from "./crypto/identity.js";
 
@@ -51,10 +57,10 @@ export interface ServerCapabilities {
   readonly hostMessage: string;
   /**
    * How the host message is to be shown (`virtualserver_hostmessage_mode`).
-   * Compare it with `HostMessageMode`; a server may send a value the table
-   * does not name.
+   * A value the `HostMessageMode` table does not name is passed through as the
+   * server sent it.
    */
-  readonly hostMessageMode: number;
+  readonly hostMessageMode: HostMessageMode;
 }
 
 /**
@@ -100,7 +106,7 @@ export function unknownServerCapabilities(): ServerCapabilities {
   return parseServerCapabilities("");
 }
 
-function hostMessageMode(value: string | undefined): number {
+function hostMessageMode(value: string | undefined): HostMessageMode {
   const parsed = Number.parseInt(value ?? "", 10);
-  return Number.isNaN(parsed) ? 0 : parsed;
+  return (Number.isNaN(parsed) ? HostMessageMode.None : parsed) as HostMessageMode;
 }

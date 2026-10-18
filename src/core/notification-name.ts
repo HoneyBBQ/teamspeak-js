@@ -17,6 +17,8 @@ const notificationNameValues = {
   APIKeyAdd: "notifyapikeyadd",
   /** `notifyapikeylist`: Reply to apikeylist: one row per API key. */
   APIKeyList: "notifyapikeylist",
+  /** `notifybanfind`: Reply to banfind: one row per ban rule that matches. */
+  BanFind: "notifybanfind",
   /** `notifybanlist`: Reply to banlist: one row per ban rule on the virtual server. */
   BanList: "notifybanlist",
   /** `notifychannelchanged`: A channel's properties changed and this client should fetch them again. */

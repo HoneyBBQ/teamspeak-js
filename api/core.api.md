@@ -403,6 +403,8 @@ export interface ChannelPasswordChangedEvent {
 
 // @public
 export interface ChannelSettings {
+    readonly bannerMode?: number | undefined;
+    readonly bannerURL?: string | undefined;
     readonly codec?: Codec | undefined;
     readonly codecLatencyFactor?: number | undefined;
     readonly codecQuality?: number | undefined;
@@ -619,6 +621,7 @@ export interface ClientListOptions extends CommandOptions {
     readonly badges?: boolean | undefined;
     readonly country?: boolean | undefined;
     readonly groups?: boolean | undefined;
+    readonly icon?: boolean | undefined;
     readonly info?: boolean | undefined;
     readonly ip?: boolean | undefined;
     readonly times?: boolean | undefined;
@@ -1754,6 +1757,7 @@ export type NotificationName = (typeof NotificationName)[keyof typeof Notificati
 const notificationNameValues: {
     readonly APIKeyAdd: "notifyapikeyadd";
     readonly APIKeyList: "notifyapikeylist";
+    readonly BanFind: "notifybanfind";
     readonly BanList: "notifybanlist";
     readonly ChannelChanged: "notifychannelchanged";
     readonly ChannelClientPermList: "notifychannelclientpermlist";

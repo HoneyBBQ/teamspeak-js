@@ -99,6 +99,8 @@ const settingSamples: Required<Omit<ChannelSettings, "password">> = {
   isDefault: true,
   deleteDelayMs: 1000,
   namePhonetic: "p",
+  bannerURL: "https://example.com/b.png",
+  bannerMode: 1,
 };
 
 describe("record names against the options that write them", () => {

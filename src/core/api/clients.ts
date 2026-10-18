@@ -116,7 +116,7 @@ export interface ClientEntry {
   readonly metaData?: string | undefined;
   /** The MD5 of the client's avatar (`client_flag_avatar`); "" for none; no flag. */
   readonly avatar?: string | undefined;
-  /** The client's icon (`client_icon_id`); undefined for none as well as for absent; no flag. */
+  /** The client's icon (`client_icon_id`), with `icon`; undefined for none as well as for absent. */
   readonly iconID?: IconID | undefined;
   /** How the nickname is pronounced (`client_nickname_phonetic`); no flag. */
   readonly nicknamePhonetic?: string | undefined;
@@ -205,6 +205,8 @@ export interface ClientListOptions extends CommandOptions {
   readonly ip?: boolean | undefined;
   /** The client's badges (`-badges`). */
   readonly badges?: boolean | undefined;
+  /** The client's icon (`-icon`), which fills `ClientEntry.iconID`. */
+  readonly icon?: boolean | undefined;
 }
 
 const listFlags: WireNames<ClientListOptions> = {
@@ -217,6 +219,7 @@ const listFlags: WireNames<ClientListOptions> = {
   country: "-country",
   ip: "-ip",
   badges: "-badges",
+  icon: "-icon",
 };
 
 /** Every client currently connected. */

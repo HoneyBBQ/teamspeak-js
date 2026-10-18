@@ -28,6 +28,7 @@ import type { CommandRequest } from '@honeybbq/teamspeak';
 import { Duplex } from 'node:stream';
 import type { FileDownloadInfo } from '@honeybbq/teamspeak';
 import type { FileUploadInfo } from '@honeybbq/teamspeak';
+import { HostMessageMode } from '@honeybbq/teamspeak';
 import { IconID } from '@honeybbq/teamspeak';
 import { Listener } from '@honeybbq/teamspeak';
 import type { Logger } from '@honeybbq/teamspeak';
@@ -535,7 +536,7 @@ export interface ServerCapabilities {
     readonly family: ServerFamily;
     readonly hostBannerImageURL: string | undefined;
     readonly hostMessage: string;
-    readonly hostMessageMode: number;
+    readonly hostMessageMode: HostMessageMode;
     readonly iconID: IconID | undefined;
     readonly major: number;
     readonly name: string;

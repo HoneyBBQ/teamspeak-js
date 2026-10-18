@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { HostMessageMode } from "@honeybbq/teamspeak";
 import { parseServerCapabilities, unknownServerCapabilities } from "./capabilities.js";
 
 describe("parseServerCapabilities", () => {
@@ -65,6 +66,14 @@ describe("parseServerCapabilities", () => {
     expect(caps.iconID).toBe(2766950830);
     expect(caps.hostBannerImageURL).toBe("https://example.com/banner.png");
     expect(caps.welcomeMessage).toBe("Welcome!");
+  });
+
+  it("types the host message mode, and passes an unnamed value through", () => {
+    const mode = (value: string) =>
+      parseServerCapabilities({ virtualserver_hostmessage_mode: value }).hostMessageMode;
+    expect(mode("2")).toBe(HostMessageMode.Modal);
+    expect(mode("")).toBe(HostMessageMode.None);
+    expect(mode("9")).toBe(9);
   });
 
   it("reads no icon or banner as undefined, and an unsigned icon id as is", () => {

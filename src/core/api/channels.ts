@@ -101,6 +101,10 @@ export interface ChannelSettings {
   readonly deleteDelayMs?: number | undefined;
   /** How the name is pronounced, for text-to-speech (`channel_name_phonetic`). */
   readonly namePhonetic?: string | undefined;
+  /** The URL of the channel's banner image (`channel_banner_gfx_url`); needs `b_channel_modify_banner`. */
+  readonly bannerURL?: string | undefined;
+  /** How the banner is scaled (`channel_banner_mode`); needs `b_channel_modify_banner`. */
+  readonly bannerMode?: number | undefined;
 }
 
 const settingNames: WireNames<ChannelSettings> = {
@@ -124,6 +128,8 @@ const settingNames: WireNames<ChannelSettings> = {
   isDefault: "channel_flag_default",
   deleteDelayMs: ["channel_delete_delay", inSeconds],
   namePhonetic: "channel_name_phonetic",
+  bannerURL: "channel_banner_gfx_url",
+  bannerMode: "channel_banner_mode",
 };
 
 /** A new channel's settings. Only `name` is required; see {@link ChannelSettings}. */

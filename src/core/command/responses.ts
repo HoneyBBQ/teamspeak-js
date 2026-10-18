@@ -88,6 +88,7 @@ const fileTransfer = (answer: string): ResponseSpec => ({
 export const RESPONSES: Readonly<Record<string, ResponseSpec>> = {
   apikeyadd: inline("notifyapikeyadd"),
   apikeylist: inline("notifyapikeylist"),
+  banfind: inline("notifybanfind"),
   banlist: inline("notifybanlist"),
   channelclientpermlist: inline("notifychannelclientpermlist"),
   channelcreate: { notifications: ["notifychannelcreated"], ownRowsOnly: true },
