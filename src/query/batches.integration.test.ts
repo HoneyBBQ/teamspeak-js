@@ -21,6 +21,7 @@ import {
   addChannelGroupPermissions,
   addChannelPermissions,
   addClientPermissions,
+  addClientToServerGroup,
   addClientsToServerGroup,
   addServerGroupPermission,
   addServerGroupPermissions,
@@ -127,7 +128,21 @@ describe.skipIf(SKIP)("Integration — several clients and permissions at once",
       admin,
       groupName: /server admin/i,
     });
-    records.push(await session.databaseIDOf(adminNickname));
+    const adminRecord = await session.databaseIDOf(adminNickname);
+    records.push(adminRecord);
+    // The Server Admin group cannot edit permissions in a channel or on a
+    // client: the voice client holds one more group, with the powers it needs.
+    const powers = await createServerGroup(admin, stamp("ts-js-b-pw"), GroupType.Regular);
+    serverGroups.push(powers);
+    for (const name of [
+      "i_permission_modify_power",
+      "i_channel_permission_modify_power",
+      "i_client_permission_modify_power",
+      "i_group_modify_power",
+    ]) {
+      await addServerGroupPermission(admin, powers, permissionByName(name), 100);
+    }
+    await addClientToServerGroup(admin, powers, adminRecord);
     members = await newMembers(3, "ts-js-b-m");
   }, 120_000);
 

@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   addChannelClientPermissions,
@@ -36,8 +35,8 @@ import { ServerError } from "../errors.js";
 import { permissionByID, permissionByName } from "../permission.js";
 import { Reason } from "../reason.js";
 
-const voicePassword = (password: string): string =>
-  createHash("sha1").update(password).digest("base64");
+/** Stands for the voice protocol's password hashing, which the transport owns. */
+const voicePassword = (password: string): string => `hashed:${password}`;
 
 /** Records the line each request encodes to, and what options it was sent with. */
 const recorder = (...answers: Array<Array<Record<string, string>> | Error>) => {
@@ -120,8 +119,7 @@ describe("moveClients", () => {
   it("hashes the channel password for the voice protocol, once", async () => {
     const { client, sent } = recorder();
     await moveClients(client, clients.slice(0, 2), asChannelID(3n), { password: "pw" });
-    const hash = voicePassword("pw").replaceAll("/", "\\/");
-    expect(sent).toEqual([`clientmove cid=3 cpw=${hash} clid=5|clid=6`]);
+    expect(sent).toEqual(["clientmove cid=3 cpw=hashed:pw clid=5|clid=6"]);
   });
 
   it("sends nothing for no clients", async () => {
