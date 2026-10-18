@@ -137,6 +137,12 @@ needs, and set `TS3_QUERY_HTTP` instead of `TS3_QUERY_HOST` when running the
 fixture. `pnpm test:integration:ts3`, `:ts6` and `:both` run the suite against
 servers on ports 9987 and 9988 with the fixture's default channel names.
 
+`pnpm test:integration:instance` runs the tests that stop and delete virtual
+servers, edit the instance, reset every permission and stop the server process.
+Run it against a server you will throw away, after the rest: it ends with the
+process stopped, so the container has to be started again. CI runs it as the last
+step of each integration job.
+
 Run one server at a time. A server's flood protection bans an IP that connects
 too fast, and two suites at once, or a rerun straight after a failure, can get
 yours banned. If that happens, restart the container.

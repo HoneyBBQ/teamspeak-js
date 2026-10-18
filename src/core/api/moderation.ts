@@ -247,6 +247,13 @@ export async function addBan(
  * uid, and on TS6 its myTeamSpeak id — and over ServerQuery answers one
  * `banid` row for each; returning the first left the others to be found by
  * hand. The voice protocol reports no ids, so there this resolves to `[]`.
+ *
+ * Measured on TS3 3.13.8 and TS6 beta13.1: two bans, one for the uid and one
+ * for the address. TS6 has also answered with no `banid` at all though both
+ * bans were made (about once in a hundred calls over SSH and WebQuery), so an
+ * empty result does not mean no ban. A caller that must undo the ban lists the
+ * bans before and after and removes what is new: a ban on the address refuses
+ * every later connection from it.
  */
 export async function banClient(
   client: CommandExecutor,

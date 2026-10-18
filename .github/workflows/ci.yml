@@ -273,3 +273,18 @@ jobs:
           . "$TS3_FIXTURE_ENV"
           set +a
           pnpm test:integration
+      # The instance tests stop and delete virtual servers, edit the instance,
+      # reset every permission and finally stop the server process, so they run
+      # alone, after everything above that needs the server, and the stop is
+      # the last test of the last file. The job's server is thrown away with the
+      # job, which is what makes that allowed. They run even when the step
+      # above failed, so one broken test does not hide these.
+      - name: Run instance tests
+        if: ${{ !cancelled() }}
+        env:
+          TS3_FIXTURE_ENV: ${{ runner.temp }}/ts3-fixture.env
+        run: |
+          set -a
+          . "$TS3_FIXTURE_ENV"
+          set +a
+          pnpm test:integration:instance
