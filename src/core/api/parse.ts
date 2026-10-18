@@ -89,6 +89,7 @@ export const clientFields: {
   talkPower: { keys: ["client_talk_power"], read: num },
   // The wire value is when the request was made; any non-zero is a request.
   isRequestingTalk: flag("client_talk_request"),
+  talkRequestedAt: { keys: ["client_talk_request"], read: date },
   talkRequestMessage: text("client_talk_request_msg"),
   description: text("client_description"),
   metaData: text("client_meta_data"),

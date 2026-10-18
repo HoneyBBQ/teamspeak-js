@@ -103,7 +103,7 @@ export interface QueryClientOptions {
 }
 
 // @public
-export type QueryEventCategory = "server" | "channel" | "textserver" | "textchannel" | "textprivate" | "bans";
+export type QueryEventCategory = "server" | "channel" | "textserver" | "textchannel" | "textprivate" | "bans" | "tokenused";
 
 // @public
 export interface QueryEventMap extends ServerEventMap, SessionEventMap {

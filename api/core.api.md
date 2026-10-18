@@ -262,6 +262,8 @@ export interface Channel {
     readonly codecQuality: number;
     readonly deleteDelayMs?: number | undefined;
     readonly description: string;
+    readonly emptyForMs?: number | undefined;
+    readonly filePath?: string | undefined;
     readonly hasPassword: boolean;
     readonly iconID: IconID | undefined;
     readonly id: ChannelID;
@@ -281,6 +283,7 @@ export interface Channel {
     readonly neededTalkPower: number;
     readonly order: ChannelID;
     readonly parentID: ChannelID;
+    readonly storageQuota?: number | undefined;
     readonly topic: string;
     readonly totalClients: number | undefined;
     readonly totalFamilyClients: number | undefined;
@@ -470,6 +473,12 @@ export interface ClientChannelGroupChangedEvent extends Invoked {
 }
 
 // @public
+export interface ClientChatClosedEvent {
+    readonly clientID: ClientID;
+    readonly uid: UID;
+}
+
+// @public
 export interface ClientChatComposingEvent {
     readonly clientID: ClientID;
     readonly uid: UID;
@@ -499,12 +508,18 @@ export interface ClientDatabaseEditOptions {
 
 // @public
 export interface ClientDatabaseEntry {
+    readonly avatarHash?: string | undefined;
     readonly createdAt: Date | undefined;
     readonly databaseID: ClientDBID;
     readonly description: string;
     readonly lastConnectedAt: Date | undefined;
     readonly lastIP: string;
+    readonly loginName?: string | undefined;
+    readonly monthBytesDownloaded?: number | undefined;
+    readonly monthBytesUploaded?: number | undefined;
     readonly nickname: string;
+    readonly totalBytesDownloaded?: number | undefined;
+    readonly totalBytesUploaded?: number | undefined;
     readonly totalConnections: number;
     readonly uid: UID;
 }
@@ -513,6 +528,7 @@ export interface ClientDatabaseEntry {
 export interface ClientDatabaseName {
     readonly databaseID: ClientDBID;
     readonly name: string;
+    readonly uid: UID;
 }
 
 // @public
@@ -533,7 +549,10 @@ export interface ClientEditOptions {
 }
 
 // @public
-export type ClientEnterEvent = ClientEntry;
+export interface ClientEnterEvent extends ClientEntry {
+    readonly fromChannelID?: ChannelID | undefined;
+    readonly reason?: number | undefined;
+}
 
 // @public
 export interface ClientEntry {
@@ -575,6 +594,7 @@ export interface ClientEntry {
     readonly serverGroups: readonly ServerGroupID[];
     readonly signedBadges?: string | undefined;
     readonly talkPower?: number | undefined;
+    readonly talkRequestedAt?: Date | undefined;
     readonly talkRequestMessage?: string | undefined;
     readonly type: number;
     readonly uid: UID;
@@ -607,12 +627,14 @@ export interface ClientKickOptions extends CommandOptions {
 // @public
 export interface ClientLeaveEvent {
     readonly clientID: ClientID;
+    readonly fromChannelID?: ChannelID | undefined;
     readonly invokerID: ClientID;
     readonly invokerName: string;
     readonly invokerUID: UID;
     readonly previous?: ClientEntry | undefined;
     readonly reason: number;
     readonly reasonMessage: string;
+    readonly targetChannelID?: ChannelID | undefined;
 }
 
 // @public
@@ -640,6 +662,7 @@ export interface ClientMatch {
 // @public
 export interface ClientMovedEvent {
     readonly clientID: ClientID;
+    readonly fromChannelID?: ChannelID | undefined;
     readonly invokerID: ClientID;
     readonly invokerName: string;
     readonly invokerUID: UID;
@@ -710,6 +733,14 @@ const clientTypeValues: {
     readonly Voice: 0;
     readonly Query: 1;
 };
+
+// @public
+export interface ClientUIDInfo {
+    readonly clientID: ClientID;
+    readonly mytsid: string;
+    readonly nickname: string;
+    readonly uid: UID;
+}
 
 // @public
 export interface ClientUpdatedEvent extends Invoked {
@@ -1441,6 +1472,9 @@ export function getClientProperties(client: CommandExecutor, clid: ClientID, opt
 export function getClientUIDByID(client: CommandExecutor, clid: ClientID, options?: CommandOptions): Promise<UID>;
 
 // @public
+export function getClientUIDInfoByID(client: CommandExecutor, clid: ClientID, options?: CommandOptions): Promise<ClientUIDInfo>;
+
+// @public
 export function getConnectionInfo(client: CommandExecutor, options?: CommandOptions): Promise<ServerConnectionInfo>;
 
 // @public
@@ -1759,6 +1793,7 @@ const notificationNameValues: {
     readonly APIKeyList: "notifyapikeylist";
     readonly BanFind: "notifybanfind";
     readonly BanList: "notifybanlist";
+    readonly BanUpdate: "notifybanupdate";
     readonly ChannelChanged: "notifychannelchanged";
     readonly ChannelClientPermList: "notifychannelclientpermlist";
     readonly ChannelCreated: "notifychannelcreated";
@@ -3049,6 +3084,7 @@ export interface TempPassword {
     readonly password: string;
     readonly startsAt: Date | undefined;
     readonly targetChannelID: ChannelID;
+    readonly targetChannelPassword: string;
 }
 
 // @public
@@ -3114,6 +3150,8 @@ export function viewLog(client: CommandExecutor, options?: LogViewOptions): Prom
 export interface VirtualServer {
     readonly autoStart: boolean | undefined;
     readonly clientsOnline: number | undefined;
+    readonly guestCanCreateChannels?: boolean | undefined;
+    readonly guestCanCreateHomebase?: boolean | undefined;
     readonly id: ServerID;
     readonly machineID: string | undefined;
     readonly maxClients: number | undefined;
@@ -3123,6 +3161,8 @@ export interface VirtualServer {
     readonly status: string;
     readonly uid: string;
     readonly uptimeMs: number | undefined;
+    readonly uuid?: string | undefined;
+    readonly weblistEnabled?: boolean | undefined;
 }
 
 // @public
@@ -3139,10 +3179,12 @@ export interface WhoAmI {
     readonly databaseID: ClientDBID;
     readonly loginName: string;
     readonly nickname: string;
+    readonly originServerID: ServerID;
     readonly serverID: ServerID;
     readonly serverPort: number;
     readonly serverStatus: string;
     readonly serverUID: string;
+    readonly serverUUID?: string | undefined;
     readonly uid: UID;
 }
 

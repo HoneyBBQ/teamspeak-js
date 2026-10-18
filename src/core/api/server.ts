@@ -250,6 +250,10 @@ export interface WhoAmI {
    * it.
    */
   readonly uid: UID;
+  /** The virtual server's UUID (`virtualserver_uuid`); TS6 only, undefined when not sent. */
+  readonly serverUUID?: string | undefined;
+  /** The server this client first connected to (`client_origin_server_id`); 0 when not sent. */
+  readonly originServerID: ServerID;
 }
 
 /** Which server and client this connection is, as the server sees it. */
@@ -266,6 +270,8 @@ export async function whoAmI(client: CommandExecutor, options?: CommandOptions):
     databaseID: asClientDBID(big(row, "client_database_id")),
     loginName: str(row, "client_login_name"),
     uid: asUID(str(row, "client_unique_identifier")),
+    serverUUID: row["virtualserver_uuid"],
+    originServerID: asServerID(big(row, "client_origin_server_id")),
   };
 }
 
@@ -674,6 +680,11 @@ export interface TempPassword {
   readonly endsAt: Date | undefined;
   /** The channel a client joining with it lands in, or 0 for the default channel. */
   readonly targetChannelID: ChannelID;
+  /**
+   * That channel's password, in cleartext (`tcpw`); "" for none. A secret like
+   * `password`: store it where it is needed, and do not log it.
+   */
+  readonly targetChannelPassword: string;
 }
 
 /** The server's temporary passwords. */
@@ -690,6 +701,7 @@ export async function listTempPasswords(
     startsAt: date(row, "start"),
     endsAt: date(row, "end"),
     targetChannelID: asChannelID(big(row, "tcid")),
+    targetChannelPassword: str(row, "tcpw"),
   }));
 }
 

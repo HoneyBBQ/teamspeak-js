@@ -118,6 +118,7 @@ export type {
   ChannelUnsubscribedEvent,
   PluginCommandEvent,
   ClientChatComposingEvent,
+  ClientChatClosedEvent,
   ClientUpdatedEvent,
   ClientServerGroupEvent,
   ClientServerGroupAddedEvent,

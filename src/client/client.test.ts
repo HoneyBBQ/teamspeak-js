@@ -178,6 +178,7 @@ describe("Client events for channels, the server and plugins", () => {
       "channelUnsubscribed",
       "pluginCommand",
       "clientChatComposing",
+      "clientChatClosed",
     ] as const) {
       client.on(name, () => seen.push(name));
     }
@@ -195,12 +196,13 @@ describe("Client events for channels, the server and plugins", () => {
       "notifychannelunsubscribed cid=9",
       "notifyplugincmd name=p data=d invokerid=5 invokername=Bot invokeruid=u",
       "notifyclientchatcomposing clid=9 cluid=u",
+      "notifyclientchatclosed clid=9 cluid=u",
     );
 
-    expect(seen).toHaveLength(11);
+    expect(seen).toHaveLength(12);
     // Each typed event is followed by its notification, in the middleware too.
     expect(names.filter((n) => n !== "notification")).toEqual(seen);
-    expect(names.filter((n) => n === "notification")).toHaveLength(11);
+    expect(names.filter((n) => n === "notification")).toHaveLength(12);
     expect(names.slice(0, 2)).toEqual(["channelCreated", "notification"]);
   });
 

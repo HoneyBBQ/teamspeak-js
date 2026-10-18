@@ -367,7 +367,7 @@ const date = (row: Record<string, string>, key: string): Date | undefined => {
 const durationMs = (row: Record<string, string>, key: string, unitMs: number): number =>
   num(row, key) * unitMs;
 
-export { str, big, num, uint, U16, U32, bool, icon, date, durationMs };
+export { str, big, num, optNum, uint, U16, U32, bool, icon, date, durationMs };
 
 // ---- Read tables ------------------------------------------------------------
 
@@ -611,6 +611,21 @@ export interface Channel {
   readonly bannerURL?: string | undefined;
   /** How the banner is scaled (`channel_banner_mode`). */
   readonly bannerMode?: number | undefined;
+  /**
+   * How long the channel has had no client, in milliseconds (`seconds_empty`,
+   * which the wire carries in seconds), as of the answer. Undefined for a
+   * channel with a client in it: both TS3 3.13.8 and TS6 6.0.0-beta13.1 send
+   * -1 for it, which is not a duration. `listChannels` and `getChannelInfo`
+   * report it; a notification never does.
+   */
+  readonly emptyForMs?: number | undefined;
+  /**
+   * The channel's file storage quota (`channel_storage_quota`); TS6 only.
+   * TS6 6.0.0-beta13.1 sent 4294967295 for a channel with none set.
+   */
+  readonly storageQuota?: number | undefined;
+  /** The channel's directory on the server (`channel_filepath`); `getChannelInfo` only. */
+  readonly filePath?: string | undefined;
 }
 
 /**
@@ -681,6 +696,12 @@ export const channelFields: {
   isForcedSilence: { keys: ["channel_forced_silence"], read: bool },
   bannerURL: { keys: ["channel_banner_gfx_url"], read: str },
   bannerMode: { keys: ["channel_banner_mode"], read: num },
+  emptyForMs: {
+    keys: ["seconds_empty"],
+    read: (row, key) => (num(row, key) < 0 ? undefined : durationMs(row, key, SECOND)),
+  },
+  storageQuota: { keys: ["channel_storage_quota"], read: num },
+  filePath: { keys: ["channel_filepath"], read: str },
 };
 
 function parseChannel(row: Record<string, string>): Channel {

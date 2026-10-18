@@ -12,6 +12,7 @@ import { ChannelID } from '@honeybbq/teamspeak';
 import type { ChannelSubscribedEvent } from '@honeybbq/teamspeak';
 import type { ChannelUnsubscribedEvent } from '@honeybbq/teamspeak';
 import type { ClientChannelGroupChangedEvent } from '@honeybbq/teamspeak';
+import type { ClientChatClosedEvent } from '@honeybbq/teamspeak';
 import type { ClientChatComposingEvent } from '@honeybbq/teamspeak';
 import { ClientEntry } from '@honeybbq/teamspeak';
 import { ClientID } from '@honeybbq/teamspeak';
@@ -236,6 +237,7 @@ export interface EventMap extends ServerEventMap, SessionEventMap {
     channelSubscribed: ChannelSubscribedEvent;
     channelUnsubscribed: ChannelUnsubscribedEvent;
     clientChannelGroupChanged: ClientChannelGroupChangedEvent;
+    clientChatClosed: ClientChatClosedEvent;
     clientChatComposing: ClientChatComposingEvent;
     clientServerGroupAdded: ClientServerGroupAddedEvent;
     clientServerGroupRemoved: ClientServerGroupRemovedEvent;
@@ -279,6 +281,7 @@ const eventNameValues: {
     readonly ChannelUnsubscribed: "channelUnsubscribed";
     readonly PluginCommand: "pluginCommand";
     readonly ClientChatComposing: "clientChatComposing";
+    readonly ClientChatClosed: "clientChatClosed";
     readonly ViewReady: "viewReady";
     readonly ViewChanged: "viewChanged";
     readonly Poked: "poked";
@@ -559,7 +562,7 @@ export type ServerEvent = {
 }[ServerEventName];
 
 // @public
-export type ServerEventName = "textMessage" | "clientEnter" | "clientLeave" | "clientMoved" | "channelCreated" | "channelEdited" | "channelMoved" | "channelDeleted" | "channelDescriptionChanged" | "channelPasswordChanged" | "serverEdited" | "clientUpdated" | "clientServerGroupAdded" | "clientServerGroupRemoved" | "clientChannelGroupChanged" | "channelSubscribed" | "channelUnsubscribed" | "pluginCommand" | "clientChatComposing" | "poked" | "voiceData" | "notification";
+export type ServerEventName = "textMessage" | "clientEnter" | "clientLeave" | "clientMoved" | "channelCreated" | "channelEdited" | "channelMoved" | "channelDeleted" | "channelDescriptionChanged" | "channelPasswordChanged" | "serverEdited" | "clientUpdated" | "clientServerGroupAdded" | "clientServerGroupRemoved" | "clientChannelGroupChanged" | "channelSubscribed" | "channelUnsubscribed" | "pluginCommand" | "clientChatComposing" | "clientChatClosed" | "poked" | "voiceData" | "notification";
 
 // @public
 export interface ServerView {

@@ -9,7 +9,7 @@ import type {
   NotificationEvent,
   TextMessageEvent,
 } from "@honeybbq/teamspeak";
-import { Reason } from "@honeybbq/teamspeak";
+import { NotificationName, Reason } from "@honeybbq/teamspeak";
 
 /**
  * A transport that answers the setup commands by itself and lets the test push
@@ -671,5 +671,26 @@ describe("QueryClient: what it knows of the server it is on", () => {
       "use sid=1",
       "servernotifyregister event=server",
     ]);
+  });
+});
+
+describe("QueryClient ban and token notifications", () => {
+  it("delivers a ban update on notification only, with its name", async () => {
+    const { client, transport } = await connected();
+    const seen: string[] = [];
+    client.on("notification", (n) => seen.push(`${n.name}:${n.params["op"]}`));
+    transport.receive("notifybanupdate op=add banid=4 name=zz", "notifybanupdate op=delall");
+    await waitFor(() => seen.length === 2);
+    expect(seen).toEqual(["notifybanupdate:add", "notifybanupdate:delall"]);
+    expect(NotificationName.BanUpdate).toBe("notifybanupdate");
+  });
+
+  it("registers tokenused when asked for, and leaves it out by default", async () => {
+    const asked = new FakeTransport();
+    await clientOn(asked, { events: { categories: ["tokenused"] } }).connect();
+    expect(asked.sent).toContain("servernotifyregister event=tokenused");
+    const plain = new FakeTransport();
+    await clientOn(plain).connect();
+    expect(plain.sent.join("\n")).not.toContain("tokenused");
   });
 });

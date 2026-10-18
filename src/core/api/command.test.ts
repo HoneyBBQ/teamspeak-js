@@ -965,6 +965,7 @@ describe("answers that are records", () => {
     expect(await getClientNameByDBID(client, asClientDBID(12))).toEqual({
       databaseID: asClientDBID(12),
       name: "alice",
+      uid: "u=",
     });
   });
 });

@@ -75,7 +75,10 @@ export type QueryTransportOptions =
  * `servernotifyregister`.
  *
  * `bans` is not registered by default: TeamSpeak 3 refuses it with 1539,
- * which would fail the registration of every category after it.
+ * which would fail the registration of every category after it. `tokenused`
+ * is not registered by default either: both servers accept it (measured) and
+ * then send `notifytokenused`, which carries a privilege key and has no typed
+ * event, so it reaches `notification` only.
  */
 export type QueryEventCategory =
   | "server"
@@ -83,7 +86,8 @@ export type QueryEventCategory =
   | "textserver"
   | "textchannel"
   | "textprivate"
-  | "bans";
+  | "bans"
+  | "tokenused";
 
 /**
  * Which notification categories to register for.
@@ -103,7 +107,8 @@ export type QueryEventCategory =
  * | `server`                                | `serverEdited`                                                                                                                              |
  * | `channel` (registered for every channel) | `channelCreated`, `channelEdited`, `channelMoved`, `channelDeleted`, `channelDescriptionChanged`, `channelPasswordChanged`, `clientEnter`, `clientLeave`, `clientMoved` |
  * | `textserver`, `textchannel`, `textprivate` | `textMessage`, for the server, the channel and private messages                                                                         |
- * | `bans`                                  | none                                                                                                                                        |
+ * | `bans`                                  | `banUpdated`                                                                                                                                |
+ * | `tokenused`                             | none (`notification` only)                                                                                                                  |
  *
  * Leaving a category out leaves its events out: `{ categories: ["textprivate"] }`
  * delivers no channel event. The voice client's events about clients' updates,
@@ -166,6 +171,7 @@ const CATEGORIES: ReadonlySet<string> = new Set([
   "textchannel",
   "textprivate",
   "bans",
+  "tokenused",
 ]);
 
 /** A transport with its defaults filled, and its fields copied. */

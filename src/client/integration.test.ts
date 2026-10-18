@@ -430,10 +430,12 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     expect(await getClientNameByUID(sharedClient, uid)).toEqual({
       databaseID: dbid,
       name: nickname,
+      uid,
     });
     expect(await getClientNameByDBID(sharedClient, dbid)).toEqual({
       databaseID: dbid,
       name: nickname,
+      uid,
     });
     expect(await getClientIDs(sharedClient, uid)).toContainEqual({ id: ownID, nickname });
   }, 20_000);

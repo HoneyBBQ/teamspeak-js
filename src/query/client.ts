@@ -9,7 +9,7 @@ import {
   TeamspeakError,
   backoffDelay,
   noopLogger,
-  type ClientEnterEvent,
+  type ClientEntry,
   type CommandExecutor,
   type CommandMiddleware,
   type CommandOptions,
@@ -155,7 +155,7 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
    * 0 until it is known.
    */
   #clid = 0;
-  #clients = new Map<number, ClientEnterEvent>();
+  #clients = new Map<number, ClientEntry>();
 
   #reconnectOptions: ReconnectOptions | undefined;
   #reconnecting = false;
@@ -1041,6 +1041,7 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
       case "channelUnsubscribed":
       case "pluginCommand":
       case "clientChatComposing":
+      case "clientChatClosed":
       // Neither a TeamSpeak 3 ServerQuery connection nor a TeamSpeak 6 one over
       // SSH is sent these (measured), so a query client does not offer them.
       // Should a server send one, the clients it knows are still kept current

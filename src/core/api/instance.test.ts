@@ -130,6 +130,7 @@ describe("virtual servers", () => {
         autoStart: true,
         machineID: "",
         uid: "f87v8hsmXaUX9cPIDNDyeuQqjFI=",
+        guestCanCreateChannels: true,
       },
       {
         id: asServerID(2n),

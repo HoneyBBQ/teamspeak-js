@@ -257,9 +257,9 @@ const listFlags: ReadonlyArray<readonly [string, true]> = [
  * All channels on the server, in the server's own sort order.
  *
  * Always asks for the topic, flags, voice, limits, icon, seconds empty and
- * banners, which a bare `channellist` leaves out. The last two are asked for
- * and not read: `Channel` has no field for them yet. `description` and `uid` are not part of
- * `channellist` and stay empty; `getChannelInfo` has them.
+ * banners, which a bare `channellist` leaves out. `description`, `uid` and
+ * `filePath` are not part of `channellist` and stay empty or undefined;
+ * `getChannelInfo` has them.
  */
 export async function listChannels(
   client: CommandExecutor,
