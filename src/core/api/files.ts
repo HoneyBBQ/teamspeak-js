@@ -96,6 +96,66 @@ export async function listFiles(
   return rows.map(parseFileEntry);
 }
 
+/** One entry of a recursive listing: what {@link listFiles} reports, with where it is. */
+export interface FileTreeEntry extends FileEntry {
+  /**
+   * The entry's full path in the channel's file area, from its root: `/a/b.txt`
+   * for the file `b.txt` in the directory `a`. A directory's path has no
+   * trailing slash.
+   */
+  readonly path: string;
+}
+
+/** How {@link listFilesRecursive} walks the file area. */
+export interface FileTreeOptions extends FileOptions {
+  /**
+   * How many directory levels to go down from the starting path: 0 lists the
+   * starting directory only, as {@link listFiles} does; 1 also lists the
+   * directories in it; and so on. 16 by default. A non-negative integer.
+   */
+  readonly maxDepth?: number | undefined;
+}
+
+/** How far {@link listFilesRecursive} goes down unless told otherwise. */
+const DEFAULT_MAX_DEPTH = 16;
+
+/**
+ * Every file and directory under a path in a channel's file area, in one list:
+ * the entries of the directory in the order {@link listFiles} gives them, each
+ * directory followed by what it holds.
+ *
+ * It lists one directory at a time, one command each, so a large tree costs
+ * that many round trips. `maxDepth` bounds how far it goes down; a directory
+ * at the bound is listed, but not entered. The options (password, signal,
+ * timeoutMs) reach every command, and the first error ends the walk. An empty
+ * directory has no entries, and a path that is not a directory fails as
+ * {@link listFiles} does: TS3 3.13.8 answers 2052 and TS6 beta13.1 2051 for a
+ * path that does not exist.
+ *
+ * File commands are not served over WebQuery (error 5120).
+ */
+export async function listFilesRecursive(
+  client: CommandExecutor,
+  cid: ChannelID,
+  path: string,
+  options: FileTreeOptions = {},
+): Promise<FileTreeEntry[]> {
+  const { maxDepth = DEFAULT_MAX_DEPTH, ...listOptions } = options;
+  if (!Number.isInteger(maxDepth) || maxDepth < 0) {
+    throw new RangeError(`maxDepth is a non-negative integer, not ${String(maxDepth)}`);
+  }
+  const found: FileTreeEntry[] = [];
+  const walk = async (directory: string, depth: number): Promise<void> => {
+    for (const entry of await listFiles(client, cid, directory, listOptions)) {
+      const entryPath = `${directory.replace(/\/+$/, "")}/${entry.name}`;
+      found.push({ ...entry, path: entryPath });
+      if (entry.isDirectory && depth < maxDepth) await walk(entryPath, depth + 1);
+    }
+  };
+  await walk(asPath(path), 0);
+  return found;
+}
+
 /** Size and timestamp of one file. */
 export async function getFileInfo(
   client: CommandExecutor,
@@ -144,7 +204,11 @@ export async function deleteFile(
   );
 }
 
-/** Create a directory, including any missing parents. */
+/**
+ * Create a directory. Its parent has to exist: measured on TS3 3.13.8 and TS6
+ * beta13.1, a path whose parent is missing is refused with 2052 (file
+ * input/output error), so nested directories are made one level at a time.
+ */
 export async function createDirectory(
   client: CommandExecutor,
   cid: ChannelID,

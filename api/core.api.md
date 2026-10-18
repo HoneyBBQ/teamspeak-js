@@ -1474,6 +1474,16 @@ export interface FileTransferStopOptions extends CommandOptions {
 }
 
 // @public
+export interface FileTreeEntry extends FileEntry {
+    readonly path: string;
+}
+
+// @public
+export interface FileTreeOptions extends FileOptions {
+    readonly maxDepth?: number | undefined;
+}
+
+// @public
 export interface FileUploadInfo {
     readonly clientFileTransferID: ClientFileTransferID;
     readonly fileTransferKey: string;
@@ -1741,6 +1751,9 @@ export type Listener<M, K extends keyof M> = M[K] extends void ? () => void : (p
 
 // @public
 export function listFiles(client: CommandExecutor, cid: ChannelID, path: string, options?: FileOptions): Promise<FileEntry[]>;
+
+// @public
+export function listFilesRecursive(client: CommandExecutor, cid: ChannelID, path: string, options?: FileTreeOptions): Promise<FileTreeEntry[]>;
 
 // @public
 export function listMessages(client: CommandExecutor, options?: CommandOptions): Promise<OfflineMessage[]>;

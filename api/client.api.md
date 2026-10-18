@@ -28,7 +28,9 @@ import { CommandOptions } from '@honeybbq/teamspeak';
 import type { CommandRequest } from '@honeybbq/teamspeak';
 import { Duplex } from 'node:stream';
 import type { FileDownloadInfo } from '@honeybbq/teamspeak';
+import type { FileDownloadOptions } from '@honeybbq/teamspeak';
 import type { FileUploadInfo } from '@honeybbq/teamspeak';
+import type { FileUploadOptions } from '@honeybbq/teamspeak';
 import { HostMessageMode } from '@honeybbq/teamspeak';
 import { IconID } from '@honeybbq/teamspeak';
 import { Listener } from '@honeybbq/teamspeak';
@@ -90,7 +92,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
         readonly signal?: AbortSignal | undefined;
         readonly reasonMessage?: string | undefined;
     }): Promise<void>;
-    downloadFileData(host: string, info: FileDownloadInfo, dest: Writable, options?: Pick<FileTransferOptions, "signal" | "trace">): Promise<void>;
+    downloadFileData(host: string, info: FileDownloadInfo, dest: Writable, options?: Pick<FileTransferOptions, "signal" | "trace" | "idleTimeoutMs">): Promise<void>;
     events<K extends keyof EventMap>(event: K, options?: {
         readonly signal?: AbortSignal | undefined;
     }): AsyncIterableIterator<EventMap[K]>;
@@ -108,7 +110,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     get serverCapabilities(): ServerCapabilities;
     get status(): ClientStatus;
     get uid(): UID;
-    uploadFileData(host: string, info: FileUploadInfo, data: Readable, options?: Pick<FileTransferOptions, "signal" | "trace">): Promise<void>;
+    uploadFileData(host: string, info: FileUploadInfo, data: Readable, options?: Pick<FileTransferOptions, "signal" | "trace" | "idleTimeoutMs">): Promise<void>;
     get view(): ServerView;
 }
 
@@ -227,7 +229,22 @@ export interface DisconnectStartInfo {
 export function downloadAvatar(client: Client, uid: UID | string, options?: AvatarTransferOptions): Promise<Uint8Array | undefined>;
 
 // @public
+export function downloadFile(client: CommandExecutor, channelID: ChannelID, path: string, options: DownloadFileOptions & {
+    readonly dest: Writable;
+}): Promise<void>;
+
+// @public (undocumented)
+export function downloadFile(client: CommandExecutor, channelID: ChannelID, path: string, options?: DownloadFileOptions): Promise<Uint8Array>;
+
+// @public
 export function downloadFileData(host: string, info: FileDownloadInfo, dest: Writable, options?: FileTransferOptions): Promise<void>;
+
+// @public
+export interface DownloadFileOptions extends Omit<FileDownloadOptions, "seekPosition">, FileTransferOptions {
+    readonly dest?: Writable | undefined;
+    readonly host?: string | undefined;
+    readonly maxSize?: number | undefined;
+}
 
 // @public
 export function downloadIcon(client: Client, id: IconID, options?: AvatarTransferOptions): Promise<Uint8Array | undefined>;
@@ -638,7 +655,16 @@ export function unsubscribeChannel(client: Client, cid: ChannelID, options?: Com
 export function uploadAvatar(client: Client, data: Uint8Array, options?: AvatarTransferOptions): Promise<string>;
 
 // @public
+export function uploadFile(client: CommandExecutor, channelID: ChannelID, path: string, data: Uint8Array | Readable, options?: UploadFileOptions): Promise<void>;
+
+// @public
 export function uploadFileData(host: string, info: FileUploadInfo, data: Readable, options?: FileTransferOptions): Promise<void>;
+
+// @public
+export interface UploadFileOptions extends Omit<FileUploadOptions, "resume">, FileTransferOptions {
+    readonly host?: string | undefined;
+    readonly size?: bigint | number | undefined;
+}
 
 // @public
 export function uploadIcon(client: Client, data: Uint8Array, options?: AvatarTransferOptions): Promise<IconID>;
