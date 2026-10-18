@@ -17,11 +17,11 @@ Only **d** blocks 1.0.
 
 ## Transports
 
-| Transport | Where        | TS3                                  | TS6                 | Login           | Events |
-| --------- | ------------ | ------------------------------------ | ------------------- | --------------- | ------ |
-| Raw TCP   | 10011        | yes                                  | **no**              | `login` command | yes    |
-| SSH       | 10022        | yes (3.3 and later), off by default  | yes, off by default | the SSH login   | yes    |
-| WebQuery  | 10080 (HTTP) | yes (3.12 and later), off by default | yes                 | `x-api-key`     | no     |
+| Transport | Where                       | TS3                                  | TS6                 | Login           | Events |
+| --------- | --------------------------- | ------------------------------------ | ------------------- | --------------- | ------ |
+| Raw TCP   | 10011                       | yes                                  | **no**              | `login` command | yes    |
+| SSH       | 10022                       | yes (3.3 and later), off by default  | yes, off by default | the SSH login   | yes    |
+| WebQuery  | 10080 (HTTP), 10443 (HTTPS) | yes (3.12 and later), off by default | yes                 | `x-api-key`     | no     |
 
 **TS3 serves SSH and WebQuery too, once `query_protocols` lists them.** It is
 `raw` alone by default; `raw,ssh,http` turns on all three (the official Docker
@@ -100,7 +100,11 @@ one answer shape.
   scope", so TS6's file transfers and events need SSH. The server's own
   documentation lists them as unsupported over WebQuery.
 - The global `fetch` refuses port 10080 as a blocked port ("bad port"), so
-  the transport uses `node:http`.
+  the transport uses `node:http`, or `node:https` for an `https:` URL. HTTPS
+  needs `https` in `query_protocols` and a certificate and key
+  (`query_https_certificate_file`, `query_https_private_key_file`); the
+  transport verifies the certificate against Node's trust store, so a private
+  CA is trusted through `NODE_EXTRA_CA_CERTS` or a caller-supplied `fetch`.
 
 On the wire, a ServerQuery connection writes `\n\r` after each line, and a
 list is one line of rows joined by `|`. Every row carries all its fields: no

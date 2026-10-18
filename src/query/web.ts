@@ -1,4 +1,5 @@
-import { request } from "node:http";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { TeamspeakError } from "@honeybbq/teamspeak";
 import { buildCommandOrdered, parseCommand, splitCommandRows } from "../core/internal.js";
 import type { QueryTransport } from "./transport.js";
@@ -61,7 +62,11 @@ export type WebCredentials =
 
 /** How a WebQuery is reached. */
 export type WebQueryOptions = WebCredentials & {
-  /** The server's base URL, such as `http://127.0.0.1:10080`. */
+  /**
+   * The server's base URL, such as `http://127.0.0.1:10080` or
+   * `https://ts.example.com:10443`. The default `fetch` speaks `http:` and
+   * `https:` and refuses any other scheme.
+   */
   readonly url: string;
   /**
    * The virtual server to address; `use` changes it. Unset leaves the server out
@@ -71,9 +76,16 @@ export type WebQueryOptions = WebCredentials & {
    */
   readonly serverID?: number | bigint | undefined;
   /**
-   * The `fetch` to use. By default a small one over `node:http`: the global
-   * `fetch` refuses port 10080, WebQuery's own default, as a port the Fetch
-   * standard blocks.
+   * The `fetch` to use. By default a small one over `node:http` for an `http:`
+   * URL and `node:https` for an `https:` one: the global `fetch` refuses port
+   * 10080, WebQuery's own default, as a port the Fetch standard blocks.
+   *
+   * Over HTTPS the default verifies the server's certificate against the
+   * trust store Node uses, and never skips that. A server whose certificate
+   * comes from a private CA, or is self-signed, is trusted one of two ways:
+   * start Node with `NODE_EXTRA_CA_CERTS=ca.pem`, or pass a `fetch` that
+   * trusts the CA, such as one over `node:https` with an `https.Agent` whose
+   * `ca` is that certificate.
    */
   readonly fetch?: typeof fetch | undefined;
 };
@@ -127,7 +139,15 @@ export class WebQueryTransport implements QueryTransport {
     }
     this.#apiKey = options.apiKey;
     this.#prefix = options.serverID === undefined ? "" : `/${options.serverID}`;
-    this.#fetch = options.fetch ?? httpFetch;
+    if (options.fetch === undefined) {
+      const { protocol } = new URL(options.url);
+      if (protocol !== "http:" && protocol !== "https:") {
+        throw new TypeError(
+          `WebQuery is reached over http: or https:, not ${protocol}; pass a fetch to use another scheme`,
+        );
+      }
+    }
+    this.#fetch = options.fetch ?? nodeFetch;
   }
 
   async send(line: string): Promise<void> {
@@ -213,11 +233,13 @@ function rowLine(row: object): string {
 }
 
 /**
- * The part of `fetch` this transport uses, over `node:http`: a POST with a
- * string body, answered with a `Response`. Plain HTTP only, as WebQuery is.
+ * The part of `fetch` this transport uses, over `node:http` or `node:https`
+ * by the URL's scheme: a POST with a string body, answered with a `Response`.
+ * An HTTPS certificate is verified the way Node does by default.
  */
-const httpFetch = ((url: string, init: RequestInit) =>
+const nodeFetch = ((url: string, init: RequestInit) =>
   new Promise<Response>((resolve, reject) => {
+    const request = new URL(url).protocol === "https:" ? httpsRequest : httpRequest;
     const req = request(
       url,
       { method: init.method, headers: init.headers as Record<string, string> },
