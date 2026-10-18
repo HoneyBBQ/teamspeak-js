@@ -435,6 +435,11 @@ export class PacketHandler {
   }
 
   /** How many packets have been sent again for want of an acknowledgement. */
+  /** Whether clientek, sent under the dummy key, has not been acknowledged yet. */
+  get clientEkPending(): boolean {
+    return this.#dummyCommandIDs.size > 0;
+  }
+
   get resends(): number {
     return this.#resends;
   }

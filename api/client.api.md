@@ -63,6 +63,7 @@ export interface AttemptFailedInfo extends AttemptInfo {
     readonly error: unknown;
     readonly phase: ConnectPhase;
     readonly target: string;
+    readonly waitingFor: string;
 }
 
 // @public
