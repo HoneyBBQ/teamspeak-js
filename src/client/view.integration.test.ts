@@ -76,10 +76,10 @@ function adminOptions(): QueryClientOptions {
       kind: "tcp",
       host: process.env["TEAMSPEAK_QUERY_HOST"] ?? "127.0.0.1",
       port: Number(process.env["TEAMSPEAK_QUERY_PORT"] ?? "10011"),
-    },
-    login: {
-      name: process.env["TEAMSPEAK_QUERY_LOGIN_NAME"] ?? "",
-      password: process.env["TEAMSPEAK_QUERY_LOGIN_PASSWORD"] ?? "",
+      login: {
+        name: process.env["TEAMSPEAK_QUERY_LOGIN_NAME"] ?? "",
+        password: process.env["TEAMSPEAK_QUERY_LOGIN_PASSWORD"] ?? "",
+      },
     },
     server: { id: 1 },
     nickname: `ts-js-view-admin-${RUN}`,

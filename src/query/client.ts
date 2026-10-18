@@ -261,11 +261,11 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
   // ---- Connection -----------------------------------------------------------
 
   /**
-   * Connect and set the session up: open the transport, then `login` (raw TCP
-   * only), `use`, `version`, the notification registrations, and one client
+   * Connect and set the session up: open the transport, then `login` (the raw
+   * TCP transport's `login` option), `use`, `version`, the notification registrations, and one client
    * list.
    *
-   * The `login` and `server` options are applied here rather than left to the
+   * The transport's `login` and the `server` option are applied here rather than left to the
    * caller so that a reconnection is the same session as the first connection
    * was.
    *
@@ -378,7 +378,8 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     transport.onLine = (line) => this.#handleLine(line);
     transport.onClose = (error) => this.#handleClose(error);
 
-    const { login, server, nickname, eventCategories } = this.#options;
+    const { transport: resolvedTransport, server, nickname, eventCategories } = this.#options;
+    const login = resolvedTransport.kind === "tcp" ? resolvedTransport.login : undefined;
     if (login !== undefined) await this.login(login.name, login.password, { signal });
     // Not `use()`: this session learns who it is, and who is there, once, below.
     if (server !== undefined) await this.#select(server, { nickname, signal });
@@ -475,7 +476,7 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
    * server refuses the command; over SSH the session is logged in already.
    *
    * Public because a caller driving the client by hand needs it: `connect()`
-   * runs it from the `login` option, and this is the same `login` command.
+   * runs it from the tcp transport's `login` option, and this is the same `login` command.
    *
    * On TeamSpeak 3 a failed login gets the caller's IP address banned for 600
    * seconds, so a retry loop on a wrong password locks itself out of every
