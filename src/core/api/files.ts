@@ -116,6 +116,13 @@ export interface FileTreeOptions extends FileOptions {
   readonly maxDepth?: number | undefined;
 }
 
+/** A path without the slashes at its end; "/" becomes "". */
+function withoutTrailingSlashes(path: string): string {
+  let end = path.length;
+  while (end > 0 && path.charCodeAt(end - 1) === 0x2f) end--;
+  return path.slice(0, end);
+}
+
 /** How far {@link listFilesRecursive} goes down unless told otherwise. */
 const DEFAULT_MAX_DEPTH = 16;
 
@@ -147,7 +154,7 @@ export async function listFilesRecursive(
   const found: FileTreeEntry[] = [];
   const walk = async (directory: string, depth: number): Promise<void> => {
     for (const entry of await listFiles(client, cid, directory, listOptions)) {
-      const entryPath = `${directory.replace(/\/+$/, "")}/${entry.name}`;
+      const entryPath = `${withoutTrailingSlashes(directory)}/${entry.name}`;
       found.push({ ...entry, path: entryPath });
       if (entry.isDirectory && depth < maxDepth) await walk(entryPath, depth + 1);
     }
