@@ -278,8 +278,10 @@ export async function addChannelGroupPermission(
 /**
  * Set several permissions on a channel group, in one command: each permission
  * is a row. With none, nothing is sent. The server's answer is as for
- * {@link addChannelPermissions}: every row is checked first, and one it
- * refuses leaves none set, with or without `continueOnError`.
+ * {@link addChannelPermissions}: an unknown permission or a value it cannot read
+ * refuses the call with none set, with or without `continueOnError`, and a row
+ * the caller lacks the power for ends it there, or is skipped with
+ * `continueOnError`.
  */
 export async function addChannelGroupPermissions(
   client: CommandExecutor,
@@ -298,10 +300,14 @@ export async function addChannelGroupPermissions(
 
 /**
  * Remove several permissions from a channel group, in one command: each
- * permission is a row. With none, nothing is sent. Every row is checked
- * first: one the server refuses (an unknown permission, 2562) leaves none
- * removed, with or without `continueOnError`. Removing a permission the group
- * does not have succeeds.
+ * permission is a row. With none, nothing is sent. An unknown permission (2562)
+ * is found first and leaves none removed, with or without `continueOnError`.
+ * Removing a permission the group does not have succeeds. A permission the
+ * caller has too little modify power for (2570) ends the call at that row, so
+ * the rows before it are removed and the rows after it are not; with
+ * `continueOnError` that row is skipped and the others removed. Measured on
+ * TeamSpeak 3 3.13.8 and TeamSpeak 6 beta13.1 over every query transport and
+ * the voice protocol.
  */
 export async function deleteChannelGroupPermissions(
   client: CommandExecutor,
