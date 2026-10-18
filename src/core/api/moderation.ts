@@ -10,6 +10,8 @@ import {
   firstRow,
   exec,
   query,
+  queryRows,
+  continueOnErrorParams,
   list,
   encodeFields,
   nonEmpty,
@@ -22,7 +24,7 @@ import {
   durationMs,
   SECOND,
 } from "./command.js";
-import type { Params, WireNames } from "./command.js";
+import type { BatchOptions, Params, WireNames } from "./command.js";
 import type { CommandExecutor, CommandOptions, ParamValue } from "../command/request.js";
 import type { BanID, ClientDBID, ClientID, MessageID, UID } from "../command/ids.js";
 import { asBanID, asClientDBID, asMessageID, asUID } from "../command/ids.js";
@@ -264,6 +266,50 @@ export async function banClient(
     client,
     "banclient",
     [["clid", clid], ...encodeFields(options, banClientNames)],
+    options,
+  );
+  return rows.flatMap((row) => (str(row, "banid") === "" ? [] : [asBanID(big(row, "banid"))]));
+}
+
+/** How {@link banClients} bans, and whether it goes on past a failure. */
+export interface BanClientsOptions extends BanClientOptions, BatchOptions {}
+
+/**
+ * Ban several connected clients by clid, in one command, such as
+ * `banclient time=60 clid=5|clid=6`, and return the id of every ban the server
+ * reports. With no ids nothing is sent and the result is `[]`.
+ *
+ * Each client costs the bans {@link banClient} describes; clients that share an
+ * address share one address ban, so two clients behind one address made three
+ * ids. The voice protocol reports no ids, so there this resolves to `[]` even
+ * when bans were made.
+ *
+ * The server reports one answer for the whole call, never one per client: the
+ * ids of the bans made, then success, or one error. Measured on TeamSpeak 3
+ * 3.13.8 and TeamSpeak 6 beta13.1, over raw ServerQuery, SSH, WebQuery and the
+ * voice protocol alike:
+ *
+ * - Without `continueOnError`, the server first checks that every id names a
+ *   client: one that does not (512) refuses the call and nothing is banned.
+ *   Past that, clients are banned in the order given and a failure for one
+ *   (insufficient permissions, 2568) stops the call: the clients before it are
+ *   banned, the ones after it are not, and the error is that client's.
+ * - With it (`-continueonerror`), a client that cannot be banned is skipped,
+ *   the others are banned, the ids of the bans made are returned, and the
+ *   answer is success even when none could be banned.
+ *
+ * A client that is banned is disconnected.
+ */
+export async function banClients(
+  client: CommandExecutor,
+  clientIDs: readonly ClientID[],
+  options: BanClientsOptions = {},
+): Promise<BanID[]> {
+  const rows = await queryRows(
+    client,
+    "banclient",
+    [...continueOnErrorParams(options), ...encodeFields<BanClientOptions>(options, banClientNames)],
+    clientIDs.map((clid) => [["clid", clid]]),
     options,
   );
   return rows.flatMap((row) => (str(row, "banid") === "" ? [] : [asBanID(big(row, "banid"))]));

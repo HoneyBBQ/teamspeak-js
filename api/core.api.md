@@ -30,13 +30,28 @@ export function addBan(client: CommandExecutor, ban: BanOptions, options?: Comma
 export function addChannelClientPermission(client: CommandExecutor, cid: ChannelID, cldbid: ClientDBID, permission: Permission, value: number, options?: CommandOptions): Promise<void>;
 
 // @public
+export function addChannelClientPermissions(client: CommandExecutor, cid: ChannelID, cldbid: ClientDBID, permissions: readonly PermissionValue[], options?: BatchOptions): Promise<void>;
+
+// @public
 export function addChannelGroupPermission(client: CommandExecutor, cgid: ChannelGroupID, permission: Permission, value: number, options?: CommandOptions): Promise<void>;
+
+// @public
+export function addChannelGroupPermissions(client: CommandExecutor, cgid: ChannelGroupID, permissions: readonly PermissionValue[], options?: BatchOptions): Promise<void>;
 
 // @public
 export function addChannelPermission(client: CommandExecutor, cid: ChannelID, permission: Permission, value: number, options?: CommandOptions): Promise<void>;
 
 // @public
+export function addChannelPermissions(client: CommandExecutor, cid: ChannelID, permissions: readonly PermissionValue[], options?: BatchOptions): Promise<void>;
+
+// @public
 export function addClientPermission(client: CommandExecutor, cldbid: ClientDBID, permission: Permission, value: number, options?: ClientPermissionOptions): Promise<void>;
+
+// @public
+export function addClientPermissions(client: CommandExecutor, cldbid: ClientDBID, permissions: readonly ClientPermissionValue[], options?: BatchOptions): Promise<void>;
+
+// @public
+export function addClientsToServerGroup(client: CommandExecutor, sgid: ServerGroupID, databaseIDs: readonly ClientDBID[], options?: BatchOptions): Promise<void>;
 
 // @public
 export function addClientToServerGroup(client: CommandExecutor, sgid: ServerGroupID, cldbid: ClientDBID, options?: CommandOptions): Promise<void>;
@@ -58,6 +73,12 @@ export function addServerGroupPermission(client: CommandExecutor, sgid: ServerGr
 
 // @public
 export function addServerGroupPermissionByType(client: CommandExecutor, type: GroupAutoUpdateType, permission: Permission, value: number, options?: ServerGroupPermissionOptions): Promise<void>;
+
+// @public
+export function addServerGroupPermissions(client: CommandExecutor, sgid: ServerGroupID, permissions: readonly ServerGroupPermissionValue[], options?: BatchOptions): Promise<void>;
+
+// @public
+export function addServerGroupPermissionsByType(client: CommandExecutor, type: GroupAutoUpdateType, permissions: readonly ServerGroupPermissionValue[], options?: CommandOptions): Promise<void>;
 
 // @public
 export function addTempPassword(client: CommandExecutor, temp: TempPasswordOptions, options?: CommandOptions): Promise<void>;
@@ -192,6 +213,13 @@ export interface BanClientOptions extends Pick<BanFields, "durationMs" | "reason
 }
 
 // @public
+export function banClients(client: CommandExecutor, clientIDs: readonly ClientID[], options?: BanClientsOptions): Promise<BanID[]>;
+
+// @public
+export interface BanClientsOptions extends BanClientOptions, BatchOptions {
+}
+
+// @public
 export interface BanCriteria {
     readonly ip?: string | undefined;
     readonly mytsid?: string | undefined;
@@ -240,6 +268,11 @@ export interface BanListOptions extends CommandOptions {
 
 // @public
 export type BanOptions = BanFields;
+
+// @public
+export interface BatchOptions extends CommandOptions {
+    readonly continueOnError?: boolean | undefined;
+}
 
 // @public
 export interface Binding {
@@ -682,6 +715,11 @@ export interface ClientPermissionOptions extends CommandOptions {
 }
 
 // @public
+export interface ClientPermissionValue extends PermissionValue {
+    readonly skip?: boolean | undefined;
+}
+
+// @public
 export interface ClientServerGroupAddedEvent extends ClientServerGroupEvent {
 }
 
@@ -695,6 +733,14 @@ export interface ClientServerGroupEvent extends Invoked {
 
 // @public
 export interface ClientServerGroupRemovedEvent extends ClientServerGroupEvent {
+}
+
+// @public
+export interface ClientsKickOptions extends ClientKickOptions, BatchOptions {
+}
+
+// @public
+export interface ClientsMoveOptions extends ClientMoveOptions, BatchOptions {
 }
 
 // Warning: (ae-forgotten-export) The symbol "clientStatusValues" needs to be exported by the entry point index.d.ts
@@ -1082,19 +1128,31 @@ export function deleteChannel(client: CommandExecutor, cid: ChannelID, options?:
 export function deleteChannelClientPermission(client: CommandExecutor, cid: ChannelID, cldbid: ClientDBID, permission: Permission, options?: CommandOptions): Promise<void>;
 
 // @public
+export function deleteChannelClientPermissions(client: CommandExecutor, cid: ChannelID, cldbid: ClientDBID, permissions: readonly Permission[], options?: CommandOptions): Promise<void>;
+
+// @public
 export function deleteChannelGroup(client: CommandExecutor, cgid: ChannelGroupID, options?: GroupDeleteOptions): Promise<void>;
 
 // @public
 export function deleteChannelGroupPermission(client: CommandExecutor, cgid: ChannelGroupID, permission: Permission, options?: CommandOptions): Promise<void>;
 
 // @public
+export function deleteChannelGroupPermissions(client: CommandExecutor, cgid: ChannelGroupID, permissions: readonly Permission[], options?: BatchOptions): Promise<void>;
+
+// @public
 export function deleteChannelPermission(client: CommandExecutor, cid: ChannelID, permission: Permission, options?: CommandOptions): Promise<void>;
+
+// @public
+export function deleteChannelPermissions(client: CommandExecutor, cid: ChannelID, permissions: readonly Permission[], options?: CommandOptions): Promise<void>;
 
 // @public
 export function deleteClientDatabase(client: CommandExecutor, cldbid: ClientDBID, options?: CommandOptions): Promise<void>;
 
 // @public
 export function deleteClientPermission(client: CommandExecutor, cldbid: ClientDBID, permission: Permission, options?: CommandOptions): Promise<void>;
+
+// @public
+export function deleteClientPermissions(client: CommandExecutor, cldbid: ClientDBID, permissions: readonly Permission[], options?: CommandOptions): Promise<void>;
 
 // @public
 export function deleteComplaint(client: CommandExecutor, targetDatabaseID: ClientDBID, fromDatabaseID: ClientDBID, options?: CommandOptions): Promise<void>;
@@ -1125,6 +1183,12 @@ export function deleteServerGroupPermission(client: CommandExecutor, sgid: Serve
 
 // @public
 export function deleteServerGroupPermissionByType(client: CommandExecutor, type: GroupAutoUpdateType, permission: Permission, options?: CommandOptions): Promise<void>;
+
+// @public
+export function deleteServerGroupPermissions(client: CommandExecutor, sgid: ServerGroupID, permissions: readonly Permission[], options?: BatchOptions): Promise<void>;
+
+// @public
+export function deleteServerGroupPermissionsByType(client: CommandExecutor, type: GroupAutoUpdateType, permissions: readonly Permission[], options?: CommandOptions): Promise<void>;
 
 // @public
 export function deleteTempPassword(client: CommandExecutor, password: string, options?: CommandOptions): Promise<void>;
@@ -1613,6 +1677,9 @@ export function iterateClientDatabase(client: CommandExecutor, options?: PagingO
 export function kickClient(client: CommandExecutor, clid: ClientID, reason: KickReason, options?: ClientKickOptions): Promise<void>;
 
 // @public
+export function kickClients(client: CommandExecutor, clientIDs: readonly ClientID[], reason: KickReason, options?: ClientsKickOptions): Promise<void>;
+
+// @public
 export interface KickedEvent {
     readonly invokerID: ClientID;
     readonly invokerName: string;
@@ -1756,6 +1823,9 @@ export function moveChannel(client: CommandExecutor, cid: ChannelID, parentID: C
 
 // @public
 export function moveClient(client: CommandExecutor, clid: ClientID, channelID: ChannelID, options?: ClientMoveOptions): Promise<void>;
+
+// @public
+export function moveClients(client: CommandExecutor, clientIDs: readonly ClientID[], channelID: ChannelID, options?: ClientsMoveOptions): Promise<void>;
 
 // @public
 export class NoDataError extends TeamspeakError {
@@ -2503,6 +2573,12 @@ const permissionTargetValues: {
 };
 
 // @public
+export interface PermissionValue {
+    readonly permission: Permission;
+    readonly value: number;
+}
+
+// @public
 export interface PluginCommandEvent extends Invoked {
     readonly data: string;
     readonly name: string;
@@ -2827,6 +2903,9 @@ export interface ReconnectOptions {
 export function removeClientFromServerGroup(client: CommandExecutor, sgid: ServerGroupID, cldbid: ClientDBID, options?: CommandOptions): Promise<void>;
 
 // @public
+export function removeClientsFromServerGroup(client: CommandExecutor, sgid: ServerGroupID, databaseIDs: readonly ClientDBID[], options?: BatchOptions): Promise<void>;
+
+// @public
 export function removeIcon(client: CommandExecutor, id: IconID, options?: CommandOptions): Promise<void>;
 
 // @public
@@ -2971,6 +3050,12 @@ export interface ServerGroupMember {
 
 // @public
 export interface ServerGroupPermissionOptions extends CommandOptions {
+    readonly negated?: boolean | undefined;
+    readonly skip?: boolean | undefined;
+}
+
+// @public
+export interface ServerGroupPermissionValue extends PermissionValue {
     readonly negated?: boolean | undefined;
     readonly skip?: boolean | undefined;
 }

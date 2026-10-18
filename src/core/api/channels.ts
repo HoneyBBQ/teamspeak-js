@@ -12,6 +12,8 @@ import {
   nonZero,
   firstRow,
   exec,
+  execRows,
+  continueOnErrorParams,
   query,
   list,
   parseChannel,
@@ -22,7 +24,13 @@ import {
   big,
   str,
 } from "./command.js";
-import type { Channel, PermissionEntry, WireNames } from "./command.js";
+import type {
+  BatchOptions,
+  Channel,
+  PermissionEntry,
+  PermissionValue,
+  WireNames,
+} from "./command.js";
 import type { CommandExecutor, CommandOptions } from "../command/request.js";
 import type { ChannelID, ClientDBID } from "../command/ids.js";
 import { asChannelID } from "../command/ids.js";
@@ -354,6 +362,58 @@ export async function addChannelPermission(
   );
 }
 
+/**
+ * Set several permissions on a channel, in one command: each permission is a
+ * row (`permsid=…  permvalue=…|permsid=…  permvalue=…`). With none, nothing is
+ * sent.
+ *
+ * The server checks every row before it applies any: a permission it does not
+ * know (2562), a value it cannot read (1540) or a permission the caller has too
+ * little modify power for (2568) refuses the call, and none is set, with or
+ * without `continueOnError`, which the server documents here but which changed
+ * no case measured. Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 beta13.1,
+ * over raw ServerQuery, SSH, WebQuery and the voice protocol alike. Resolves
+ * to nothing: the server never reports an answer per row.
+ */
+export async function addChannelPermissions(
+  client: CommandExecutor,
+  cid: ChannelID,
+  permissions: readonly PermissionValue[],
+  options: BatchOptions = {},
+): Promise<void> {
+  await execRows(
+    client,
+    "channeladdperm",
+    [...continueOnErrorParams(options), ["cid", cid]],
+    permissions.map((entry) => [permissionParam(entry.permission), ["permvalue", entry.value]]),
+    options,
+  );
+}
+
+/**
+ * Remove several permissions from a channel, in one command: each permission is
+ * a row (`permsid=…|permsid=…`). With none, nothing is sent.
+ *
+ * The server checks every row first, and one it cannot act on (an unknown
+ * permission, 2562; too little modify power, 2568) refuses the call with none
+ * removed. Removing a permission the channel does not have succeeds. The
+ * server documents no `-continueonerror` for this command, so none is offered.
+ */
+export async function deleteChannelPermissions(
+  client: CommandExecutor,
+  cid: ChannelID,
+  permissions: readonly Permission[],
+  options?: CommandOptions,
+): Promise<void> {
+  await execRows(
+    client,
+    "channeldelperm",
+    [["cid", cid]],
+    permissions.map((permission) => [permissionParam(permission)]),
+    options,
+  );
+}
+
 /** Remove a permission from a channel. */
 export async function deleteChannelPermission(
   client: CommandExecutor,
@@ -405,6 +465,53 @@ export async function addChannelClientPermission(
     client,
     "channelclientaddperm",
     [["cid", cid], ["cldbid", cldbid], permissionParam(permission), ["permvalue", value]],
+    options,
+  );
+}
+
+/**
+ * Set several permissions on one client within one channel, in one command:
+ * each permission is a row. With none, nothing is sent. The server's answer
+ * is as for {@link addChannelPermissions}: every row is checked first and one
+ * it refuses leaves none set.
+ */
+export async function addChannelClientPermissions(
+  client: CommandExecutor,
+  cid: ChannelID,
+  cldbid: ClientDBID,
+  permissions: readonly PermissionValue[],
+  options: BatchOptions = {},
+): Promise<void> {
+  await execRows(
+    client,
+    "channelclientaddperm",
+    [...continueOnErrorParams(options), ["cid", cid], ["cldbid", cldbid]],
+    permissions.map((entry) => [permissionParam(entry.permission), ["permvalue", entry.value]]),
+    options,
+  );
+}
+
+/**
+ * Remove several permissions from one client within one channel, in one
+ * command. With none, nothing is sent. The server's answer is as for
+ * {@link deleteChannelPermissions}, and it documents no `-continueonerror` for
+ * this command either.
+ */
+export async function deleteChannelClientPermissions(
+  client: CommandExecutor,
+  cid: ChannelID,
+  cldbid: ClientDBID,
+  permissions: readonly Permission[],
+  options?: CommandOptions,
+): Promise<void> {
+  await execRows(
+    client,
+    "channelclientdelperm",
+    [
+      ["cid", cid],
+      ["cldbid", cldbid],
+    ],
+    permissions.map((permission) => [permissionParam(permission)]),
     options,
   );
 }

@@ -13,6 +13,8 @@ import {
   U16,
   firstRow,
   exec,
+  execRows,
+  continueOnErrorParams,
   query,
   list,
   encodeFields,
@@ -28,7 +30,13 @@ import {
   durationMs,
   SECOND,
 } from "./command.js";
-import type { PermissionEntry, WireNames } from "./command.js";
+import type {
+  BatchOptions,
+  Params,
+  PermissionEntry,
+  PermissionValue,
+  WireNames,
+} from "./command.js";
 import type { CommandExecutor, CommandOptions } from "../command/request.js";
 import type {
   ChannelID,
@@ -560,6 +568,67 @@ export async function getServerGroupsByClient(
   return rows.map((row) => ({ id: asServerGroupID(big(row, "sgid")), name: str(row, "name") }));
 }
 
+/**
+ * Add several clients to a server group, in one command, such as
+ * `servergroupaddclient sgid=9 cldbid=3|cldbid=4`. With no ids nothing is sent.
+ *
+ * The server reports one answer for the whole call, never one per client.
+ * Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 beta13.1, over raw
+ * ServerQuery, SSH, WebQuery and the voice protocol alike, so this resolves to
+ * nothing and a failure says only what the server said:
+ *
+ * - Without `continueOnError`, the clients are added in the order given and
+ *   the call stops at the first one that fails (an unknown database id, 512;
+ *   a client already in the group, 2561): the clients before it are in the
+ *   group, the ones after it are not, and the error is that client's.
+ * - With it (`-continueonerror`), every client is tried and each one that can
+ *   be added is. The answer is success only if none failed; otherwise it is
+ *   the error of the last one that failed, so two different failures show
+ *   only the later. Read the members, as `listServerGroupClients` reports
+ *   them, to know who was added.
+ */
+export async function addClientsToServerGroup(
+  client: CommandExecutor,
+  sgid: ServerGroupID,
+  databaseIDs: readonly ClientDBID[],
+  options: BatchOptions = {},
+): Promise<void> {
+  await execRows(
+    client,
+    "servergroupaddclient",
+    [...continueOnErrorParams(options), ["sgid", sgid]],
+    databaseIDs.map((cldbid) => [["cldbid", cldbid]]),
+    options,
+  );
+}
+
+/**
+ * Remove several clients from a server group, in one command
+ * (`servergroupdelclient sgid=9 cldbid=3|cldbid=4`). With no ids nothing is
+ * sent.
+ *
+ * As for {@link addClientsToServerGroup}, the server reports one answer for
+ * the call. Without `continueOnError` the call stops at the first client that
+ * fails, with earlier clients removed and later ones not; with it, every client
+ * is tried and the answer is the error of the last that failed. A client that
+ * is not in the group fails with 2563 (empty result set), as does an unknown
+ * database id.
+ */
+export async function removeClientsFromServerGroup(
+  client: CommandExecutor,
+  sgid: ServerGroupID,
+  databaseIDs: readonly ClientDBID[],
+  options: BatchOptions = {},
+): Promise<void> {
+  await execRows(
+    client,
+    "servergroupdelclient",
+    [...continueOnErrorParams(options), ["sgid", sgid]],
+    databaseIDs.map((cldbid) => [["cldbid", cldbid]]),
+    options,
+  );
+}
+
 /** Permissions set on a server group. */
 export async function listServerGroupPermissions(
   client: CommandExecutor,
@@ -597,6 +666,73 @@ export async function addServerGroupPermission(
       ["permnegated", options.negated ?? false],
       ["permskip", options.skip ?? false],
     ],
+    options,
+  );
+}
+
+/** One permission to set on a server group, as {@link addServerGroupPermissions} takes it. */
+export interface ServerGroupPermissionValue extends PermissionValue {
+  /** Whether the value is negated, so the lowest wins; false by default. Always sent (`permnegated`). */
+  readonly negated?: boolean | undefined;
+  /** Whether it skips channel and client overrides; false by default. Always sent (`permskip`). */
+  readonly skip?: boolean | undefined;
+}
+
+/**
+ * Set several permissions on a server group, in one command: each permission
+ * is a row of its own, with all its parameters. With none, nothing is sent.
+ *
+ * The server checks every row before it applies any: a permission it does not
+ * know (2562), a value it cannot read (1540) or a row missing a parameter
+ * (1539) refuses the call, and none is set — and so does a permission the
+ * caller has too little modify power for (2568, 2570) — with or without
+ * `continueOnError`, which the server documents here but which changed no
+ * case measured. Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 beta13.1,
+ * over raw ServerQuery, SSH, WebQuery and the voice protocol alike. Resolves
+ * to nothing: the server never reports an answer per row.
+ */
+export async function addServerGroupPermissions(
+  client: CommandExecutor,
+  sgid: ServerGroupID,
+  permissions: readonly ServerGroupPermissionValue[],
+  options: BatchOptions = {},
+): Promise<void> {
+  await execRows(
+    client,
+    "servergroupaddperm",
+    [...continueOnErrorParams(options), ["sgid", sgid]],
+    permissions.map(serverGroupPermissionRow),
+    options,
+  );
+}
+
+const serverGroupPermissionRow = (entry: ServerGroupPermissionValue): Params => [
+  permissionParam(entry.permission),
+  ["permvalue", entry.value],
+  ["permnegated", entry.negated ?? false],
+  ["permskip", entry.skip ?? false],
+];
+
+/**
+ * Remove several permissions from a server group, in one command: each
+ * permission is a row (`permsid=…|permsid=…`). With none, nothing is sent.
+ *
+ * As for {@link addServerGroupPermissions}, the server checks every row first
+ * and a permission it does not know (2562) refuses the call with none removed,
+ * with or without `continueOnError`. Removing a permission the group does not
+ * have succeeds.
+ */
+export async function deleteServerGroupPermissions(
+  client: CommandExecutor,
+  sgid: ServerGroupID,
+  permissions: readonly Permission[],
+  options: BatchOptions = {},
+): Promise<void> {
+  await execRows(
+    client,
+    "servergroupdelperm",
+    [...continueOnErrorParams(options), ["sgid", sgid]],
+    permissions.map((permission) => [permissionParam(permission)]),
     options,
   );
 }
@@ -639,6 +775,52 @@ export async function addServerGroupPermissionByType(
       ["permnegated", options.negated ?? false],
       ["permskip", options.skip ?? false],
     ],
+    options,
+  );
+}
+
+/**
+ * Set several permissions on every regular server group of a type, on every
+ * virtual server of the instance, in one command; see
+ * {@link addServerGroupPermissionByType} for what the type selects and what it
+ * needs. Each permission is a row of its own. With none, nothing is sent.
+ *
+ * The server documents no `-continueonerror` for this command, so none is
+ * offered. A permission it does not know (2562) refuses the call before any is
+ * set; a voice client gets error 2568, as for the single form.
+ */
+export async function addServerGroupPermissionsByType(
+  client: CommandExecutor,
+  type: GroupAutoUpdateType,
+  permissions: readonly ServerGroupPermissionValue[],
+  options?: CommandOptions,
+): Promise<void> {
+  await execRows(
+    client,
+    "servergroupautoaddperm",
+    [["sgtype", type]],
+    permissions.map(serverGroupPermissionRow),
+    options,
+  );
+}
+
+/**
+ * Remove several permissions from every regular server group of a type, in one
+ * command; see {@link addServerGroupPermissionsByType}. With none, nothing is
+ * sent. Needs `b_permission_modify_power_ignore`: a voice client gets error
+ * 2568.
+ */
+export async function deleteServerGroupPermissionsByType(
+  client: CommandExecutor,
+  type: GroupAutoUpdateType,
+  permissions: readonly Permission[],
+  options?: CommandOptions,
+): Promise<void> {
+  await execRows(
+    client,
+    "servergroupautodelperm",
+    [["sgtype", type]],
+    permissions.map((permission) => [permissionParam(permission)]),
     options,
   );
 }
