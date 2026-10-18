@@ -4,6 +4,28 @@ Until 1.0.0-beta.4 this package was published as `@honeybbq/teamspeak-core`, and
 `@honeybbq/teamspeak-client` was a second package. The sections below, down to
 the last version heading, are the core's history; the client's is at the bottom.
 
+## 1.0.0-beta.14
+
+### Minor Changes
+
+- [#102](https://github.com/HoneyBBQ/teamspeak-js/pull/102) [`10fd2ce`](https://github.com/HoneyBBQ/teamspeak-js/commit/10fd2ce2478a191dd703b9281aec158dffe62ea0) - Commands that take a list now take one: `kickClients`, `moveClients` and `banClients` (which returns every ban id the server reports) for several clients; `addClientsToServerGroup` and `removeClientsFromServerGroup` for group membership; and `addChannelPermissions`, `addChannelGroupPermissions`, `addChannelClientPermissions`, `addClientPermissions`, `addServerGroupPermissions` and `addServerGroupPermissionsByType`, with a `delete…` twin for each, for permission batches. Each sends one command with a row per item. `continueOnError` sends `-continueonerror` on the commands the server documents it for.
+
+  The server answers a batch with one status, never one per item, so these resolve to nothing, and each doc comment says what was measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 beta13.1: what a failing item leaves applied, and which error the switch leaves. A permission batch with an unknown permission, an unreadable value or a missing key is refused whole; one with a row the caller lacks the power for is applied in order, stopping at that row, or skipping it with the switch. For kick, move and ban the switch hides the failure, and for group membership it reports the last one.
+
+  Docs: `getPermissionIDByName` rejects with error 2562 for a name the server does not know, as it always did; its doc comment said it resolved to `undefined`.
+
+- [#103](https://github.com/HoneyBBQ/teamspeak-js/pull/103) [`b2de662`](https://github.com/HoneyBBQ/teamspeak-js/commit/b2de6620856c5810dce0f787e062b387ffd25f36) - Files: `uploadFile` and `downloadFile` (from `@honeybbq/teamspeak/client`) negotiate a transfer and move its bytes in one call, over a voice `Client`, or over a `QueryClient` on raw TCP or SSH when given the file transfer host as `host`; WebQuery refuses every file command (error 5120) on both servers. `uploadFile` takes bytes, or a `Readable` with its `size`; `downloadFile` returns the bytes, or writes into a `dest` stream, and refuses a file over `maxSize` (256 MiB) when it would hold it in memory. `listFilesRecursive` (from the package) lists a directory and everything under it, each entry with its full path, down to `maxDepth` levels (16 by default).
+
+  `Client.uploadFileData` and `Client.downloadFileData` now accept `idleTimeoutMs`, which they always passed on.
+
+  Docs: `createDirectory` does not make missing parents, as its doc comment said; on TeamSpeak 3 and 6 a path whose parent is missing is refused with error 2052.
+
+### Patch Changes
+
+- [#105](https://github.com/HoneyBBQ/teamspeak-js/pull/105) [`c8afbbe`](https://github.com/HoneyBBQ/teamspeak-js/commit/c8afbbead65b700d43fb8dfb5a477a8979de122c) - A ServerQuery client no longer loses the rows of an answer that TeamSpeak 6 writes after the `error` line over SSH, and no longer hands them to the next command. Measured on TeamSpeak 6 beta13.1, about one `channelcreate` in ten and one `servergroupadd` in eight were answered that way (a quarter of the creates while other sessions were creating channels, and with them one command in five was given a stray row as its own answer), as were `banclient` answers when events were registered and, rarely, a `clientlist`. The row follows the `error` line by well under a millisecond, in the same stream: nothing arrives on the SSH channel's stderr. TeamSpeak 3 never did it, over raw TCP or SSH, and WebQuery answers whole.
+
+  Now, for the commands that return what they made (channels, groups, bans, privilege keys, API keys, virtual servers) and for reads (`…list`, `…info`, `get…`, `whoami`, `version`), a successful answer that has no rows yet is held for up to 250 ms, and one with rows is held until they stop (25 ms), and nothing is sent in the meantime, so the rows are attributed to their own command. A create whose row still has not come resolves as before, and that row, should it arrive later, is dropped instead of becoming the next command's answer. Ids of a successful `banclient` that the server did not send at all are still not recovered: a ban has no field that ties it to the call, so `banClient` documents that the list may be empty.
+
 ## 1.0.0-beta.13
 
 ### Minor Changes
