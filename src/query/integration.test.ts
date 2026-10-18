@@ -27,7 +27,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, it, expect, beforeAll, afterAll, type TestContext } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, type TestContext } from "vitest";
 import {
   ClientStatus,
   ErrorCode,
@@ -242,6 +242,24 @@ async function connectWithRetries(client: QueryClient): Promise<void> {
     }
   }
 }
+
+/**
+ * Time to let a TeamSpeak 3 server finish closing an SSH query session.
+ *
+ * A connection made within a few milliseconds of an SSH session ending is
+ * accepted and closed at once, with nothing read from it: the client sees
+ * "socket hang up" before any response byte, whatever the request is (measured
+ * on 3.13.8 for POST and GET, 200 and 401, with and without a body: 4 to 14 of
+ * every 100 requests sent straight after an SSH close, none from 3 ms on). The
+ * server logs "Bad file descriptor" for them. TeamSpeak 6 and a raw session's
+ * end do not do it. The server is what drops the connection, so the suite
+ * waits rather than retrying: a retry cannot know the command was not run.
+ */
+const SSH_TEARDOWN_MS = 50;
+
+afterEach(async () => {
+  if (KINDS.includes("ssh")) await new Promise((resolve) => setTimeout(resolve, SSH_TEARDOWN_MS));
+});
 
 /** Reject rather than hang when a pushed event never arrives. */
 function withTimeout<T>(promise: Promise<T>, timeoutMs = EVENT_TIMEOUT_MS): Promise<T> {

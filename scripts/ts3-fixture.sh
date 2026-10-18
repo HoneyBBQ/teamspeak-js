@@ -11,8 +11,7 @@
 # Creates the channels the tests need (one password-protected), puts a password
 # on the server itself, grants the default server group the permissions they
 # exercise, relaxes anti-flood so a handful of rapid connections from one IP are
-# not banned, lifts the five-connections-per-address query limit, and writes an
-# env file with the matching environment variables.
+# not banned, and writes an env file with the matching environment variables.
 # The file goes to $TS3_FIXTURE_ENV, by default ts3-fixture.env under $TMPDIR (or /tmp), never
 # into the working tree; the last line printed is the path to source.
 #
@@ -292,16 +291,8 @@ run_commands() {
 # Note this is a *different* limit from the virtual-server antiflood set further
 # down: that one rate-limits the voice clients the tests connect as, this one
 # rate-limits this script.
-#
-# The same command raises the number of ServerQuery connections one address may
-# hold. Both server generations allow five
-# (serverinstance_serverquery_max_connections_per_ip), counted across raw, SSH
-# and HTTP together, and reset a sixth. The suite keeps a few open and opens
-# more beside them, so on a slow runner a connection the server has not yet
-# released can make one too many. It is an instance setting for this test
-# server only, and an administrator's to raise.
 run_commands <<'PROBE'
-instanceedit serverinstance_serverquery_flood_commands=1000 serverinstance_serverquery_flood_time=1 serverinstance_serverquery_ban_time=1 serverinstance_serverquery_max_connections_per_ip=100
+instanceedit serverinstance_serverquery_flood_commands=1000 serverinstance_serverquery_flood_time=1 serverinstance_serverquery_ban_time=1
 PROBE
 
 # A TS3 server prints no WebQuery api key, so one is made over the raw session.
