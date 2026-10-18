@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 import { ErrorCode, ServerError, listBans, listChannels } from "@honeybbq/teamspeak";
 import { QueryClient } from "./client.js";
+import { GuestAccessError } from "./errors.js";
 import { WebQueryHttpError, WebQueryTransport } from "./web.js";
 import type { QueryTransport } from "./transport.js";
 
@@ -282,6 +283,48 @@ describe("WebQueryTransport", () => {
       expect(JSON.parse(seen.body)).toEqual({ x: "1" });
     } finally {
       server.close();
+    }
+  });
+
+  it("says a server has no guest access when it wants an api key from a guest", async () => {
+    const refusing = (async () =>
+      new Response(
+        JSON.stringify({
+          status: { code: 5124, message: "missing apikey", extra_message: "api key missing" },
+        }),
+        { status: 401 },
+      )) as unknown as typeof fetch;
+    const client = new QueryClient({
+      transport: { kind: "web", url: "http://h", guest: true, fetch: refusing },
+    });
+    const failure = await client.connect().then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(GuestAccessError);
+    expect((failure as GuestAccessError).code).toBe(ErrorCode.APIKeyMissing);
+    expect((failure as GuestAccessError).message).toContain("TeamSpeak 3 has none");
+    expect((failure as GuestAccessError).cause).toBeInstanceOf(ServerError);
+  });
+
+  it("leaves a wrong api key, and 5124 for a key holder, as the server's error", async () => {
+    for (const [code, apiKey] of [
+      [5122, "wrong"],
+      [5124, "key"],
+    ] as const) {
+      const refusing = (async () =>
+        new Response(JSON.stringify({ status: { code, message: "no" } }), {
+          status: 401,
+        })) as unknown as typeof fetch;
+      const client = new QueryClient({
+        transport: { kind: "web", url: "http://h", apiKey, fetch: refusing },
+      });
+      const failure = await client.connect().then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(ServerError);
+      expect(failure).not.toBeInstanceOf(GuestAccessError);
     }
   });
 });

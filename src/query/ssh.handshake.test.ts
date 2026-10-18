@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Server, utils } from "ssh2";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { QueryAuthError, SshHostKeyError } from "./errors.js";
+import { QueryClient } from "./client.js";
+import { GuestAccessError, QueryAuthError, SshHostKeyError } from "./errors.js";
 import { connectSsh } from "./ssh.js";
 import type { SshConnectOptions, SshHostKey, SshHostKeyPolicy } from "./ssh.js";
 
@@ -213,5 +214,26 @@ describe("connectSsh over a real handshake", () => {
     const attempt = connectSsh(options({ hostKey: () => {} }, { password: "wrong" }));
     await expect(attempt).rejects.toBeInstanceOf(QueryAuthError);
     expect(authentications).toContain("password");
+  });
+
+  it("reports a refused guest login as a server with no guest access, keeping the login failure", async () => {
+    const client = new QueryClient({
+      transport: {
+        kind: "ssh",
+        host: "127.0.0.1",
+        port,
+        guest: true,
+        insecureIgnoreHostKey: true,
+      },
+      events: false,
+    });
+    const failure = await client.connect().then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(GuestAccessError);
+    expect((failure as GuestAccessError).message).toContain("does not offer guest access");
+    expect((failure as GuestAccessError).cause).toBeInstanceOf(QueryAuthError);
+    expect(authentications).toContain("none");
   });
 });

@@ -30,6 +30,14 @@ export function connectTcp(options: TcpOptions): Promise<StreamTransport>;
 export function defaultShouldRetry(error: Error | undefined): boolean;
 
 // @public
+export class GuestAccessError extends TeamspeakError {
+    constructor(cause: Error, code?: number);
+    readonly code: number | undefined;
+    // (undocumented)
+    static readonly kind: string;
+}
+
+// @public
 export class MissingDependencyError extends TeamspeakError {
     constructor();
     // (undocumented)
@@ -263,7 +271,6 @@ export interface SshSuppliedConnectionOptions {
 // @public
 export class StreamTransport implements QueryTransport {
     constructor(stream: QueryStream, onEnd?: () => void);
-    // (undocumented)
     close(): Promise<void>;
     // (undocumented)
     onClose: ((error: Error | undefined) => void) | null;

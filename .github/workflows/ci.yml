@@ -175,13 +175,15 @@ jobs:
         server:
           - name: TS3
             image: teamspeak:latest
-            # TS3 still serves raw ServerQuery on 10011.
+            # TS3 serves raw ServerQuery on 10011, and SSH and WebQuery once the
+            # service below lists them in query_protocols. With a raw port the
+            # fixture provisions over it and creates the WebQuery api key
+            # there, since TS3 prints none; the suite then runs over all three.
             query_host: 127.0.0.1
-            query_http: ""
+            query_http: 127.0.0.1:10080
             query_port: 10011
-            # TS3 has no SSH ServerQuery.
-            query_ssh_port: ""
-            # Nor guest ServerQuery access.
+            query_ssh_port: 10022
+            # TS3 has no guest ServerQuery access.
             query_guest: ""
           - name: TS6
             image: teamspeaksystems/teamspeak6-server:latest
@@ -203,9 +205,12 @@ jobs:
         env:
           TS3SERVER_LICENSE: accept
           TSSERVER_LICENSE_ACCEPTED: accept
+          # TS3 takes its query protocols as a list, and SSH ServerQuery logs in
+          # with the serveradmin password, so it is set here to be known.
+          TS3SERVER_QUERY_PROTOCOLS: raw,ssh,http
+          TS3SERVER_SERVERADMIN_PASSWORD: ci-serveradmin-password
+          # TS6 switches each on separately, and is given the same password.
           TSSERVER_QUERY_HTTP_ENABLED: "1"
-          # SSH ServerQuery logs in with a password, where WebQuery uses the
-          # api key, so TS6 is given one to log in with. TS3 ignores both.
           TSSERVER_QUERY_SSH_ENABLED: "1"
           TSSERVER_QUERY_ADMIN_PASSWORD: ci-serveradmin-password
         ports:
@@ -225,19 +230,23 @@ jobs:
           cache: "pnpm"
 
       - run: pnpm install --frozen-lockfile
-      # Wait for the ServerQuery port to answer rather than for a fixed time:
-      # TS3 and TS6 take different times to start, and a slow runner longer.
+      # Wait for the ServerQuery ports to answer rather than for a fixed time:
+      # TS3 and TS6 take different times to start, and a slow runner longer. TS3
+      # opens its SSH and HTTP ports a few seconds after the raw one, so each
+      # that the suite uses is waited for.
       - name: Wait for server to be ready
         run: |
-          for i in $(seq 1 60); do
-            if (exec 3<>"/dev/tcp/127.0.0.1/${{ matrix.server.query_port }}") 2>/dev/null; then
-              echo "ServerQuery answered after ${i}s"
-              exit 0
-            fi
-            sleep 1
+          for port in ${{ matrix.server.query_port }} ${{ matrix.server.query_ssh_port }}; do
+            for i in $(seq 1 60); do
+              if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
+                echo "ServerQuery port $port answered after ${i}s"
+                continue 2
+              fi
+              sleep 1
+            done
+            echo "ServerQuery port $port did not answer within 60s" >&2
+            exit 1
           done
-          echo "ServerQuery did not answer within 60s" >&2
-          exit 1
       # The suite needs channels and permissions. Skipping this is how the
       # tests pass while testing nothing: they skip on permissions instead of
       # failing, which hid a row-parsing bug for months.
@@ -252,6 +261,7 @@ jobs:
           TS3_QUERY_PORT='${{ matrix.server.query_port }}' \
           TS3_QUERY_SSH_PORT='${{ matrix.server.query_ssh_port }}' \
           TS3_QUERY_SSH_PASSWORD=ci-serveradmin-password \
+          TS3_ADMIN_PW=ci-serveradmin-password \
           TS3_QUERY_GUEST='${{ matrix.server.query_guest }}' \
           ./scripts/ts3-fixture.sh
       - name: Run integration tests

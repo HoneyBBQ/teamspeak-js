@@ -11,8 +11,11 @@ function channelOf(): Channel {
   const stream = new Duplex({
     read() {},
     write(chunk, _encoding, callback) {
-      writes.push(Buffer.from(chunk).toString());
+      const text = Buffer.from(chunk).toString();
+      writes.push(text);
       callback();
+      // The server answers `quit` by ending the session.
+      if (text === "quit\n") queueMicrotask(() => stream.emit("close"));
     },
   }) as Channel;
   stream.writes = writes;

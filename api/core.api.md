@@ -1325,6 +1325,9 @@ const errorCodeValues: {
     readonly ProvisioningInvalidTimeout: 4376;
     readonly ProvisioningTS3ServerNotFound: 4377;
     readonly ProvisioningNoPermission: 4378;
+    readonly APIKeyOutOfScope: 5120;
+    readonly APIKeyInvalid: 5122;
+    readonly APIKeyMissing: 5124;
 };
 
 // @public

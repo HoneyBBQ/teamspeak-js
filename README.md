@@ -541,7 +541,14 @@ ServerQuery speaks.
 | --------- | ------------ | ---------------- | ------------------- | ------------- |
 | `tcp`     | 10011        | TeamSpeak 3 only | the `login` command | yes           |
 | `ssh`     | 10022        | both             | the SSH login       | yes           |
-| `web`     | 10080 (HTTP) | TeamSpeak 6      | the api key         | **no**        |
+| `web`     | 10080 (HTTP) | both             | the api key         | **no**        |
+
+TeamSpeak 3 (3.12 and later for WebQuery, 3.3 and later for SSH) serves SSH and
+WebQuery as well as raw TCP, but only the raw port is on until
+`query_protocols` lists the others; the official Docker image takes it as
+`TS3SERVER_QUERY_PROTOCOLS=raw,ssh,http`. TeamSpeak 6 has no raw port. Its
+WebQuery also answers a request with no api key as a guest; TeamSpeak 3 refuses
+one.
 
 Only raw TCP and SSH carry notifications: the server pushes them down the same
 connection. WebQuery has no session to push to and refuses to register, so the
