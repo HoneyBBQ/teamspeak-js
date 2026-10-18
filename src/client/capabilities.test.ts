@@ -1,4 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { HostMessageMode } from "@honeybbq/teamspeak";
+import { serverFamilyForVersion } from "@honeybbq/teamspeak";
+import { MAX_SECURITY_LEVEL, uidAlgorithmForVersion } from "./index.js";
 import { parseServerCapabilities, unknownServerCapabilities } from "./capabilities.js";
 
 describe("parseServerCapabilities", () => {
@@ -67,6 +70,14 @@ describe("parseServerCapabilities", () => {
     expect(caps.welcomeMessage).toBe("Welcome!");
   });
 
+  it("types the host message mode, and passes an unnamed value through", () => {
+    const mode = (value: string) =>
+      parseServerCapabilities({ virtualserver_hostmessage_mode: value }).hostMessageMode;
+    expect(mode("2")).toBe(HostMessageMode.Modal);
+    expect(mode("")).toBe(HostMessageMode.None);
+    expect(mode("9")).toBe(9);
+  });
+
   it("reads no icon or banner as undefined, and an unsigned icon id as is", () => {
     expect(parseServerCapabilities({ virtualserver_icon_id: "0" }).iconID).toBeUndefined();
     expect(parseServerCapabilities({ virtualserver_icon_id: "x" }).iconID).toBeUndefined();
@@ -86,5 +97,30 @@ describe("parseServerCapabilities", () => {
     expect(caps.family).toBe("unknown");
     expect(caps.uidAlgorithm).toBe("sha1");
     expect(caps.version).toBe("");
+  });
+});
+
+describe("serverFamilyForVersion", () => {
+  it("names the family a version string belongs to", () => {
+    expect(serverFamilyForVersion("3.13.8 [Build: 1779874471]")).toBe("ts3");
+    expect(serverFamilyForVersion("6.0.0-beta13.1")).toBe("ts6");
+    expect(serverFamilyForVersion("7.1.0")).toBe("ts6");
+    expect(serverFamilyForVersion("5.0.0")).toBe("unknown");
+    expect(serverFamilyForVersion("")).toBe("unknown");
+    expect(serverFamilyForVersion("x")).toBe("unknown");
+  });
+
+  it("is what the capabilities use", () => {
+    expect(parseServerCapabilities("6.0.0-beta13.1").family).toBe(
+      serverFamilyForVersion("6.0.0-beta13.1"),
+    );
+  });
+});
+
+describe("the identity helpers of the client entry", () => {
+  it("exports the UID algorithm picker and the highest security level", () => {
+    expect(uidAlgorithmForVersion("3.13.8")).toBe("sha1");
+    expect(uidAlgorithmForVersion("6.0.0-beta13.1")).toBe("sha256");
+    expect(MAX_SECURITY_LEVEL).toBe(160);
   });
 });

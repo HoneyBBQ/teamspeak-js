@@ -26,6 +26,14 @@ describe("responseSpec", () => {
   });
 });
 
+describe("banfind", () => {
+  // Measured on TS6 6.0.0-beta13.1 over the voice protocol: the matching rows
+  // arrive as notifybanfind, so a table without it returned no rows at all.
+  it("is answered by notifybanfind", () => {
+    expect(responseSpec("banfind")?.notifications).toEqual([NotificationName.BanFind]);
+  });
+});
+
 describe("getconnectioninfo", () => {
   // The row is matched on the client it names, wherever it falls against the
   // command's error.

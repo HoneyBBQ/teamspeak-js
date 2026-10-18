@@ -538,7 +538,12 @@ export async function connectSsh(options: SshOptions): Promise<StreamTransport> 
         // stream closes with it.
         ssh.on("error", (failure) => channel.emit("error", failure));
         channel.once("close", () => ssh.end());
-        resolve(new StreamTransport(channel, () => ssh.end()));
+        resolve(
+          new StreamTransport(channel, () => ssh.end(), {
+            transport: "ssh",
+            address: `${login === undefined ? "" : `${login.username}@`}${host}:${port}`,
+          }),
+        );
       });
     };
 

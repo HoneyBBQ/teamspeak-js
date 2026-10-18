@@ -28,6 +28,7 @@ import type { CommandRequest } from '@honeybbq/teamspeak';
 import { Duplex } from 'node:stream';
 import type { FileDownloadInfo } from '@honeybbq/teamspeak';
 import type { FileUploadInfo } from '@honeybbq/teamspeak';
+import { HostMessageMode } from '@honeybbq/teamspeak';
 import { IconID } from '@honeybbq/teamspeak';
 import { Listener } from '@honeybbq/teamspeak';
 import type { Logger } from '@honeybbq/teamspeak';
@@ -468,6 +469,9 @@ export class InvalidIdentityError extends TeamspeakError {
 }
 
 // @public
+export const MAX_SECURITY_LEVEL = 160;
+
+// @public
 export function muteClients(client: Client, clientIDs: readonly ClientID[], options?: CommandOptions): Promise<void>;
 
 // @public
@@ -535,7 +539,7 @@ export interface ServerCapabilities {
     readonly family: ServerFamily;
     readonly hostBannerImageURL: string | undefined;
     readonly hostMessage: string;
-    readonly hostMessageMode: number;
+    readonly hostMessageMode: HostMessageMode;
     readonly iconID: IconID | undefined;
     readonly major: number;
     readonly name: string;
@@ -608,6 +612,9 @@ export function subscribeChannel(client: Client, cid: ChannelID, options?: Comma
 
 // @public
 export type UIDAlgorithm = "sha1" | "sha256";
+
+// @public
+export function uidAlgorithmForVersion(version: string): UIDAlgorithm;
 
 // @public
 export function uidFromPublicKey(publicKey: string, algorithm: UIDAlgorithm): UID;

@@ -2,7 +2,7 @@ import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { TeamspeakError } from "@honeybbq/teamspeak";
 import { buildCommandOrdered, parseCommand, splitCommandRows } from "../core/internal.js";
-import type { QueryTransport } from "./transport.js";
+import type { QueryTransport, QueryTransportStats } from "./transport.js";
 
 /**
  * A WebQuery request that failed with an HTTP status and no TeamSpeak error in
@@ -125,6 +125,9 @@ export class WebQueryTransport implements QueryTransport {
   #prefix: string;
   #fetch: typeof fetch;
   #closed = false;
+  #openedAt = new Date();
+  #bytesSent = 0;
+  #bytesReceived = 0;
 
   constructor(options: WebQueryOptions) {
     this.#base = options.url.replace(/\/+$/, "");
@@ -163,26 +166,30 @@ export class WebQueryTransport implements QueryTransport {
     }
 
     const params = rows.map((row) => ({ ...row.params }));
+    const body = JSON.stringify(params.length === 1 ? params[0] : params);
     const response = await this.#fetch(`${this.#base}${this.#prefix}/${name}`, {
       method: "POST",
       headers: {
         ...(this.#apiKey === undefined ? {} : { "x-api-key": this.#apiKey }),
         "content-type": "application/json",
       },
-      body: JSON.stringify(params.length === 1 ? params[0] : params),
+      body,
     });
+    this.#bytesSent += Buffer.byteLength(body);
 
     let answer: WebAnswer | undefined;
     try {
-      answer = (await response.json()) as WebAnswer;
+      const text = await response.text();
+      this.#bytesReceived += Buffer.byteLength(text);
+      answer = JSON.parse(text) as WebAnswer;
     } catch {
       // Not JSON: nothing the server said about the command.
     }
     const code = answer?.status?.code;
     if (typeof code !== "number") throw new WebQueryHttpError(response.status, response.statusText);
 
-    const body = answer?.body;
-    for (const row of Array.isArray(body) ? body : []) {
+    const rowsBody = answer?.body;
+    for (const row of Array.isArray(rowsBody) ? rowsBody : []) {
       if (typeof row === "object" && row !== null) this.onLine?.(rowLine(row));
     }
     const message = answer?.status?.message;
@@ -195,6 +202,20 @@ export class WebQueryTransport implements QueryTransport {
         ...Object.entries(tail),
       ]),
     );
+  }
+
+  stats(): QueryTransportStats {
+    // The base URL as given, without a user or password a caller put in it.
+    const url = new URL(this.#base);
+    url.username = "";
+    url.password = "";
+    return {
+      connectedAt: this.#openedAt,
+      transport: "web",
+      address: url.toString().replace(/\/+$/, ""),
+      bytesSent: this.#bytesSent,
+      bytesReceived: this.#bytesReceived,
+    };
   }
 
   close(): Promise<void> {
