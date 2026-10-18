@@ -1,5 +1,5 @@
 import { LineReader } from "./lines.js";
-import type { QueryTransport } from "./transport.js";
+import type { QueryTransport, QueryTransportStats } from "./transport.js";
 
 /**
  * The part of a duplex byte stream a line transport uses. A `node:net` socket
@@ -43,14 +43,24 @@ export class StreamTransport implements QueryTransport {
   /** Wakes a `close()` that is waiting for the server to end the session. */
   #onEnded: (() => void) | undefined;
   #error: Error | undefined;
+  #identity: { readonly transport: "tcp" | "ssh"; readonly address: string } | undefined;
+  #openedAt = new Date();
+  #bytesSent = 0;
+  #bytesReceived = 0;
 
   /**
    * `onEnd` runs once the stream is closed, to release what the stream sits
-   * on: an SSH session's connection, say.
+   * on: an SSH session's connection, say. `identity` says which kind of
+   * connection this is and where it points, for {@link StreamTransport.stats}.
    */
-  constructor(stream: QueryStream, onEnd?: () => void) {
+  constructor(
+    stream: QueryStream,
+    onEnd?: () => void,
+    identity?: { readonly transport: "tcp" | "ssh"; readonly address: string },
+  ) {
     this.#stream = stream;
     this.#onEnd = onEnd;
+    this.#identity = identity;
     stream.on("data", (chunk) => this.#handleData(chunk));
     stream.on("error", (error) => {
       this.#error = error;
@@ -61,8 +71,24 @@ export class StreamTransport implements QueryTransport {
   send(line: string): Promise<void> {
     if (this.#ended) return Promise.reject(new Error("the query connection is closed"));
     return new Promise((resolve, reject) => {
-      this.#stream.write(`${line}\n`, (error) => (error ? reject(error) : resolve()));
+      this.#stream.write(`${line}\n`, (error) => {
+        if (error) reject(error);
+        else {
+          this.#bytesSent += Buffer.byteLength(line) + 1;
+          resolve();
+        }
+      });
     });
+  }
+
+  stats(): QueryTransportStats {
+    return {
+      connectedAt: this.#openedAt,
+      transport: this.#identity?.transport,
+      address: this.#identity?.address ?? "",
+      bytesSent: this.#bytesSent,
+      bytesReceived: this.#bytesReceived,
+    };
   }
 
   /**
@@ -103,6 +129,7 @@ export class StreamTransport implements QueryTransport {
   }
 
   #handleData(chunk: Uint8Array): void {
+    this.#bytesReceived += chunk.byteLength;
     for (const line of this.#reader.push(chunk)) {
       if (this.#banner > 0) {
         this.#banner--;

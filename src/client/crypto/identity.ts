@@ -13,8 +13,8 @@ const P256_SCALAR_SIZE = 32;
 const P256_UNCOMPRESSED_KEY_SIZE = 65;
 const P256_POINT_PREFIX = 0x04;
 
-/** The most a security level can be: SHA-1 is 160 bits wide. */
-const MAX_SECURITY_LEVEL = 160;
+/** The highest security level there is: the level counts zero bits of a SHA-1 digest, which has 160. */
+export const MAX_SECURITY_LEVEL = 160;
 
 let createIdentity: (privateKey: KeyObject, offset: bigint) => Identity;
 let privateKeyOf: (identity: Identity) => KeyObject;

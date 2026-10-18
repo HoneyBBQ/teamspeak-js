@@ -43,7 +43,7 @@ export async function connectTcp(options: TcpOptions): Promise<StreamTransport> 
   signal?.throwIfAborted();
   const stream = await connect(host, port);
   await opened(stream, signal);
-  return new StreamTransport(stream);
+  return new StreamTransport(stream, undefined, { transport: "tcp", address: `${host}:${port}` });
 }
 
 /** A connected `node:net` socket, with whole lines sent as they are written. */

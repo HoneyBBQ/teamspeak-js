@@ -18,6 +18,7 @@ import {
   type Listener,
   type Logger,
   type ReconnectOptions,
+  serverFamilyForVersion,
   type ServerEventMap,
   type ServerFamily,
   type ServerID,
@@ -33,7 +34,7 @@ import {
   parseServerError,
   resolveBackoffPolicy,
 } from "../core/internal.js";
-import type { QueryTransport } from "./transport.js";
+import type { QueryTransport, QueryTransportStats } from "./transport.js";
 import { connectTcp } from "./tcp.js";
 import { connectSsh } from "./ssh.js";
 import { WebQueryTransport } from "./web.js";
@@ -232,11 +233,31 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
   }
 
   /**
+   * What the current connection reports about itself: its kind, where it
+   * points, when it opened and how many bytes went each way, for a metrics
+   * exporter. Read-only. A client with no connection, and a `custom` transport
+   * that keeps no counts, report no kind, an empty address, no open time and
+   * zero bytes. A reconnection starts the counts again.
+   *
+   * @experimental Part of the entry, which may change in a minor release.
+   */
+  get stats(): QueryTransportStats {
+    return (
+      this.#transport?.stats?.() ?? {
+        connectedAt: undefined,
+        transport: undefined,
+        address: "",
+        bytesSent: 0,
+        bytesReceived: 0,
+      }
+    );
+  }
+
+  /**
    * The transport carrying this connection, or `undefined` when there is none.
    *
    * Read-only, and the transport is the interface the client itself talks
-   * over — counts of what went out and came in, and which connection it is,
-   * can be read from it for metrics. The socket underneath is not exposed:
+   * over. The socket underneath is not exposed:
    * a caller that needs it supplies the seam instead (the `connect` option of
    * a `tcp` transport, or `connection` of an `ssh` one), where it is theirs to
    * keep.
@@ -384,7 +405,7 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     // Not `use()`: this session learns who it is, and who is there, once, below.
     if (server !== undefined) await this.#select(server, { nickname, signal });
     this.#version = await this.#getVersion(signal);
-    this.#serverFamily = serverFamilyOf(this.#version);
+    this.#serverFamily = serverFamilyForVersion(this.#version);
     // Like the version, a failure here fails the connect: a client that cannot
     // tell which one it is would miss its own kick without saying so.
     await this.#learnSelf(signal);
@@ -1267,15 +1288,6 @@ function kickedEvent(event: {
 /** The server id a WebQuery transport addresses, from the `server` option. */
 function serverIDOf(server: ResolvedQueryOptions["server"]): ServerID | number | undefined {
   return server !== undefined && "id" in server ? server.id : undefined;
-}
-
-/** Which server generation a `version` string names. */
-function serverFamilyOf(version: string): ServerFamily {
-  const major = Number.parseInt(version, 10);
-  if (Number.isNaN(major)) return "unknown";
-  if (major === 3) return "ts3";
-  if (major >= 6) return "ts6";
-  return "unknown";
 }
 
 /** Sleep, or wake early once `signal` aborts. Resolves either way, never rejects. */

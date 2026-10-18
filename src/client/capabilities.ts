@@ -15,6 +15,7 @@
 import {
   asServerID,
   HostMessageMode,
+  serverFamilyForVersion,
   type IconID,
   type ServerFamily,
   type ServerID,
@@ -76,14 +77,10 @@ export function parseServerCapabilities(
   const parsed = Number.parseInt(version, 10);
   const major = Number.isNaN(parsed) ? 0 : parsed;
 
-  let family: ServerFamily = "unknown";
-  if (major === 3) family = "ts3";
-  else if (major >= 6) family = "ts6";
-
   return {
     version,
     major,
-    family,
+    family: serverFamilyForVersion(version),
     uidAlgorithm: uidAlgorithmForVersion(version),
     name: params["virtualserver_name"] ?? "",
     iconID: parseIconID(params["virtualserver_icon_id"]),

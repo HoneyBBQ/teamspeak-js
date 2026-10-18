@@ -31,7 +31,7 @@ export type {
   QueryTransportOptions,
 } from "./client.js";
 
-export type { QueryTransport } from "./transport.js";
+export type { QueryTransport, QueryTransportStats } from "./transport.js";
 
 // Reconnection: the client's default retry decision, and the shared options.
 export { defaultShouldRetry } from "./reconnect.js";

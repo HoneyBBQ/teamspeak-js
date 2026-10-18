@@ -74,6 +74,7 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     send(request: CommandRequest, options?: CommandOptions): Promise<Array<Record<string, string>>>;
     get serverFamily(): ServerFamily;
     get serverVersion(): string;
+    get stats(): QueryTransportStats;
     get status(): ClientStatus;
     get transport(): QueryTransport | undefined;
     unregisterNotifications(event?: QueryEventCategory, channelID?: bigint | number, options?: CommandOptions): Promise<void>;
@@ -128,6 +129,7 @@ export interface QueryTransport {
     onClose: ((error: Error | undefined) => void) | null;
     onLine: ((line: string) => void) | null;
     send(line: string): Promise<void>;
+    stats?(): QueryTransportStats;
     readonly supportsNotifications: boolean;
 }
 
@@ -151,6 +153,15 @@ export type QueryTransportOptions = {
     readonly kind: "custom";
     readonly open: (signal?: AbortSignal) => Promise<QueryTransport>;
 };
+
+// @public
+export interface QueryTransportStats {
+    readonly address: string;
+    readonly bytesReceived: number;
+    readonly bytesSent: number;
+    readonly connectedAt: Date | undefined;
+    readonly transport: "tcp" | "ssh" | "web" | undefined;
+}
 
 // @public
 export interface SshChannel extends QueryStream {
@@ -270,7 +281,10 @@ export interface SshSuppliedConnectionOptions {
 
 // @public
 export class StreamTransport implements QueryTransport {
-    constructor(stream: QueryStream, onEnd?: () => void);
+    constructor(stream: QueryStream, onEnd?: () => void, identity?: {
+        readonly transport: "tcp" | "ssh";
+        readonly address: string;
+    });
     close(): Promise<void>;
     // (undocumented)
     onClose: ((error: Error | undefined) => void) | null;
@@ -278,6 +292,8 @@ export class StreamTransport implements QueryTransport {
     onLine: ((line: string) => void) | null;
     // (undocumented)
     send(line: string): Promise<void>;
+    // (undocumented)
+    stats(): QueryTransportStats;
     readonly supportsNotifications = true;
 }
 
@@ -327,6 +343,8 @@ export class WebQueryTransport implements QueryTransport {
     onLine: ((line: string) => void) | null;
     // (undocumented)
     send(line: string): Promise<void>;
+    // (undocumented)
+    stats(): QueryTransportStats;
     readonly supportsNotifications = false;
 }
 

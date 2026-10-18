@@ -5,6 +5,7 @@ export {
   generateIdentitySync,
   uidFromPublicKey,
   uidAlgorithmForVersion,
+  MAX_SECURITY_LEVEL,
   hash512,
   importPublicKey,
 } from "./identity.js";

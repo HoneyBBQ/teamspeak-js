@@ -469,6 +469,9 @@ export class InvalidIdentityError extends TeamspeakError {
 }
 
 // @public
+export const MAX_SECURITY_LEVEL = 160;
+
+// @public
 export function muteClients(client: Client, clientIDs: readonly ClientID[], options?: CommandOptions): Promise<void>;
 
 // @public
@@ -609,6 +612,9 @@ export function subscribeChannel(client: Client, cid: ChannelID, options?: Comma
 
 // @public
 export type UIDAlgorithm = "sha1" | "sha256";
+
+// @public
+export function uidAlgorithmForVersion(version: string): UIDAlgorithm;
 
 // @public
 export function uidFromPublicKey(publicKey: string, algorithm: UIDAlgorithm): UID;
