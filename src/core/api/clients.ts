@@ -1157,6 +1157,16 @@ export interface ClientPermissionValue extends PermissionValue {
  * TeamSpeak 6 beta13.1, over raw ServerQuery, SSH, WebQuery and the voice
  * protocol alike. Resolves to nothing: the server never reports one answer
  * per row.
+ *
+ * A permission the caller has too little modify power for (2570, or 2568 where
+ * the group power is short) is another matter: the rows are applied in order.
+ * Without `continueOnError` the first row that fails ends the call, so the rows
+ * before it are set and the rows after it are not; with it the rows that fail
+ * are skipped and the others set. The error is the failing row's, and which row
+ * is not reported; with several failing rows which error comes back was not
+ * measured. Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 beta13.1, over raw
+ * ServerQuery (TeamSpeak 3), SSH, WebQuery and the voice protocol, in both
+ * orders of a free and a locked permission.
  */
 export async function addClientPermissions(
   client: CommandExecutor,
@@ -1193,8 +1203,12 @@ export async function deleteClientPermission(
  *
  * The server checks every row before it removes any: one permission it does
  * not know (2562) refuses the call and none is removed. Removing a permission
- * the client does not have succeeds. The server documents no
- * `-continueonerror` for this command, so none is offered.
+ * the client does not have succeeds. A permission the caller has too little
+ * modify power for (2570) ends the call at that row: the rows before it are
+ * removed and the rows after it are not, measured on TeamSpeak 3 3.13.8 and
+ * TeamSpeak 6 beta13.1 over every query transport and the voice protocol. The
+ * server documents no `-continueonerror` for this command, so none is offered,
+ * and sent anyway it changed nothing.
  */
 export async function deleteClientPermissions(
   client: CommandExecutor,

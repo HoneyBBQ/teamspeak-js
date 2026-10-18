@@ -368,12 +368,21 @@ export async function addChannelPermission(
  * sent.
  *
  * The server checks every row before it applies any: a permission it does not
- * know (2562), a value it cannot read (1540) or a permission the caller has too
- * little modify power for (2568) refuses the call, and none is set, with or
- * without `continueOnError`, which the server documents here but which changed
- * no case measured. Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 beta13.1,
- * over raw ServerQuery, SSH, WebQuery and the voice protocol alike. Resolves
- * to nothing: the server never reports an answer per row.
+ * know (2562) or a value it cannot read (1540) refuses the call, and none is
+ * set, with or without `continueOnError`. Measured on TeamSpeak 3 3.13.8 and
+ * TeamSpeak 6 beta13.1, over raw ServerQuery, SSH, WebQuery and the voice
+ * protocol alike. Resolves to nothing: the server never reports an answer per
+ * row.
+ *
+ * A permission the caller has too little modify power for (2570, or 2568 where
+ * the group power is short) is another matter: the rows are applied in order.
+ * Without `continueOnError` the first row that fails ends the call, so the rows
+ * before it are set and the rows after it are not; with it the rows that fail
+ * are skipped and the others set. The error is the failing row's, and which row
+ * is not reported; with several failing rows which error comes back was not
+ * measured. Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 beta13.1, over raw
+ * ServerQuery (TeamSpeak 3), SSH, WebQuery and the voice protocol, in both
+ * orders of a free and a locked permission.
  */
 export async function addChannelPermissions(
   client: CommandExecutor,
@@ -394,10 +403,14 @@ export async function addChannelPermissions(
  * Remove several permissions from a channel, in one command: each permission is
  * a row (`permsid=…|permsid=…`). With none, nothing is sent.
  *
- * The server checks every row first, and one it cannot act on (an unknown
- * permission, 2562; too little modify power, 2568) refuses the call with none
- * removed. Removing a permission the channel does not have succeeds. The
- * server documents no `-continueonerror` for this command, so none is offered.
+ * The server checks every row first, and an unknown permission (2562) refuses
+ * the call with none removed. Removing a permission the channel does not have
+ * succeeds. A permission the caller has too little modify power for (2570) ends
+ * the call at that row: the rows before it are removed and the rows after it
+ * are not, measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 beta13.1 over every
+ * query transport and the voice protocol. The server documents no
+ * `-continueonerror` for this command, so none is offered, and sent anyway it
+ * changed nothing.
  */
 export async function deleteChannelPermissions(
   client: CommandExecutor,
@@ -472,8 +485,9 @@ export async function addChannelClientPermission(
 /**
  * Set several permissions on one client within one channel, in one command:
  * each permission is a row. With none, nothing is sent. The server's answer
- * is as for {@link addChannelPermissions}: every row is checked first and one
- * it refuses leaves none set.
+ * is as for {@link addChannelPermissions}: an unknown permission or a value it
+ * cannot read refuses the call with none set, and a row the caller lacks the
+ * power for ends it there, or is skipped with `continueOnError`.
  */
 export async function addChannelClientPermissions(
   client: CommandExecutor,

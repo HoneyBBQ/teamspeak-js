@@ -684,12 +684,20 @@ export interface ServerGroupPermissionValue extends PermissionValue {
  *
  * The server checks every row before it applies any: a permission it does not
  * know (2562), a value it cannot read (1540) or a row missing a parameter
- * (1539) refuses the call, and none is set — and so does a permission the
- * caller has too little modify power for (2568, 2570) — with or without
- * `continueOnError`, which the server documents here but which changed no
- * case measured. Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 beta13.1,
- * over raw ServerQuery, SSH, WebQuery and the voice protocol alike. Resolves
- * to nothing: the server never reports an answer per row.
+ * (1539) refuses the call, and none is set, with or without `continueOnError`.
+ * Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 beta13.1, over raw
+ * ServerQuery, SSH, WebQuery and the voice protocol alike. Resolves to
+ * nothing: the server never reports an answer per row.
+ *
+ * A permission the caller has too little modify power for (2570, or 2568 where
+ * the group power is short) is another matter: the rows are applied in order.
+ * Without `continueOnError` the first row that fails ends the call, so the rows
+ * before it are set and the rows after it are not; with it the rows that fail
+ * are skipped and the others set. The error is the failing row's, and which row
+ * is not reported; with several failing rows which error comes back was not
+ * measured. Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 beta13.1, over raw
+ * ServerQuery (TeamSpeak 3), SSH, WebQuery and the voice protocol, in both
+ * orders of a free and a locked permission.
  */
 export async function addServerGroupPermissions(
   client: CommandExecutor,
@@ -720,7 +728,10 @@ const serverGroupPermissionRow = (entry: ServerGroupPermissionValue): Params => 
  * As for {@link addServerGroupPermissions}, the server checks every row first
  * and a permission it does not know (2562) refuses the call with none removed,
  * with or without `continueOnError`. Removing a permission the group does not
- * have succeeds.
+ * have succeeds. A permission the caller has too little modify power for
+ * (2570) ends the call at that row, so the rows before it are removed and the
+ * rows after it are not; with `continueOnError` that row is skipped and the
+ * others removed.
  */
 export async function deleteServerGroupPermissions(
   client: CommandExecutor,
