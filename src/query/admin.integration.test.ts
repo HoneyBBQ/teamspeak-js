@@ -60,7 +60,7 @@ import {
   addLog,
   whoAmI,
   GroupType,
-  type BanID,
+  type BanEntry,
   type ChannelID,
   type ClientDBID,
   type QueryLogin,
@@ -120,22 +120,40 @@ describe.skipIf(SKIP)("Integration — administration round trips", () => {
   describe.each(KINDS)("over %s", (kind: Kind) => {
     const admin = (): QueryClient => session.clients.get(kind)!;
 
+    // Measured on TS3 3.13.8 and TS6 beta13.1: `banclient` makes two bans, one
+    // for the client's uid and one for its address, and none for a myTeamSpeak
+    // id when it has none. Both servers answer one `banid` for each, except that
+    // TS6 has answered with none at all, though both bans were made (once in
+    // about a hundred calls over SSH and WebQuery), so the ids returned are not
+    // what is removed: the test lists the bans before and after and removes
+    // everything that is new. The address is the runner's own, shared by every
+    // voice client of the suite, so a ban left behind refuses all that follow.
     it("bans a connected client, finds the bans it made, and lifts them", async () => {
       const { voice } = await guest("ts-js-ban");
       const clid = voice.clientID;
       const reason = stamp("ts-js-ban-reason");
-      const ids = await banClient(admin(), clid, { durationMs: 60_000, reason });
-      // Whatever the server made, found by the reason: a ban left behind would
-      // refuse the next client that connects from this address.
-      const made = async (): Promise<BanID[]> =>
-        (await listBans(admin()).catch(emptyResult))
-          .filter((b) => b.reason === reason)
-          .map((b) => b.id);
+      const bans = async (): Promise<BanEntry[]> => await listBans(admin()).catch(emptyResult);
+      const before = await bans();
+      const known = new Set(before.map((b) => b.id));
+      const added = async (): Promise<BanEntry[]> => (await bans()).filter((b) => !known.has(b.id));
       try {
-        const listed = await made();
-        expect(listed.length, "the bans the server made").toBeGreaterThan(0);
-        expect(ids.length, "one ban id per count the server bans on").toBeGreaterThan(0);
-        for (const id of ids) expect(listed).toContain(id);
+        const ids = await banClient(admin(), clid, { durationMs: 60_000, reason });
+        const made = await added();
+        expect(made.length, "the bans the server made").toBeGreaterThan(0);
+        for (const ban of made) expect(ban.reason).toBe(reason);
+        for (const id of ids)
+          expect(
+            made.map((b) => b.id),
+            "a returned id is a new ban",
+          ).toContain(id);
+        expect(
+          made.some((b) => b.uid === voice.uid),
+          "a ban names the uid",
+        ).toBe(true);
+        expect(
+          made.some((b) => b.ip !== ""),
+          "a ban names the address",
+        ).toBe(true);
         // The ban removes the client from the server.
         const gone = await (async () => {
           const deadline = Date.now() + 10_000;
@@ -148,9 +166,12 @@ describe.skipIf(SKIP)("Integration — administration round trips", () => {
         expect(gone, "the banned client left the client list").toBe(true);
       } finally {
         await leave(voice);
-        for (const id of await made()) await deleteBan(admin(), id).catch(() => {});
+        for (const ban of await added()) await deleteBan(admin(), ban.id).catch(() => {});
       }
-      expect(await made()).toEqual([]);
+      expect(
+        (await bans()).map((b) => b.id),
+        "the ban list is back to its start",
+      ).toEqual(before.map((b) => b.id));
     }, 60_000);
 
     it("edits another client's description, and its talker flag in a channel that needs talk power", async () => {
@@ -192,16 +213,19 @@ describe.skipIf(SKIP)("Integration — administration round trips", () => {
       const info = await getClientDatabaseInfo(admin(), databaseID);
       expect(info).toMatchObject({ databaseID, uid, description });
       expect(await findClientDatabase(admin(), info.nickname)).toContain(databaseID);
-      expect(
-        (await listClientDatabase(admin(), { start: 0, limit: 200 })).some(
-          (e) => e.databaseID === databaseID,
-        ),
-      ).toBe(true);
-      let found = false;
+      // A server caps a page (TS6 at 25 rows), so the record is found by walking
+      // the whole list, and then read again as a page of its own.
+      let position = -1;
+      let index = 0;
       for await (const entry of iterateClientDatabase(admin(), { pageSize: 50 })) {
-        if (entry.databaseID === databaseID) found = true;
+        if (entry.databaseID === databaseID) position = index;
+        index++;
       }
+      const found = position >= 0;
       expect(found, "iterateClientDatabase reaches the record").toBe(true);
+      expect(
+        (await listClientDatabase(admin(), { start: position, limit: 1 }))[0]?.databaseID,
+      ).toBe(databaseID);
 
       await deleteClientDatabase(admin(), databaseID);
       records.splice(records.indexOf(databaseID), 1);
