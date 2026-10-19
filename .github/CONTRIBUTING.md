@@ -7,19 +7,20 @@ change, open an issue first so we can agree on the shape before you write it.
 By taking part you agree to the [Code of Conduct](CODE_OF_CONDUCT.md). To report
 a security problem, follow [SECURITY.md](SECURITY.md) instead of opening an issue.
 
-## Clean-room rule
+## No proprietary code
 
-This SDK is a clean-room implementation, and that is the one rule a pull request
-cannot bend. Do not contribute code, headers, constant tables or decompiled
+Never contribute code, headers, constant tables or decompiled or disassembled
 output taken from TeamSpeak's proprietary SDK or applications, and do not paste
-them into issues or comments either.
+them into issues or comments either. That rule cannot bend.
 
 Protocol knowledge comes from watching traffic between a client and a server,
-from public documentation, and from open implementations. Credit them where you
-use them in the code; the README's Acknowledgments already credit
-[TS3AudioBot's TSLib](https://github.com/Splamy/TS3AudioBot). If you are not
-sure whether something you know came from a clean source, leave it out and say
-so in the pull request.
+from public documentation, and from open-source implementations under
+permissive licences (MIT, Apache-2.0, BSD), which you may consult for protocol
+behaviour. Write your own code rather than copying, and respect the licence
+terms of whatever you learned from. Do not consult or copy from implementations
+under a copyleft licence (GPL, AGPL, LGPL, OSL) or with no licence. Credit your
+sources where you use them in the code. If you are not sure where something you
+know came from, leave it out and say so in the pull request.
 
 ## Setup
 

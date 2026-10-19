@@ -1,5 +1,5 @@
 /**
- * A clean-room TeamSpeak client: it connects over the voice protocol, the way
+ * An independent TeamSpeak client: it connects over the voice protocol, the way
  * the TeamSpeak application does.
  *
  * Only what belongs to the voice protocol is exported here. The typed commands,
