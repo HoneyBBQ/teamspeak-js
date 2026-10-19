@@ -163,13 +163,16 @@ const createNames: WireNames<ChannelCreateOptions> = {
  * Over the voice protocol the server also moves the creator into the new
  * channel.
  *
- * TeamSpeak 6's WebQuery has been seen, once in about a thousand runs,
- * answering a `channelcreate` that had succeeded with no data at all: no
- * `cid`. The channel existed, and a retry would fail with a duplicate name. So
- * when the answer carries no `cid`, the new channel is looked up by its exact
- * name under the same parent (`channellist`), which is safe because a server
- * refuses duplicate names under one parent. A NoDataError is thrown only when
- * no channel matches.
+ * TeamSpeak 6 6.0.0-beta13.1 over WebQuery answers a `channelcreate` without
+ * its `cid`, in a share of the creates, while a Server Admin voice client is
+ * connected: the server writes the id after its status, so the HTTP answer has
+ * none. The channel exists then, and a retry would fail with a duplicate name.
+ * When the answer lacks the `cid`, the channel is looked up by its exact name
+ * under the same parent (`channellist`), which is exact, since the server
+ * keeps names unique among siblings. The one gap is another client renaming or
+ * deleting the channel between the create and the lookup. A NoDataError is
+ * thrown only when none matches. See "Server behaviour the SDK works around"
+ * in `docs/serverquery-responses.md`.
  *
  * `channel` is what to send; the command's `signal` and `timeoutMs` go in
  * `options`, a separate last argument — set among the fields, they are not

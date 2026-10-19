@@ -85,7 +85,7 @@ const DEFAULT_COMMAND_TIMEOUT_MS = 10_000;
 /**
  * Over SSH, how long a command waits for its answer before the client writes an
  * empty line to release a reply the server may be holding, and how often it
- * writes one after that. See `#execNow`.
+ * writes one after that. See `#execNow`, and "Server behaviour the SDK works around" in `docs/serverquery-responses.md`.
  */
 const SSH_NUDGE_AFTER_MS = 2_000;
 const SSH_NUDGE_EVERY_MS = 1_000;
@@ -923,11 +923,14 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
         // On TeamSpeak 6 over SSH the server may hold back the last line of a
         // reply, usually `error id=0 msg=ok`, until the client writes again;
         // an empty line releases it and gets no answer of its own. This was
-        // measured on TeamSpeak 6 (about one command in a thousand under load,
-        // mostly with notifications registered), and only on SSH: raw TCP and
-        // WebQuery do not show it. So once the command has waited 2 seconds,
-        // and every second after, an empty line is written, until its answer
-        // arrives or it ends by timeout, cancel or close (`finally` below).
+        // measured on TeamSpeak 6 6.0.0-beta13.1 (about one command in a
+        // thousand under load, mostly with notifications registered), and only
+        // on SSH: raw TCP and WebQuery do not show it. The empty line is
+        // harmless on a server that holds nothing back. So once the command
+        // has waited 2 seconds, and every second after, an empty line is
+        // written, until its answer arrives or it ends by timeout, cancel or
+        // close (`finally` below). See "Server behaviour the SDK works around"
+        // in `docs/serverquery-responses.md`.
         if (!nudges || nudgerStopped) return;
         const nudge = (): void => {
           nudger = setTimeout(nudge, SSH_NUDGE_EVERY_MS);

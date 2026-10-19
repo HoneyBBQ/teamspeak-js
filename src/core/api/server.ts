@@ -380,9 +380,15 @@ export async function getServerIDByPort(
  * `GroupType.Regular`, while the type's first value is `Template`, so leaving
  * it to a default on either side is a trap.
  *
- * When the server reports success without the new id, as TS6 WebQuery
- * occasionally does, the group is found by name and type ({@link listServerGroups}); a
- * NoDataError is thrown only when none matches.
+ * TeamSpeak 6 6.0.0-beta13.1 over WebQuery answers a create without its id,
+ * in a share of the creates, while a Server Admin voice client is connected:
+ * the server writes the id after its status, so the HTTP answer has none. The
+ * group exists then. When the answer lacks the id, the group is looked up by
+ * name and type ({@link listServerGroups}), which is exact, since the server keeps a
+ * group's name and type unique. The one gap is another client renaming or
+ * deleting the group between the create and the lookup. A NoDataError is
+ * thrown only when none matches. See "Server behaviour the SDK works around"
+ * in `docs/serverquery-responses.md`.
  */
 export async function createServerGroup(
   client: CommandExecutor,
@@ -445,9 +451,15 @@ export async function renameServerGroup(
  * Copy a server group's permissions onto another; a `targetGroupID` of 0 makes
  * the server create a new group named `name`, of `type`.
  *
- * When the server reports success without the new id, as TS6 WebQuery
- * occasionally does, the group is found by name and type ({@link listServerGroups}); a
- * NoDataError is thrown only when none matches.
+ * TeamSpeak 6 6.0.0-beta13.1 over WebQuery answers a create without its id,
+ * in a share of the creates, while a Server Admin voice client is connected:
+ * the server writes the id after its status, so the HTTP answer has none. The
+ * group exists then. When the answer lacks the id, the group is looked up by
+ * name and type ({@link listServerGroups}), which is exact, since the server keeps a
+ * group's name and type unique. The one gap is another client renaming or
+ * deleting the group between the create and the lookup. A NoDataError is
+ * thrown only when none matches. See "Server behaviour the SDK works around"
+ * in `docs/serverquery-responses.md`.
  */
 export async function copyServerGroup(
   client: CommandExecutor,
