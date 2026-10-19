@@ -12,12 +12,13 @@
 import { spawnSync } from "node:child_process";
 
 const reports = "api";
-// One config and one report per public entry point: `.`, `./client` and
-// `./query`.
+// One config and one report per public entry point: `.`, `./client`,
+// `./query` and `./stream`.
 const entries = [
   { specifier: "@honeybbq/teamspeak", name: "core", config: "api-extractor.core.json" },
   { specifier: "@honeybbq/teamspeak/client", name: "client", config: "api-extractor.client.jsonc" },
   { specifier: "@honeybbq/teamspeak/query", name: "query", config: "api-extractor.query.jsonc" },
+  { specifier: "@honeybbq/teamspeak/stream", name: "stream", config: "api-extractor.stream.jsonc" },
 ];
 
 let failed = false;

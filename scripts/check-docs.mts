@@ -23,6 +23,7 @@ const entries = [
   "dist/core/index.d.ts",
   "dist/client/index.d.ts",
   "dist/query/index.d.ts",
+  "dist/stream/index.d.ts",
   "dist/versions/index.d.ts",
 ].map((p) => resolve(p));
 

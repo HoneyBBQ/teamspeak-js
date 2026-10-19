@@ -7,7 +7,8 @@
     "src/**/*.test.ts",
     "src/**/*.typetest.ts",
     "src/client/testing",
-    "src/query/testing"
+    "src/query/testing",
+    "src/stream/testing"
   ],
   "include": ["src"]
 }

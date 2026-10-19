@@ -103,6 +103,33 @@
       },
     },
     {
+      "files": ["src/stream/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "**/client",
+                  "**/client/**",
+                  "**/query",
+                  "**/query/**",
+                  "**/versions",
+                  "**/versions/**",
+                ],
+                "message": "stream takes the client it attaches to as a StreamsClient and must not import client, query or versions.",
+              },
+              {
+                "group": ["**/core/**", "!**/core/internal.js"],
+                "message": "Import the core's public API from \"@honeybbq/teamspeak\", or plumbing from the core/internal.js barrel.",
+              },
+            ],
+          },
+        ],
+      },
+    },
+    {
       "files": ["src/versions/**"],
       "rules": {
         "no-restricted-imports": [
