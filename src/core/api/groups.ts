@@ -92,9 +92,15 @@ export async function listChannelGroups(
  * `GroupType.Regular`, while the type's first value is `Template`, so leaving
  * it to a default on either side is a trap.
  *
- * When the server reports success without the new id, as TS6 WebQuery
- * occasionally does, the group is found by name and type ({@link listChannelGroups}); a
- * NoDataError is thrown only when none matches.
+ * TeamSpeak 6 6.0.0-beta13.1 over WebQuery answers a create without its id,
+ * in a share of the creates, while a Server Admin voice client is connected:
+ * the server writes the id after its status, so the HTTP answer has none. The
+ * group exists then. When the answer lacks the id, the group is looked up by
+ * name and type ({@link listChannelGroups}), which is exact, since the server keeps a
+ * group's name and type unique. The one gap is another client renaming or
+ * deleting the group between the create and the lookup. A NoDataError is
+ * thrown only when none matches. See "Server behaviour the SDK works around"
+ * in `docs/serverquery-responses.md`.
  */
 export async function createChannelGroup(
   client: CommandExecutor,
@@ -163,9 +169,15 @@ export async function renameChannelGroup(
  * Copy a channel group's permissions onto another; a `targetGroupID` of 0
  * makes the server create a new group named `name`, of `type`.
  *
- * When the server reports success without the new id, as TS6 WebQuery
- * occasionally does, the group is found by name and type ({@link listChannelGroups}); a
- * NoDataError is thrown only when none matches.
+ * TeamSpeak 6 6.0.0-beta13.1 over WebQuery answers a create without its id,
+ * in a share of the creates, while a Server Admin voice client is connected:
+ * the server writes the id after its status, so the HTTP answer has none. The
+ * group exists then. When the answer lacks the id, the group is looked up by
+ * name and type ({@link listChannelGroups}), which is exact, since the server keeps a
+ * group's name and type unique. The one gap is another client renaming or
+ * deleting the group between the create and the lookup. A NoDataError is
+ * thrown only when none matches. See "Server behaviour the SDK works around"
+ * in `docs/serverquery-responses.md`.
  */
 export async function copyChannelGroup(
   client: CommandExecutor,
@@ -741,8 +753,9 @@ function keyParams(key: PrivilegeKeyOptions): Params {
 /**
  * Create a privilege key. Returns the key as the server generated it.
  *
- * A NoDataError from this means the command took effect: TS6 WebQuery
- * occasionally answers a successful create with no data. The key exists, and
+ * A NoDataError from this means the command took effect: TS6 WebQuery answers
+ * a successful create with no data while a Server Admin voice client is
+ * connected (6.0.0-beta13.1). The key exists, and
  * cannot be told apart from an identical one, so it is not looked up: do not
  * retry blindly, or a second key is made. List the keys to find it.
  */

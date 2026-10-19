@@ -15,10 +15,12 @@ export interface LateRows {
  * Commands whose answer carries the row that names what they made, and the key
  * that row is known by.
  *
- * TeamSpeak 6 over SSH has been measured to write that row after the command's
- * `error` line, a fraction of a millisecond later, in a share of the answers.
- * A client that takes the `error` line for the end of the answer loses the row
- * and, worse, hands it to whichever command is sent next.
+ * TeamSpeak 6 over SSH has been measured (6.0.0-beta13.1) to write that row
+ * after the command's `error` line, a fraction of a millisecond later, in a
+ * share of the answers. A client that takes the `error` line for the end of the
+ * answer loses the row and, worse, hands it to whichever command is sent next.
+ * Holding the answer briefly is harmless on a server that writes the row first.
+ * See "Server behaviour the SDK works around" in `docs/serverquery-responses.md`.
  */
 export const LATE_ROWS: ReadonlyMap<string, LateRows> = new Map<string, LateRows>([
   ["channelcreate", { keys: ["cid"] }],

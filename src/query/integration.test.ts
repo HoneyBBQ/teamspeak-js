@@ -253,7 +253,9 @@ async function connectWithRetries(client: QueryClient): Promise<void> {
  * every 100 requests sent straight after an SSH close, none from 3 ms on). The
  * server logs "Bad file descriptor" for them. TeamSpeak 6 and a raw session's
  * end do not do it. The server is what drops the connection, so the suite
- * waits rather than retrying: a retry cannot know the command was not run.
+ * waits rather than retrying: a retry cannot know the command was not run. The
+ * SDK does nothing for it. See "Server behaviour the SDK works around" in
+ * `docs/serverquery-responses.md`.
  */
 const SSH_TEARDOWN_MS = 50;
 

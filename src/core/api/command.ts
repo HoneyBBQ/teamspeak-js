@@ -488,10 +488,11 @@ export function readFields(
  * the id returned may be theirs rather than the one we just made. That is a
  * limit of what the notification reports, not of this function.
  *
- * TeamSpeak 6's WebQuery occasionally answers a create that succeeded with no
- * row at all. That case is not handled here: see {@link recoveredGroupID},
- * which the four group-creating functions use, and which looks the group up by
- * name and type.
+ * TeamSpeak 6's WebQuery can answer a create that succeeded with no row at all
+ * (see "Server behaviour the SDK works around" in
+ * `docs/serverquery-responses.md`). That case is not handled here: see
+ * {@link recoveredGroupID}, which the four group-creating functions use, and
+ * which looks the group up by name and type.
  */
 export function createdGroupID(
   rows: ReadonlyArray<Record<string, string>>,
@@ -517,9 +518,12 @@ export function createdGroupID(
  * finds it, or, when the answer carries no group row and no id, by listing the
  * groups and taking the one with the requested name and type.
  *
- * TeamSpeak 6's WebQuery occasionally answers a successful create with no data.
- * A server refuses a duplicate name within one type, so a group matching both
- * is the one just created. A NoDataError is thrown only when none matches.
+ * TeamSpeak 6's WebQuery answers a create without its id in some conditions
+ * (see "Server behaviour the SDK works around" in
+ * `docs/serverquery-responses.md`). A server refuses a duplicate name within
+ * one type, so a group matching both is the one just created. The one gap is
+ * another client renaming or deleting it before the lookup. A NoDataError is
+ * thrown only when none matches.
  */
 export async function recoveredGroupID(
   rows: ReadonlyArray<Record<string, string>>,

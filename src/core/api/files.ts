@@ -293,7 +293,14 @@ export interface FileTransferStopOptions extends CommandOptions {
   readonly removePartialFile?: boolean | undefined;
 }
 
-/** Cancel a running transfer. */
+/**
+ * Cancel a running transfer.
+ *
+ * Stop only your own transfers: TeamSpeak 6 6.0.0-beta13.1 crashes on a
+ * ServerQuery `ftstop` for a transfer that is not the connection's own (one
+ * that does not exist, or another client's), and nothing here guards against
+ * it. See "Server behaviour the SDK works around" in `docs/serverquery-responses.md`.
+ */
 export async function stopFileTransfer(
   client: CommandExecutor,
   serverFileTransferID: ServerFileTransferID,

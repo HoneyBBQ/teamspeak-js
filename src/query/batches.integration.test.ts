@@ -223,7 +223,7 @@ describe.skipIf(SKIP)("Integration — several clients and permissions at once",
     it("adds and removes several clients in a server group, and what a failing id leaves", async () => {
       const exec = executor(via);
       const admin = session.first();
-      const sgid = await createServerGroup(admin, stamp("ts-js-b-sg"), GroupType.Regular);
+      const sgid = await createServerGroup(exec, stamp("ts-js-b-sg"), GroupType.Regular);
       serverGroups.push(sgid);
       // Let a Server Admin client, whose powers are modest, manage the group.
       for (const name of [
@@ -273,9 +273,9 @@ describe.skipIf(SKIP)("Integration — several clients and permissions at once",
     it("sets and removes several permissions on every kind of holder at once", async () => {
       const exec = executor(via);
       const admin = session.first();
-      const cgid = await createChannelGroup(admin, stamp("ts-js-b-cg"), GroupType.Regular);
+      const cgid = await createChannelGroup(exec, stamp("ts-js-b-cg"), GroupType.Regular);
       channelGroups.push(cgid);
-      const sgid = await createServerGroup(admin, stamp("ts-js-b-pg"), GroupType.Regular);
+      const sgid = await createServerGroup(exec, stamp("ts-js-b-pg"), GroupType.Regular);
       serverGroups.push(sgid);
       const dbid = members[0]!.databaseID;
       const unknown = permissionByName("i_no_such_permission");
