@@ -120,7 +120,8 @@
     "typescript": "^7.0.2",
     "typescript-api": "npm:typescript@^5.9.3",
     "vite": "^8.3.4",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.0",
+    "werift": "^0.25.1"
   },
   "peerDependencies": {
     "ssh2": "^1.17.0"
