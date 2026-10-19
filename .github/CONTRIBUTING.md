@@ -48,6 +48,9 @@ one directory per entry point:
 - `src/client` is the voice client (`@honeybbq/teamspeak/client`).
 - `src/query` is the ServerQuery client (`@honeybbq/teamspeak/query`). It is
   exported, but marked `@experimental`: its API may change in a minor release.
+- `src/stream` is TeamSpeak 6 streams (`@honeybbq/teamspeak/stream`), the signalling
+  of a screen share. It takes a client through the `StreamsClient` interface and
+  imports neither `client` nor `query`; it is marked `@beta`.
 
 `src/client` and `src/query` use the core's public API through its package name,
 `@honeybbq/teamspeak`, and take plumbing only from `../core/internal.js`. They
@@ -71,8 +74,8 @@ about it.
 
 ### Public API report
 
-The public API of each entry point is recorded in `api/core.api.md`
-and `api/client.api.md`, and reviewed like code. `pnpm api:check` fails with a diff when the built
+The public API of each entry point is recorded in `api/core.api.md`,
+`api/client.api.md`, `api/query.api.md` and `api/stream.api.md`, and reviewed like code. `pnpm api:check` fails with a diff when the built
 declarations and the record disagree, so an API change cannot land without
 showing up in the same commit. When the change is on purpose, rewrite the
 record and commit it with the change:

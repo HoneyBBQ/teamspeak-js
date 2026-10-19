@@ -32,6 +32,7 @@ Upgrading from 0.x? The package was renamed; see the [migration guide](https://g
 - **Identity management** — Generate, import/export, and upgrade security level of identities
 - **Full command set** — 111 typed functions covering every command the voice protocol answers
 - **Reconnection** — Opt-in retry with backoff, tuned for TeamSpeak's antiflood ban
+- **Streams** — TeamSpeak 6 screen share signalling: find, publish and watch streams, with SDP and ICE as strings for any WebRTC stack (experimental)
 - **Server capabilities** — Reports the server version and the uid hash it uses (SHA-1 on TS3, SHA-256 on TS6), and the server's name, icon, banner and welcome message
 - **Custom transports** — Supply your own socket, for proxies, tunnels or tests
 - **ESM with types** — Ships ES modules with full TypeScript declarations
@@ -548,6 +549,93 @@ The uid hash matters because TS3 hashes a client's public key with SHA-1 and TS6
 with SHA-256 — a client that assumes either one computes an identifier the other
 server never sends.
 
+### Streams (experimental)
+
+TeamSpeak 6 clients can share a screen, a window or a camera. `@honeybbq/teamspeak/stream`
+does the signalling of that: it finds the streams of the clients in view, publishes one,
+and watches one. The video itself travels between the publisher and each viewer over
+WebRTC, which is yours: `Streams` hands you the SDP and the ICE candidates as strings and
+takes them back, so any WebRTC stack plugs in, in a browser, in Electron or in Node. The
+package has no WebRTC dependency.
+
+TeamSpeak does not document this protocol. It was measured on TeamSpeak 6 6.0.0-beta13.1,
+and has not been tried against the native client's own streams yet, so every export is
+`@beta` and may change in a minor release. A TeamSpeak 3 server does not answer the stream
+commands at all, so `publish` and `watch` throw a `StreamsUnsupportedError` before sending
+anything.
+
+Watching: find a stream in `streams.list()` or wait for `started`, ask to watch it, and
+give the publisher's offer to a peer connection. The viewer's connection is receive-only.
+
+```ts
+import { Streams } from "@honeybbq/teamspeak/stream";
+
+const streams = new Streams(client);
+streams.on("started", (info) => console.log(`${info.name} is streaming`));
+
+const view = await streams.watch(info, { message: "may I watch?" });
+
+const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+pc.ontrack = (event) => (video.srcObject = event.streams[0]);
+pc.onicecandidate = (event) => {
+  if (event.candidate) void view.sendCandidate(event.candidate.toJSON());
+};
+// Candidates that arrived with the offer are delivered to the first listener.
+view.on("candidate", (candidate) => void pc.addIceCandidate(candidate));
+view.on("closed", () => pc.close());
+
+await pc.setRemoteDescription({ type: "offer", sdp: view.offer });
+const answer = await pc.createAnswer();
+await pc.setLocalDescription(answer);
+await view.answer(answer.sdp!);
+```
+
+Publishing: the publisher makes the offer, one peer connection for each viewer. The server
+relays every request to watch, from any channel, and enforces neither `viewerLimit` nor
+`accessibility`: deciding who is let in is the publisher's job, and `request` is emitted
+for each one, with nothing accepted for you.
+
+```ts
+const stream = await streams.publish({ name: "My screen", source: "screen" });
+
+stream.on("request", async (request) => {
+  if (!allowed(request.viewer)) return request.deny("Not today");
+
+  const pc = new RTCPeerConnection({ iceServers });
+  for (const track of capture.getTracks()) pc.addTrack(track, capture);
+  await pc.setLocalDescription(await pc.createOffer());
+
+  const viewer = await request.accept(pc.localDescription!.sdp);
+  pc.onicecandidate = (event) => {
+    if (event.candidate) void viewer.sendCandidate(event.candidate.toJSON());
+  };
+  viewer.on("answer", (sdp) => pc.setRemoteDescription({ type: "answer", sdp }));
+  viewer.on("candidate", (candidate) => void pc.addIceCandidate(candidate));
+  viewer.on("closed", () => pc.close());
+});
+
+await stream.stop();
+```
+
+Things to know:
+
+- A client may run several streams, so every stream is known by its id. `list()` is what
+  this client has heard of. A stream that ends while its publisher is out of the channel is
+  reported to nobody there, and stays listed until the connection ends.
+- A stream survives its publisher changing channel, with no event. It ends when the
+  publisher stops it or disconnects.
+- The server drops a command line longer than about 9.2 KB without an answer. Streams
+  commands are checked first and throw a `StreamPayloadTooLargeError`; an SDP offer or an
+  ICE candidate is a few kilobytes at most.
+- The server lets anyone stop any stream. `Streams` sends `stopstream` only for streams it
+  published, and treats a `notifystreamstopped` for any stream as final.
+- The server forgets a refused request, and a native client asks again at once. To refuse
+  for good, pass `rememberDenied: true`, or leave the request unanswered.
+- The bitrate the server reports for a stream is not the one requested.
+- A client announces that it streams only with `client_is_streaming`, and a stream that was
+  running before you came is not announced at all. `Streams` asks for the streams of each
+  client that sets the flag, once, on a TeamSpeak 6 server.
+
 ## Design
 
 The conventions below hold across the whole package. Each is stated once here.
@@ -606,6 +694,7 @@ the errors its own code throws:
 | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `@honeybbq/teamspeak` (shared by every connection) | `TeamspeakError`, `ServerError`, `CommandTimeoutError`, `NotConnectedError`, `AlreadyConnectedError`, `NoDataError`                                                                    |
 | `@honeybbq/teamspeak/client` (voice only)          | `ConnectionTimeoutError`, `HandshakeError` and its `PuzzleTooHardError`, `InvalidAddressError`, `InvalidIdentityError`, `FileTransferError`, `RemovedError` (kick, ban or server stop) |
+| `@honeybbq/teamspeak/stream` (streams only)        | `StreamsUnsupportedError`, `StreamJoinDeniedError`, `StreamEndedError`, `StreamPayloadTooLargeError`                                                                                   |
 | `@honeybbq/teamspeak/query` (query only)           | `QueryAuthError`, `GuestAccessError`, `SshHostKeyError`, `MissingDependencyError`, `WebQueryHttpError`                                                                                 |
 
 A call that is given a value it cannot use, such as an out-of-range id or an
@@ -727,8 +816,9 @@ From 1.0 the package follows semver, as described under
 event map may gain members in a minor release; give a `switch` over them a
 default case.
 
-An API that may still change in a minor release is marked `@experimental` in its
-TSDoc, which editors and the API reference show. Today that is the whole
+An API that may still change in a minor release is marked `@experimental` (or, for
+`@honeybbq/teamspeak/stream`, `@beta`) in its TSDoc, which editors and the API reference
+show. Today that is the whole `@honeybbq/teamspeak/stream` entry point, and the whole
 `@honeybbq/teamspeak/query` entry point, the server view (`client.view` and the
 view events), the `previous` field of the client-left and channel-deleted
 events, and `getServerVariables`.
@@ -943,6 +1033,7 @@ with the same semantics, apart from what the languages make differ:
 | `@honeybbq/teamspeak`          | What every TeamSpeak connection shares: the command language, ids, errors, the typed commands, the event types and the status and reconnection types |
 | `@honeybbq/teamspeak/client`   | The voice client, identities, file transfers, diagnostics and its retry policy                                                                       |
 | `@honeybbq/teamspeak/versions` | Client versions a server accepts, for the client's `version` option; data only, one export each                                                      |
+| `@honeybbq/teamspeak/stream`   | TeamSpeak 6 streams, the screen share: finding, publishing and watching them; signalling only, no WebRTC code; `@beta`                               |
 | `@honeybbq/teamspeak/query`    | The ServerQuery client, running the same typed commands over raw TCP, SSH or WebQuery; `@experimental`                                               |
 
 Each entry exports only its own symbols. The client entry does not re-export
@@ -978,6 +1069,7 @@ src/
 │   ├── handshake/         # Crypto handshake and license verification
 │   ├── transport/         # UDP packet framing, ACK, compression
 │   └── discovery/         # SRV / TSDNS / direct address resolution
+├── stream/            # TeamSpeak 6 streams (@honeybbq/teamspeak/stream)
 └── query/             # The ServerQuery client (@honeybbq/teamspeak/query)
 examples/
 └── connect.ts  # Minimal connection example
