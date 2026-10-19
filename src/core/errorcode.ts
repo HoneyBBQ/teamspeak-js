@@ -408,6 +408,14 @@ const errorCodeValues = {
    * server offers no guest access. HTTP 401.
    */
   APIKeyMissing: 0x1404,
+  /** Stream does not exist: the id is unknown, or the stream has ended. TeamSpeak 6 only. */
+  StreamNotFound: 0x1603,
+  /** You are not participating in this stream: signalling is allowed between the owner and an accepted viewer only. TeamSpeak 6 only. */
+  StreamNotParticipating: 0x1604,
+  /** You already joined this stream, whether the request is pending or accepted. TeamSpeak 6 only. */
+  StreamAlreadyJoined: 0x1606,
+  /** The join request was redacted: it was answered already, or never made. TeamSpeak 6 only. */
+  StreamJoinRequestRedacted: 0x1607,
 } as const;
 /**
  * The error codes a TeamSpeak server reports, by name.

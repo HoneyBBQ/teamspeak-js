@@ -41,6 +41,19 @@ describe("WebQuery access refusals", () => {
   });
 });
 
+describe("stream refusals", () => {
+  it.each([
+    ["Stream does not exist", 5635, ErrorCode.StreamNotFound],
+    ["You are not participating in this stream", 5636, ErrorCode.StreamNotParticipating],
+    ["You already joined this stream", 5638, ErrorCode.StreamAlreadyJoined],
+    ["The join request was redacted", 5639, ErrorCode.StreamJoinRequestRedacted],
+  ])("names the code of %s", (msg, id, name) => {
+    const { err } = parseServerError({ id: String(id), msg });
+    expect(err?.code).toBe(name);
+    expect(name).toBe(id);
+  });
+});
+
 describe("instanceof across copies of the package", () => {
   it("matches by kind, up the chain, and only with the brand", async () => {
     const core = await import("./errors.js");

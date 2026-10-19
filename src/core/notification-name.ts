@@ -105,6 +105,8 @@ const notificationNameValues = {
   FileListFinished: "notifyfilelistfinished",
   /** `notifyfiletransferlist`: Reply to ftlist: one row per running file transfer. */
   FileTransferList: "notifyfiletransferlist",
+  /** `notifyjoinstreamrequest`: A client asks to watch this client's stream, or, with `is_remove=1`, stops watching it. Sent to the stream's owner only. TeamSpeak 6 only. */
+  JoinStreamRequest: "notifyjoinstreamrequest",
   /** `notifymessage`: Reply to messageget: an offline message with its subject and body. */
   Message: "notifymessage",
   /** `notifymessagelist`: Reply to messagelist: one row per offline message in this client's inbox. */
@@ -121,6 +123,8 @@ const notificationNameValues = {
   PluginCmd: "notifyplugincmd",
   /** `notifyserverconnectioninfo`: Reply to serverrequestconnectioninfo: the virtual server's traffic and bandwidth statistics. */
   ServerConnectionInfo: "notifyserverconnectioninfo",
+  /** `notifyrespondjoinstreamrequest`: The stream owner's answer to this client's join request: `decision` 1 with the SDP `offer`, or 0. TeamSpeak 6 only. */
+  RespondJoinStreamRequest: "notifyrespondjoinstreamrequest",
   /** `notifyserveredited`: The virtual server's settings were edited, with who edited them and the settings that changed. */
   ServerEdited: "notifyserveredited",
   /** `notifyservergroupclientadded`: A client was added to a server group, with who added it. */
@@ -147,6 +151,18 @@ const notificationNameValues = {
   StartUpload: "notifystartupload",
   /** `notifystatusfiletransfer`: A file transfer ended or failed: it carries the status code and message for the transfer's client-side id. */
   StatusFileTransfer: "notifystatusfiletransfer",
+  /** `notifystreamclientjoined`: The stream owner accepted a viewer. Sent to the owner, the stream's other participants and the idle clients of the owner's channel. TeamSpeak 6 only. */
+  StreamClientJoined: "notifystreamclientjoined",
+  /** `notifystreamclientleft`: A viewer left a stream, or its connection ended. Sent to the owner and the accepted viewers, the one that left included. TeamSpeak 6 only. */
+  StreamClientLeft: "notifystreamclientleft",
+  /** `notifystreaminfo`: Reply to requeststreaminfo: one per stream the client runs, or one without an `id` when it runs none. TeamSpeak 6 only. */
+  StreamInfo: "notifystreaminfo",
+  /** `notifystreamsignaling`: A signalling message from the other end of a stream, a JSON string. TeamSpeak 6 only. */
+  StreamSignaling: "notifystreamsignaling",
+  /** `notifystreamstarted`: A client started a stream; sent to the clients of its channel, itself included. TeamSpeak 6 only. */
+  StreamStarted: "notifystreamstarted",
+  /** `notifystreamstopped`: A stream ended, with a numeric `reason`. Sent to the clients of the owner's channel and the stream's participants, not to the client that stopped it. TeamSpeak 6 only. */
+  StreamStopped: "notifystreamstopped",
   /** `notifytextmessage`: A text message arrived, to this client, its channel or the whole server, with who sent it. */
   TextMessage: "notifytextmessage",
   /** `notifytokenadd`: Reply to privilegekeyadd: the new privilege key. */
