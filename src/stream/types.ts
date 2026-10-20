@@ -120,7 +120,11 @@ export interface IceCandidate {
 export interface RawSignal {
   /** The message's `cmd`; empty when the JSON had none. */
   readonly cmd: string;
-  /** Its `args`, parsed; undefined when the JSON could not be parsed or had none. */
+  /**
+   * Its `args`, parsed. Untrusted: the server relays the JSON unseen, so this
+   * is whatever the other client sent, of any shape. Undefined when the JSON
+   * could not be parsed or had none.
+   */
   readonly args: unknown;
   /** The JSON text as it arrived. */
   readonly json: string;
@@ -195,7 +199,9 @@ export interface Peer {
   /**
    * Stop sending and delivering for this peer. On a viewer's side this also
    * leaves the stream. The publisher's side sends nothing: the server has no
-   * way to remove a viewer.
+   * way to remove a viewer, so a viewer closed here stays a participant on the
+   * server and may keep signalling, which is ignored, and may ask again, which
+   * is a new request. Stop the stream to end it for everyone.
    */
   close(): Promise<void>;
 }
@@ -208,8 +214,8 @@ export interface Peer {
 export interface ViewerPeer extends Peer {
   /**
    * Send an SDP offer, to renegotiate. The first offer goes with
-   * `JoinRequest.accept`. A native client's handling of this has not been
-   * confirmed.
+   * `JoinRequest.accept`. The server relays the message unseen, and whether a
+   * viewer takes it is up to the viewer: renegotiation has not been tried.
    */
   sendOffer(sdp: string): Promise<void>;
 }
@@ -271,12 +277,13 @@ export interface JoinRequest {
   /** Where the request stands. */
   readonly state: JoinRequestState;
   /**
-   * Let the viewer in, with the SDP offer it will answer. Resolves with the
-   * peer once the server took the answer. Throws if the request was answered
+   * Let the viewer in, with the SDP offer it will answer and, optionally, a
+   * message that goes with it. Resolves with the peer once the server took
+   * the answer. Throws if the request was answered
    * or is no longer pending, and with a `StreamPayloadTooLargeError`, before
    * sending and without using the request up, when the offer is too long.
    */
-  accept(offer: string): Promise<ViewerPeer>;
+  accept(offer: string, message?: string): Promise<ViewerPeer>;
   /**
    * Refuse, with a reason the viewer sees. The server forgets a refusal, so the
    * viewer may ask again; with `rememberDenied`, requests from this client's
@@ -287,12 +294,13 @@ export interface JoinRequest {
 
 /**
  * Why a published stream ended: `"stopped"` for `stop()`, `"server"` for the
- * server's `notifystreamstopped`, `"disconnected"` and `"disposed"` as for a
- * peer.
+ * server's `notifystreamstopped`, `"gone"` when the server said its publisher
+ * no longer streams (`client_is_streaming` cleared) without a stop, and
+ * `"disconnected"` and `"disposed"` as for a peer.
  *
  * @beta
  */
-export type StreamEndCause = "stopped" | "server" | "disconnected" | "disposed";
+export type StreamEndCause = "stopped" | "server" | "gone" | "disconnected" | "disposed";
 
 /**
  * A published stream ending.
@@ -300,12 +308,12 @@ export type StreamEndCause = "stopped" | "server" | "disconnected" | "disposed";
  * @beta
  */
 export interface StreamEnded {
-  /** Why it ended. */
+  /** Why it ended. Always set: a `reason` of 0 alone does not say. */
   readonly cause: StreamEndCause;
   /**
    * The numeric reason: the one `stop()` was given, or the server's. The
-   * server reports 1 when the publisher's connection ended. 0 for the other
-   * causes.
+   * server reported 1 when the publisher's connection ended. 0 for the causes
+   * `"gone"`, `"disconnected"` and `"disposed"`, which carry none.
    */
   readonly reason: number;
 }
@@ -404,8 +412,11 @@ export interface WatchOptions {
 export interface StreamsOptions {
   /**
    * Remember the unique identifiers of the clients `deny` refused, and leave
-   * their later requests unanswered. Off by default. The server forgets a
-   * refusal, and a native client asks again and again.
+   * their later requests unanswered. Off by default. The server remembers no
+   * decision, so a client can ask again, and every ask is relayed. The
+   * identifiers are held in memory only, the 1024 most recent, and dropped by
+   * `dispose()`. A requester whose identifier cannot be found out is not
+   * remembered.
    */
   readonly rememberDenied?: boolean | undefined;
 }
@@ -418,7 +429,14 @@ export interface StreamsOptions {
 export interface StreamStoppedEvent {
   /** The stream, as it was last known. */
   readonly info: StreamInfo;
-  /** The stop reason the server reported; 0 unless the stopper gave one. */
+  /**
+   * Why it ended: `"server"` for a `notifystreamstopped`, `"stopped"` for a
+   * stream this client stopped, `"gone"` when its publisher's
+   * `client_is_streaming` cleared or the publisher came into view not
+   * streaming, without a stop reaching this client.
+   */
+  readonly cause: "server" | "stopped" | "gone";
+  /** The stop reason the server reported; 0 unless the stopper gave one, and for `"gone"`. */
   readonly reason: number;
 }
 

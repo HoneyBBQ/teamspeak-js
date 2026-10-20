@@ -1,6 +1,6 @@
 import { TeamspeakError } from "@honeybbq/teamspeak";
 import type { ClientID, Unsubscribe } from "@honeybbq/teamspeak";
-import { Emitter } from "./emitter.js";
+import { Emitter, MAX_KEPT } from "./emitter.js";
 import type {
   IceCandidate,
   Peer,
@@ -19,6 +19,8 @@ export interface PeerLink {
   leave?(): Promise<void>;
   /** The peer closed, whoever closed it. */
   closed(peer: PeerImpl): void;
+  /** Something happened that nobody awaits, such as an event dropped for want of a listener. */
+  report(error: Error): void;
 }
 
 /** One end of a stream's signalling with one other client. */
@@ -27,12 +29,26 @@ export class PeerImpl implements Peer {
   readonly clientId: ClientID;
   #link: PeerLink;
   #closed = false;
-  #emitter = new Emitter<PeerEvents>(["offer", "answer", "candidate", "signal", "closed"]);
+  #emitter: Emitter<PeerEvents>;
 
   constructor(streamId: string, clientId: ClientID, link: PeerLink) {
     this.streamId = streamId;
     this.clientId = clientId;
     this.#link = link;
+    let reported = false;
+    this.#emitter = new Emitter<PeerEvents>(
+      ["offer", "answer", "candidate", "signal", "closed"],
+      (event) => {
+        // Once for the peer, not for every message past the bound.
+        if (reported) return;
+        reported = true;
+        link.report(
+          new TeamspeakError(
+            `stream ${streamId}: dropping the oldest ${event} from client ${clientId}: ${MAX_KEPT} are waiting for a listener`,
+          ),
+        );
+      },
+    );
   }
 
   get closed(): boolean {

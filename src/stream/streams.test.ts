@@ -50,6 +50,8 @@ function setup(options: { rememberDenied?: boolean } = {}): {
   streams: Streams;
 } {
   const client = new FakeClient();
+  // The viewers of the tests are in view, as the clients of a channel are.
+  for (const clid of [9, 10, 12]) client.see(clid);
   return { client, streams: new Streams(client, options) };
 }
 
@@ -317,7 +319,7 @@ describe("publish", () => {
     const { client, streams } = setup();
     const promise = streams.publish({ name: "x", viewerLimit: 65535 });
     await settle();
-    client.notify("notifystreamstarted", started({ clid: String(SELF) }));
+    client.notify("notifystreamstarted", started({ clid: String(SELF), name: "x" }));
     await promise;
   });
 
@@ -399,13 +401,91 @@ describe("join requests", () => {
     expect(requests[0]?.state).toBe("pending");
   });
 
-  it("knows no uid for a client it cannot see", async () => {
+  it("asks the server who a client out of view is", async () => {
     const { client, streams } = setup();
+    client.clients.delete(asClientID(40));
+    client.answer = (r) =>
+      r.command === "clientgetuidfromclid"
+        ? Promise.resolve([{ clid: "40", cluid: "far-uid", nickname: "Far", mytsid: "" }])
+        : undefined;
     const pub = await publishOne(client, streams);
     const requests: JoinRequest[] = [];
     pub.on("request", (r) => requests.push(r));
-    client.notify("notifyjoinstreamrequest", { id: pub.id, clid: "9", msg: "", is_remove: "0" });
-    expect(requests[0]?.viewer.uid).toBeUndefined();
+    client.notify("notifyjoinstreamrequest", { id: pub.id, clid: "40", msg: "", is_remove: "0" });
+    await settle();
+    expect(requests[0]?.viewer).toEqual({ clientId: 40, uid: "far-uid", nickname: "Far" });
+  });
+
+  it("knows no uid for a client the server cannot name, and still announces it", async () => {
+    const { client, streams } = setup();
+    client.answer = (r) =>
+      r.command === "clientgetuidfromclid"
+        ? Promise.reject(refusal(ErrorCode.ClientInvalidID))
+        : undefined;
+    const pub = await publishOne(client, streams);
+    const requests: JoinRequest[] = [];
+    pub.on("request", (r) => requests.push(r));
+    client.notify("notifyjoinstreamrequest", { id: pub.id, clid: "40", msg: "", is_remove: "0" });
+    await settle();
+    expect(requests[0]?.viewer).toEqual({ clientId: 40, uid: undefined, nickname: undefined });
+  });
+
+  it("remembers a denied client that was out of view by the uid the server gave", async () => {
+    const { client, streams } = setup({ rememberDenied: true });
+    client.answer = (r) =>
+      r.command === "clientgetuidfromclid"
+        ? Promise.resolve([{ clid: "40", cluid: "far-uid", nickname: "Far", mytsid: "" }])
+        : undefined;
+    const pub = await publishOne(client, streams);
+    const requests: JoinRequest[] = [];
+    pub.on("request", (r) => requests.push(r));
+    const ask = (): void =>
+      client.notify("notifyjoinstreamrequest", { id: pub.id, clid: "40", msg: "", is_remove: "0" });
+    ask();
+    await settle();
+    await requests[0]!.deny();
+    ask();
+    await settle();
+    expect(requests).toHaveLength(1);
+  });
+
+  it("announces requests in the order they came, whatever the lookups take", async () => {
+    const { client, streams } = setup();
+    const release: Array<() => void> = [];
+    client.answer = (r) =>
+      r.command === "clientgetuidfromclid"
+        ? new Promise((resolve) =>
+            release.push(() => resolve([{ clid: "1", cluid: "u", nickname: "n", mytsid: "" }])),
+          )
+        : undefined;
+    const pub = await publishOne(client, streams);
+    const seen: number[] = [];
+    pub.on("request", (r) => seen.push(r.viewer.clientId));
+    for (const clid of ["40", "9"]) {
+      client.notify("notifyjoinstreamrequest", { id: pub.id, clid, msg: "", is_remove: "0" });
+    }
+    await settle();
+    expect(seen).toEqual([]);
+    release[0]!();
+    await settle();
+    expect(seen).toEqual([40, 9]);
+  });
+
+  it("does not announce a request withdrawn while its lookup was out", async () => {
+    const { client, streams } = setup();
+    let release!: () => void;
+    client.answer = (r) =>
+      r.command === "clientgetuidfromclid"
+        ? new Promise((resolve) => (release = () => resolve([])))
+        : undefined;
+    const pub = await publishOne(client, streams);
+    const seen: number[] = [];
+    pub.on("request", (r) => seen.push(r.viewer.clientId));
+    client.notify("notifyjoinstreamrequest", { id: pub.id, clid: "40", msg: "", is_remove: "0" });
+    client.notify("notifyjoinstreamrequest", { id: pub.id, clid: "40", msg: "", is_remove: "1" });
+    release();
+    await settle();
+    expect(seen).toEqual([]);
   });
 
   // The app attaches after `await publish()`, and the server does not wait.
@@ -1128,6 +1208,7 @@ describe("cleanup", () => {
     pub.on("ended", (e) => ended.push(e));
     peer.on("closed", (c) => peerClosed.push(c));
     view.on("closed", (c) => viewClosed.push(c));
+    client.status = "disconnected";
     client.emit("disconnected", { error: undefined, willReconnect: true });
     client.emit("disconnected", { error: undefined, willReconnect: true });
 
@@ -1180,7 +1261,70 @@ describe("cleanup", () => {
     }
     await expect(streams.publish({ name: "x" })).rejects.toThrow(/disposed/);
     await expect(streams.watch(STREAM)).rejects.toThrow(/disposed/);
+    // Connected, so the server is told once: the stream is stopped.
+    expect(client.commands("stopstream")).toHaveLength(1);
+  });
+
+  it("tells the server on dispose: stops what it published, leaves what it watched", async () => {
+    const { client, streams } = setup();
+    const pub = await publishOne(client, streams);
+    client.notify("notifystreamstarted", started({ id: "theirs" }));
+    const promise = streams.watch("theirs");
+    await settle();
+    client.notify("notifyrespondjoinstreamrequest", {
+      id: "theirs",
+      msg: "",
+      decision: "1",
+      offer: "o",
+    });
+    await promise;
+    streams.dispose();
+    await settle();
+    expect(client.commands("stopstream").map((r) => param(r, "id"))).toEqual([pub.id]);
+    const joins = client.commands("joinstreamrequest");
+    expect(joins).toHaveLength(2);
+    expect(param(joins[1]!, "id")).toBe("theirs");
+    expect(param(joins[1]!, "is_remove")).toBe(true);
+  });
+
+  it("reports a failure of the goodbye to the error event, which still has its listeners", async () => {
+    const { client, streams } = setup();
+    await publishOne(client, streams);
+    const errors: Error[] = [];
+    streams.on("error", (e) => errors.push(e));
+    client.answer = (r) =>
+      r.command === "stopstream"
+        ? Promise.reject(refusal(ErrorCode.PermissionsClientInsufficient))
+        : undefined;
+    streams.dispose();
+    await settle();
+    expect(errors).toHaveLength(1);
+  });
+
+  it("sends nothing on dispose when the connection is gone", async () => {
+    const { client, streams } = setup();
+    await publishOne(client, streams);
+    client.status = "disconnected";
+    streams.dispose();
+    await settle();
     expect(client.commands("stopstream")).toEqual([]);
+  });
+
+  it("clears the remembered denials on dispose", async () => {
+    const { client, streams } = setup({ rememberDenied: true });
+    const pub = await publishOne(client, streams);
+    const requests: JoinRequest[] = [];
+    pub.on("request", (r) => requests.push(r));
+    client.notify("notifyjoinstreamrequest", { id: pub.id, clid: "9", msg: "", is_remove: "0" });
+    await requests[0]!.deny();
+    streams.dispose();
+    // A new Streams on the same client starts with none, and the old holds none either.
+    const again = new Streams(client, { rememberDenied: true });
+    const second = await publishOne(client, again, "second", "second");
+    const seen: JoinRequest[] = [];
+    second.on("request", (r) => seen.push(r));
+    client.notify("notifyjoinstreamrequest", { id: "second", clid: "9", msg: "", is_remove: "0" });
+    expect(seen).toHaveLength(1);
   });
 
   it("does not let a throwing listener stop the others", async () => {
@@ -1196,5 +1340,260 @@ describe("cleanup", () => {
     await settle();
     expect(seen).toEqual([STREAM]);
     expect(uncaught).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("review fixes", () => {
+  const ask = (client: FakeClient, id: string, clid: string, remove = "0"): void =>
+    client.notify("notifyjoinstreamrequest", { id, clid, msg: "", is_remove: remove });
+
+  describe("matching a publish to its announcement", () => {
+    it("does not adopt an own stream of another name", async () => {
+      const { client, streams } = setup();
+      const promise = streams.publish({ name: "wanted", timeoutMs: 30 });
+      await settle();
+      client.notify("notifystreamstarted", started({ clid: String(SELF), name: "other" }));
+      await expect(promise).rejects.toBeInstanceOf(CommandTimeoutError);
+    });
+
+    it("never lets a second publish adopt the first's stream", async () => {
+      const { client, streams } = setup();
+      const first = streams.publish({ name: "same", timeoutMs: 40 });
+      const second = streams.publish({ name: "same", timeoutMs: 2000 });
+      await settle();
+      expect(client.commands("setupstream")).toHaveLength(1);
+      await expect(first).rejects.toBeInstanceOf(CommandTimeoutError);
+      await settle();
+      expect(client.commands("setupstream")).toHaveLength(2);
+      // The first one's stream arrives late: it is stopped, and the second waits for its own.
+      client.notify(
+        "notifystreamstarted",
+        started({ clid: String(SELF), id: "late", name: "same" }),
+      );
+      await settle();
+      expect(client.commands("stopstream").map((r) => param(r, "id"))).toEqual(["late"]);
+      expect(streams.get("late")).toBeUndefined();
+      client.notify(
+        "notifystreamstarted",
+        started({ clid: String(SELF), id: "own", name: "same" }),
+      );
+      expect((await second).id).toBe("own");
+    });
+
+    it("stops a stream whose publish was aborted after the command went out", async () => {
+      const { client, streams } = setup();
+      const controller = new AbortController();
+      const promise = streams.publish({ name: "gone", signal: controller.signal });
+      await settle();
+      controller.abort(new Error("changed my mind"));
+      await expect(promise).rejects.toThrow("changed my mind");
+      client.notify(
+        "notifystreamstarted",
+        started({ clid: String(SELF), id: "orphan", name: "gone" }),
+      );
+      await settle();
+      expect(client.commands("stopstream").map((r) => param(r, "id"))).toEqual(["orphan"]);
+    });
+
+    it("does not stop anything when the server refused the command", async () => {
+      const { client, streams } = setup();
+      client.answer = () => Promise.reject(refusal(ErrorCode.PermissionsClientInsufficient));
+      await expect(streams.publish({ name: "refused" })).rejects.toBeInstanceOf(ServerError);
+      client.notify(
+        "notifystreamstarted",
+        started({ clid: String(SELF), id: "x", name: "refused" }),
+      );
+      expect(client.commands("stopstream")).toEqual([]);
+    });
+  });
+
+  describe("a publisher that stops streaming", () => {
+    it("drops its streams, with the cause gone, when the flag clears", () => {
+      const { client, streams } = setup();
+      const stopped: Array<[string, string]> = [];
+      streams.on("stopped", (e) => stopped.push([e.info.id, e.cause]));
+      client.notify("notifystreamstarted", started({ id: "a" }));
+      client.notify("notifystreamstarted", started({ id: "b" }));
+      client.emit("clientUpdated", {
+        clientID: asClientID(OTHER),
+        changes: { isStreaming: false },
+      });
+      expect(streams.list()).toEqual([]);
+      expect(stopped).toEqual([
+        ["a", "gone"],
+        ["b", "gone"],
+      ]);
+    });
+
+    it("drops its streams when it comes into view not streaming", () => {
+      const { client, streams } = setup();
+      client.notify("notifystreamstarted", started());
+      client.emit("clientEnter", { id: asClientID(OTHER), isStreaming: false });
+      expect(streams.list()).toEqual([]);
+    });
+
+    it("keeps a stream when the flag says nothing, and the streams of others", () => {
+      const { client, streams } = setup();
+      client.notify("notifystreamstarted", started());
+      client.notify("notifystreamstarted", started({ id: "z", clid: "30" }));
+      client.emit("clientUpdated", { clientID: asClientID(OTHER), changes: { isAway: true } });
+      client.emit("clientUpdated", {
+        clientID: asClientID(OTHER),
+        changes: { isStreaming: false },
+      });
+      expect(streams.list().map((s) => s.id)).toEqual(["z"]);
+    });
+
+    it("ends the viewer's side of a stream that is gone", async () => {
+      const { client, streams } = setup();
+      const view = await watchOne(client, streams);
+      const closed: PeerClosed[] = [];
+      view.on("closed", (c) => closed.push(c));
+      client.emit("clientUpdated", {
+        clientID: asClientID(OTHER),
+        changes: { isStreaming: false },
+      });
+      expect(closed).toEqual([{ cause: "stopped", reason: 0 }]);
+    });
+  });
+
+  it("forgets a pending request when its client leaves view, so a reused clid is heard", async () => {
+    const { client, streams } = setup();
+    const pub = await publishOne(client, streams);
+    const requests: JoinRequest[] = [];
+    pub.on("request", (r) => requests.push(r));
+    ask(client, pub.id, "9");
+    client.emit("clientLeave", { clientID: asClientID(9) });
+    expect(requests[0]?.state).toBe("withdrawn");
+    ask(client, pub.id, "9");
+    expect(requests).toHaveLength(2);
+    expect(requests[1]?.state).toBe("pending");
+  });
+
+  it("ignores what a closed viewer still sends, without an error", async () => {
+    const { client, streams } = setup();
+    const pub = await publishOne(client, streams);
+    const { peer } = await admit(client, pub);
+    const errors: Error[] = [];
+    streams.on("error", (e) => errors.push(e));
+    await peer.close();
+    client.notify("notifystreamsignaling", {
+      id: pub.id,
+      clid: "9",
+      json: JSON.stringify({ cmd: "iceCandidate", args: { sdp: "c", mid: "0", mLine: 0 } }),
+    });
+    await settle();
+    expect(errors).toEqual([]);
+    // Another client with no session is still reported.
+    client.notify("notifystreamsignaling", { id: pub.id, clid: "77", json: "{}" });
+    await settle();
+    expect(errors).toHaveLength(1);
+  });
+
+  it("bounds the remembered denials to the most recent 1024", async () => {
+    const { client, streams } = setup({ rememberDenied: true });
+    const pub = await publishOne(client, streams);
+    const requests: JoinRequest[] = [];
+    pub.on("request", (r) => requests.push(r));
+    for (let clid = 100; clid < 100 + 1030; clid++) {
+      client.see(clid);
+      ask(client, pub.id, String(clid));
+      await requests.at(-1)!.deny();
+    }
+    const before = requests.length;
+    // The oldest was forgotten, the newest is remembered.
+    ask(client, pub.id, "100");
+    ask(client, pub.id, String(100 + 1029));
+    expect(requests.length).toBe(before + 1);
+    expect(requests.at(-1)?.viewer.clientId).toBe(100);
+  });
+
+  describe("events nobody listens for", () => {
+    it("keeps errors for the first listener, and then delivers them live", async () => {
+      const { client, streams } = setup();
+      client.notify("notifystreamsignaling", { id: "nope", clid: "3", json: "{}" });
+      client.notify("notifystreamsignaling", { id: "nope2", clid: "3", json: "{}" });
+      const errors: Error[] = [];
+      streams.on("error", (e) => errors.push(e));
+      expect(errors).toHaveLength(2);
+      client.notify("notifystreamsignaling", { id: "nope3", clid: "3", json: "{}" });
+      expect(errors).toHaveLength(3);
+    });
+
+    it("drops the oldest past the bound, and reports an overflowing peer once", async () => {
+      const { client, streams } = setup();
+      const errors: Error[] = [];
+      streams.on("error", (e) => errors.push(e));
+      const pub = await publishOne(client, streams);
+      const { peer } = await admit(client, pub);
+      for (let n = 0; n < 300; n++) {
+        client.notify("notifystreamsignaling", {
+          id: pub.id,
+          clid: "9",
+          json: JSON.stringify({ cmd: "iceCandidate", args: { sdp: `c${n}`, mid: "0", mLine: 0 } }),
+        });
+      }
+      expect(errors).toHaveLength(1);
+      const seen: string[] = [];
+      peer.on("candidate", (c) => seen.push(c.candidate));
+      expect(seen).toHaveLength(256);
+      expect(seen[0]).toBe("c44");
+      expect(seen.at(-1)).toBe("c299");
+    });
+
+    it("drops the oldest signalling before the answer, and reports it once", async () => {
+      const { client, streams } = setup();
+      const errors: Error[] = [];
+      streams.on("error", (e) => errors.push(e));
+      client.notify("notifystreamstarted", started());
+      const promise = streams.watch(STREAM);
+      await settle();
+      for (let n = 0; n < 300; n++) {
+        client.notify("notifystreamsignaling", {
+          id: STREAM,
+          clid: String(OTHER),
+          json: JSON.stringify({ cmd: "iceCandidate", args: { sdp: `c${n}`, mid: "0", mLine: 0 } }),
+        });
+      }
+      client.notify("notifyrespondjoinstreamrequest", {
+        id: STREAM,
+        msg: "",
+        decision: "1",
+        offer: "o",
+      });
+      const view = await promise;
+      expect(errors).toHaveLength(1);
+      const seen: string[] = [];
+      view.on("candidate", (c) => seen.push(c.candidate));
+      expect(seen[0]).toBe("c44");
+      expect(seen).toHaveLength(256);
+    });
+  });
+
+  it("sends the message given to accept", async () => {
+    const { client, streams } = setup();
+    const pub = await publishOne(client, streams);
+    const requests: JoinRequest[] = [];
+    pub.on("request", (r) => requests.push(r));
+    ask(client, pub.id, "9");
+    await requests[0]!.accept("v=0", "welcome | aboard");
+    expect(param(client.commands("respondjoinstreamrequest")[0]!, "msg")).toBe("welcome | aboard");
+  });
+
+  it("rejects watch of an unknown id with a StreamEndedError", async () => {
+    const { client, streams } = setup();
+    const error = await streams.watch("nope").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(StreamEndedError);
+    expect((error as StreamEndedError).streamId).toBe("nope");
+    expect(client.sent).toEqual([]);
+  });
+
+  it("says why a published stream ended, so a reason of 0 is not ambiguous", async () => {
+    const { client, streams } = setup();
+    const pub = await publishOne(client, streams);
+    const ended: StreamEnded[] = [];
+    pub.on("ended", (e) => ended.push(e));
+    client.emit("clientUpdated", { clientID: client.clientID, changes: { isStreaming: false } });
+    expect(ended).toEqual([{ cause: "gone", reason: 0 }]);
   });
 });

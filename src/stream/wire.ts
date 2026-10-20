@@ -17,10 +17,15 @@ import type {
 
 /**
  * The longest command line, in bytes, this SDK sends for a stream, before the
- * ` return_code=N` it appends (at most 23 bytes). The server drops a longer
- * line without an answer: measured on TeamSpeak 6 6.0.0-beta13.1, a line of
- * 9,203 bytes in all passes and one of 9,204 vanishes, for these commands and
- * for `sendtextmessage` alike. The margin covers the return code.
+ * ` return_code=N` it appends (13 bytes and the digits, at most 23 in all).
+ *
+ * The server drops a longer line without an answer, whatever the command, and
+ * the limit is on the whole line, return code included. Measured on TeamSpeak
+ * 6 6.0.0-beta13.1 with a two-digit return code: a `setupstream` line of 9,203
+ * bytes passed and one of 9,204 was dropped. A `sendtextmessage` of 9,500
+ * characters is dropped without an answer as well. The constant is well under that, so a longer return code, or a
+ * server that counts a little differently, does not turn a send into a silent
+ * drop.
  */
 export const MAX_COMMAND_LINE_BYTES = 9_150;
 

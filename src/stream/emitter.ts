@@ -1,14 +1,14 @@
 import type { Unsubscribe } from "@honeybbq/teamspeak";
 
 /** How many events are kept for a first listener, per event. */
-const MAX_KEPT = 256;
+export const MAX_KEPT = 256;
 
 /**
  * A small event emitter whose events can wait for their first listener.
  *
  * The events named in `keep` are held while nobody has ever listened to them,
- * up to 256 per event (the oldest are dropped past that), and delivered, in
- * order, to the first listener. That is what bridges the time between being
+ * up to 256 per event, and delivered, in order, to the first listener. Past
+ * that the oldest is dropped, and `onDrop` hears of it. That is what bridges the time between being
  * handed an object and attaching to it, in which the server does not wait.
  */
 export class Emitter<M extends object> {
@@ -17,8 +17,11 @@ export class Emitter<M extends object> {
   #attached = new Set<keyof M>();
   readonly #keep: ReadonlySet<keyof M>;
 
-  constructor(keep: ReadonlyArray<keyof M> = []) {
+  readonly #onDrop: ((event: keyof M) => void) | undefined;
+
+  constructor(keep: ReadonlyArray<keyof M> = [], onDrop?: (event: keyof M) => void) {
     this.#keep = new Set(keep);
+    this.#onDrop = onDrop;
   }
 
   on<K extends keyof M>(event: K, listener: (payload: M[K]) => void): Unsubscribe {
@@ -46,7 +49,10 @@ export class Emitter<M extends object> {
       if (this.#keep.has(event) && !this.#attached.has(event)) {
         const kept = this.#kept.get(event) ?? [];
         kept.push(payload);
-        if (kept.length > MAX_KEPT) kept.shift();
+        if (kept.length > MAX_KEPT) {
+          kept.shift();
+          this.#onDrop?.(event);
+        }
         this.#kept.set(event, kept);
       }
       return;

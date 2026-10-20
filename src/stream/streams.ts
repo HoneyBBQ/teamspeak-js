@@ -1,6 +1,6 @@
 import {
-  CommandTimeoutError,
   ErrorCode,
+  getClientUIDInfoByID,
   NotConnectedError,
   ServerError,
   TeamspeakError,
@@ -12,7 +12,9 @@ import type {
   NotificationEvent,
   Unsubscribe,
 } from "@honeybbq/teamspeak";
-import { Emitter } from "./emitter.js";
+import { Emitter, MAX_KEPT } from "./emitter.js";
+import { defer, within } from "./wait.js";
+import type { Deferred } from "./wait.js";
 import { StreamEndedError, StreamJoinDeniedError, StreamsUnsupportedError } from "./errors.js";
 import { StreamViewImpl } from "./peer.js";
 import type { PeerImpl } from "./peer.js";
@@ -48,43 +50,11 @@ import {
 const DEFAULT_PUBLISH_TIMEOUT_MS = 10_000;
 const DEFAULT_WATCH_TIMEOUT_MS = 60_000;
 /** How many signalling messages that arrive before the answer to a join request are kept. */
-const MAX_EARLY_SIGNALS = 256;
-
-interface Deferred<T> {
-  readonly promise: Promise<T>;
-  resolve(value: T): void;
-  reject(error: unknown): void;
-}
-
-function defer<T>(): Deferred<T> {
-  let resolve!: (value: T) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  // Whoever awaits it sees the failure; one that settles before anyone does is not unhandled.
-  promise.catch(() => {});
-  return { promise, resolve, reject };
-}
-
-/** `promise`, or a rejection when `timeoutMs` passes or `signal` aborts first. */
-function within<T>(
-  promise: Promise<T>,
-  command: string,
-  timeoutMs: number,
-  signal: AbortSignal | undefined,
-): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new CommandTimeoutError(command)), timeoutMs);
-    const onAbort = (): void => reject(signal!.reason);
-    signal?.addEventListener("abort", onAbort, { once: true });
-    promise.then(resolve, reject).finally(() => {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
-    });
-  });
-}
+const MAX_EARLY_SIGNALS = MAX_KEPT;
+/** How many denied clients are remembered with `rememberDenied`. */
+const MAX_DENIED = 1024;
+/** How many published streams that were given up on are watched for. */
+const MAX_ABANDONED = 16;
 
 function signalOption(signal: AbortSignal | undefined): CommandOptions {
   return signal === undefined ? {} : { signal };
@@ -94,6 +64,8 @@ function signalOption(signal: AbortSignal | undefined): CommandOptions {
 interface Watch {
   readonly streamer: ClientID;
   readonly early: string[];
+  /** Whether the overflow of `early` was reported. */
+  overflowed: boolean;
   readonly settled: Deferred<StreamViewImpl>;
   view?: StreamViewImpl;
 }
@@ -107,7 +79,7 @@ interface Watch {
  * SDP and ICE messages as strings, and takes them back, and any WebRTC stack
  * can be plugged in. TeamSpeak does not document the protocol and it was
  * measured on TeamSpeak 6 6.0.0-beta13.1 only; it has not been checked against
- * the native client's own stream.
+ * the native client.
  *
  * `Streams` attaches to a voice client, before or after it connects, and finds
  * the streams of the clients it sees: a client with `client_is_streaming` set
@@ -128,7 +100,9 @@ interface Watch {
 export class Streams {
   readonly #client: StreamsClient;
   readonly #rememberDenied: boolean;
-  readonly #emitter = new Emitter<StreamsEventMap>();
+  // Errors nobody listens for wait for the first listener, as other early
+  // events do; past the bound the oldest is dropped, with no report of its own.
+  readonly #emitter = new Emitter<StreamsEventMap>(["error"]);
   readonly #infos = new Map<string, StreamInfo>();
   /** The clients whose streams were asked for, until the flag clears or they go. */
   readonly #asked = new Set<ClientID>();
@@ -137,7 +111,15 @@ export class Streams {
   readonly #denied = new Set<string>();
   readonly #subscriptions: Unsubscribe[] = [];
   /** The `setupstream` waiting for the announcement; calls queue behind it. */
-  #publishing: Deferred<PublishedImpl> | undefined;
+  #publishing: { readonly name: string; readonly announced: Deferred<PublishedImpl> } | undefined;
+  /**
+   * The names of streams whose `publish` gave up after `setupstream` was sent:
+   * when one is announced after all, it is stopped, so none is orphaned. The
+   * announcement carries the stream's name and nothing that ties it to a
+   * call, so matching is by name, oldest first, and an abandoned stream is
+   * taken before a pending call of the same name.
+   */
+  readonly #abandoned: string[] = [];
   #publishQueue: Promise<unknown> = Promise.resolve();
   #disposed = false;
 
@@ -152,15 +134,19 @@ export class Streams {
       client.on("notification", (event) => this.#onNotification(event)),
       client.on("clientEnter", (event) => {
         if (event.isStreaming === true) this.#discover(event.id);
+        // Coming into view not streaming: whatever was known of it is over.
+        else if (event.isStreaming === false) this.#forget(event.id);
       }),
       client.on("clientUpdated", (event) => {
         if (!("isStreaming" in event.changes)) return;
         // The flag clears with the last stream; a stream that starts later is looked up again.
         if (event.changes.isStreaming === true) this.#discover(event.clientID);
-        else this.#asked.delete(event.clientID);
+        else if (event.changes.isStreaming === false) this.#forget(event.clientID);
       }),
       client.on("clientLeave", (event) => {
         this.#asked.delete(event.clientID);
+        // A request nobody answered goes with the client: its id may be reused.
+        for (const stream of this.#published.values()) stream.dropPending(event.clientID);
       }),
       client.on("disconnected", () => this.#reset("disconnected")),
     );
@@ -197,9 +183,13 @@ export class Streams {
   /**
    * Stop listening to the client and end every session: the streams published
    * here, the views and the viewers, each closed once with the cause
-   * `"disposed"`. A stream published here keeps running on the server, as it
-   * does when the connection drops until the server notices: stop it first
-   * with `stop()` to end it.
+   * `"disposed"`. While the client is connected, each stream published here is
+   * stopped (`stopstream`) and each stream watched here is left
+   * (`joinstreamrequest` with `is_remove=1`), as far as the server takes them;
+   * a failure goes to the `error` event of these Streams, which still has its
+   * listeners. A `publish` still waiting is rejected, and a stream it started
+   * after all is not stopped. When the connection is already gone nothing is
+   * sent, and the server ends the streams itself.
    */
   dispose(): void {
     if (this.#disposed) return;
@@ -256,14 +246,33 @@ export class Streams {
   async #publishOne(request: CommandRequest, options: PublishOptions): Promise<PublishedStream> {
     this.#assertUsable();
     options.signal?.throwIfAborted();
+    const name = String(request.params?.find(([key]) => key === "name")?.[1] ?? "");
     const announced = defer<PublishedImpl>();
-    this.#publishing = announced;
+    const pending = { name, announced };
+    this.#publishing = pending;
+    let sent = false;
     try {
       const timeoutMs = options.timeoutMs ?? DEFAULT_PUBLISH_TIMEOUT_MS;
-      await this.#send(request, undefined, signalOption(options.signal));
+      try {
+        await this.#send(request, undefined, signalOption(options.signal));
+      } catch (error) {
+        // A refusal means nothing started. A timeout or an abort leaves it open.
+        sent = !(error instanceof ServerError) && !(error instanceof NotConnectedError);
+        throw error;
+      }
+      sent = true;
       return await within(announced.promise, request.command, timeoutMs, options.signal);
+    } catch (error) {
+      // Given up on after the command may have gone out: the stream may still
+      // be announced, and it is stopped then rather than left running unseen.
+      const stillOpen = this.#publishing === pending;
+      if (sent && stillOpen && !this.#disposed && !(error instanceof NotConnectedError)) {
+        this.#abandoned.push(name);
+        if (this.#abandoned.length > MAX_ABANDONED) this.#abandoned.shift();
+      }
+      throw error;
     } finally {
-      if (this.#publishing === announced) this.#publishing = undefined;
+      if (this.#publishing === pending) this.#publishing = undefined;
     }
   }
 
@@ -275,7 +284,8 @@ export class Streams {
    * info.
    *
    * Rejects with a `StreamJoinDeniedError` when the publisher refuses, a
-   * `StreamEndedError` when the stream ends first (or is gone: error 5635), a
+   * `StreamEndedError` when the id is not one this client has heard of, or the
+   * stream ends first (or is gone: error 5635), a
    * `StreamsUnsupportedError` on a server without streams, and the server's
    * own error otherwise, among them 5638 (`ErrorCode.StreamAlreadyJoined`)
    * when this client already asked. When the wait runs out or `signal` aborts,
@@ -286,13 +296,18 @@ export class Streams {
     const id = typeof target === "string" ? target : target.id;
     const known = typeof target === "string" ? this.#infos.get(target) : target;
     if (known === undefined) {
-      throw new TeamspeakError(`stream ${id} is not known: pass its StreamInfo, or wait for it`);
+      throw new StreamEndedError(id);
     }
     if (this.#watching.has(id)) throw new TeamspeakError(`already watching stream ${id}`);
     options.signal?.throwIfAborted();
 
     const streamer = known.clientId;
-    const watch: Watch = { streamer, early: [], settled: defer<StreamViewImpl>() };
+    const watch: Watch = {
+      streamer,
+      early: [],
+      overflowed: false,
+      settled: defer<StreamViewImpl>(),
+    };
     this.#watching.set(id, watch);
     try {
       await this.#send(
@@ -361,28 +376,62 @@ export class Streams {
   }
 
   readonly #publishHost: PublishHost = {
-    identity: (clientId): ViewerIdentity => {
+    identity: (clientId) => {
       const entry = this.#client.view.client(clientId);
-      return { clientId, uid: entry?.uid, nickname: entry?.nickname };
+      if (entry !== undefined) {
+        return { clientId, uid: entry.uid, nickname: entry.nickname };
+      }
+      // Not in view, as a client in another channel is not: ask the server who it is.
+      return getClientUIDInfoByID(this.#client, clientId).then(
+        (info): ViewerIdentity => ({ clientId, uid: info.uid, nickname: info.nickname }),
+        (): ViewerIdentity => ({ clientId, uid: undefined, nickname: undefined }),
+      );
     },
+    report: (error) => this.#report(error),
     isDenied: (identity) =>
       this.#rememberDenied && identity.uid !== undefined && this.#denied.has(identity.uid),
     remember: (identity) => {
-      if (this.#rememberDenied && identity.uid !== undefined) this.#denied.add(identity.uid);
+      if (!this.#rememberDenied || identity.uid === undefined) return;
+      // Most recent last; the oldest goes past the bound.
+      this.#denied.delete(identity.uid);
+      this.#denied.add(identity.uid);
+      if (this.#denied.size > MAX_DENIED) this.#denied.delete(this.#denied.values().next().value!);
     },
     send: (request, streamId) => this.#send(request, streamId),
-    stop: async (streamId, reason) => {
-      try {
-        await this.#client.send(stopRequest(streamId, reason));
-      } catch (error) {
-        // Gone already: what was asked for has happened.
-        if (error instanceof ServerError && error.code === ErrorCode.StreamNotFound) return;
-        throw error;
-      }
-    },
+    stop: (streamId, reason) => this.#stop(streamId, reason),
     info: (streamId) => this.#infos.get(streamId),
     stopped: (streamId, reason) => this.#end(streamId, reason, "stopped"),
   };
+
+  /** `stopstream`; a stream the server no longer knows is stopped already. */
+  async #stop(streamId: string, reason: number): Promise<void> {
+    try {
+      await this.#client.send(stopRequest(streamId, reason));
+    } catch (error) {
+      if (error instanceof ServerError && error.code === ErrorCode.StreamNotFound) return;
+      throw error;
+    }
+  }
+
+  #report(error: unknown): void {
+    this.#emitter.emit("error", error instanceof Error ? error : new Error(String(error)));
+  }
+
+  /** Run `task` for its effect on the server: a failure is reported, not thrown, and a gone connection is no failure. */
+  #bestEffort(task: Promise<void>): void {
+    task.catch((error: unknown) => {
+      if (error instanceof NotConnectedError) return;
+      this.#report(error);
+    });
+  }
+
+  /** A client no longer streams, or came into view not streaming: its streams are over. */
+  #forget(clid: ClientID): void {
+    this.#asked.delete(clid);
+    for (const info of this.#infos.values()) {
+      if (info.clientId === clid) this.#end(info.id, 0, "gone");
+    }
+  }
 
   // ---- Discovery ------------------------------------------------------------
 
@@ -406,7 +455,7 @@ export class Streams {
       // Asked again the next time the client is seen to stream.
       this.#asked.delete(clid);
       if (error instanceof NotConnectedError) return;
-      this.#emitter.emit("error", error instanceof Error ? error : new Error(String(error)));
+      this.#report(error);
     });
   }
 
@@ -417,8 +466,10 @@ export class Streams {
     const name: string = event.name;
     switch (name) {
       case "notifystreamstarted":
+        this.#onInfo(params, true);
+        break;
       case "notifystreaminfo":
-        this.#onInfo(params);
+        this.#onInfo(params, false);
         break;
       case "notifyjoinstreamrequest": {
         const id = params["id"] ?? "";
@@ -456,25 +507,38 @@ export class Streams {
     }
   }
 
-  #onInfo(params: Readonly<Record<string, string>>): void {
+  #onInfo(params: Readonly<Record<string, string>>, announcement: boolean): void {
     const known = this.#infos.get(params["id"] ?? "");
     // The empty `notifystreaminfo` for a client that streams nothing has no id.
     const info = streamInfoFrom(params, known);
     if (info === undefined) return;
-    this.#infos.set(info.id, info);
 
-    const announced = this.#publishing;
+    // Only an announcement of this client's own stream can answer a `publish`.
     if (
-      announced !== undefined &&
+      announcement &&
       known === undefined &&
       info.clientId === this.#client.clientID &&
       !this.#published.has(info.id)
     ) {
-      const published = new PublishedImpl(info, this.#publishHost);
-      this.#published.set(info.id, published);
-      this.#publishing = undefined;
-      announced.resolve(published);
+      // A stream whose `publish` gave up: stopped, and not listed.
+      const abandoned = this.#abandoned.indexOf(info.name);
+      if (abandoned >= 0) {
+        this.#abandoned.splice(abandoned, 1);
+        this.#bestEffort(this.#stop(info.id, 0));
+        return;
+      }
+      const pending = this.#publishing;
+      if (pending !== undefined && pending.name === info.name) {
+        this.#infos.set(info.id, info);
+        const published = new PublishedImpl(info, this.#publishHost);
+        this.#published.set(info.id, published);
+        this.#publishing = undefined;
+        pending.announced.resolve(published);
+        this.#emitter.emit("started", info);
+        return;
+      }
     }
+    this.#infos.set(info.id, info);
 
     if (known === undefined) this.#emitter.emit("started", info);
     else if (!sameInfo(known, info)) this.#emitter.emit("updated", info);
@@ -505,6 +569,7 @@ export class Streams {
       closed: (closing: PeerImpl) => {
         if (this.#watching.get(id)?.view === closing) this.#watching.delete(id);
       },
+      report: (error) => this.#report(error),
     });
     watch.view = view;
     // What the publisher sent right behind the offer, ahead of the app's first await.
@@ -521,10 +586,21 @@ export class Streams {
     if (watch?.view !== undefined) {
       watch.view.deliver(json);
     } else if (watch !== undefined) {
-      if (watch.early.length < MAX_EARLY_SIGNALS) watch.early.push(json);
+      watch.early.push(json);
+      if (watch.early.length > MAX_EARLY_SIGNALS) {
+        // The oldest goes, as from a peer's queue, and the first time is reported.
+        watch.early.shift();
+        if (!watch.overflowed) {
+          watch.overflowed = true;
+          this.#report(
+            new TeamspeakError(
+              `stream ${id}: dropping the oldest signalling message: ${MAX_EARLY_SIGNALS} are waiting for the publisher's answer`,
+            ),
+          );
+        }
+      }
     } else {
-      this.#emitter.emit(
-        "error",
+      this.#report(
         new TeamspeakError(`signalling for stream ${id} from client ${clid}, which has no session`),
       );
     }
@@ -545,7 +621,7 @@ export class Streams {
   // ---- Ending ---------------------------------------------------------------
 
   /** A stream is over, for whatever hangs on it, and is forgotten. */
-  #end(id: string, reason: number, cause: "stopped" | "server"): void {
+  #end(id: string, reason: number, cause: "stopped" | "server" | "gone"): void {
     const info = this.#infos.get(id);
     this.#infos.delete(id);
 
@@ -558,7 +634,7 @@ export class Streams {
     if (watch?.view !== undefined) watch.view.end({ cause: "stopped", reason });
     else watch?.settled.reject(new StreamEndedError(id));
 
-    if (info !== undefined) this.#emitter.emit("stopped", { info, reason });
+    if (info !== undefined) this.#emitter.emit("stopped", { info, cause, reason });
   }
 
   /** The connection ended or the Streams were disposed: close everything, once, and forget. */
@@ -567,18 +643,26 @@ export class Streams {
       cause === "disconnected"
         ? new NotConnectedError()
         : new TeamspeakError("these Streams were disposed");
-    this.#publishing?.reject(gone);
+    this.#publishing?.announced.reject(gone);
     this.#publishing = undefined;
+    this.#abandoned.length = 0;
 
     const ended: StreamEnded = { cause, reason: 0 };
     const published = [...this.#published.values()];
-    const watching = [...this.#watching.values()];
+    const watching = [...this.#watching.entries()];
+    // While the connection is up, tell the server: it would otherwise keep the
+    // streams, and the requests, until it noticed the client was gone.
+    if (this.#client.status === "connected") {
+      for (const stream of published) this.#bestEffort(this.#stop(stream.id, 0));
+      for (const [id, watch] of watching) this.#bestEffort(this.#leave(id, watch.streamer));
+    }
     this.#published.clear();
     this.#watching.clear();
     this.#infos.clear();
     this.#asked.clear();
     for (const stream of published) stream.finish(ended);
-    for (const watch of watching) {
+    if (cause === "disposed") this.#denied.clear();
+    for (const [, watch] of watching) {
       if (watch.view !== undefined) watch.view.end({ cause });
       else watch.settled.reject(gone);
     }

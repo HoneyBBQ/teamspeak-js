@@ -42,9 +42,9 @@ export class StreamsUnsupportedError extends TeamspeakError {
 /**
  * The stream's owner refused a request to watch it. `watch` rejects with it.
  *
- * The server remembers nothing of a refusal: asking again is allowed, and a
- * native client does so in a loop, so a publisher that means it should not
- * answer at all.
+ * The server remembers no decision, so a client can ask again, and every ask
+ * is relayed to the publisher. A publisher that means to refuse for good can
+ * set `rememberDenied`, or leave the request unanswered.
  *
  * @beta
  */
@@ -78,9 +78,9 @@ export class StreamJoinDeniedError extends TeamspeakError {
 
 /**
  * A stream command is too long for the server to take. It drops a command
- * line over about 9.2 KB, escaped, without an answer, so the call fails
- * before sending instead of timing out. An SDP offer of a few kilobytes is
- * far under it.
+ * line of about 9.2 KB, escaped, without an answer, so the call fails before
+ * sending instead of timing out; `MAX_COMMAND_LINE_BYTES` has the exact
+ * figure. An SDP offer of a few kilobytes is far under it.
  *
  * @beta
  */
@@ -114,9 +114,10 @@ export class StreamPayloadTooLargeError extends TeamspeakError {
 }
 
 /**
- * The stream is gone: it ended, or its id was never known to the server (error
- * 5635). `watch` rejects with it when the stream ends before its owner
- * answers, and a signalling call when the stream ended under it. The server's
+ * The stream is gone: it ended, or its id is not one this client knows or the
+ * server does (error 5635). `watch` rejects with it for an id it has not heard
+ * of, and when the stream ends before its owner answers; a signalling call
+ * does when the stream ended under it. The server's
  * own refusal, when there was one, is the `cause`.
  *
  * @beta
@@ -139,7 +140,7 @@ export class StreamEndedError extends TeamspeakError {
   readonly streamId: string;
 
   constructor(streamId: string, options?: ErrorOptions) {
-    super(`stream ${streamId} has ended`, options);
+    super(`stream ${streamId} has ended, or is not known`, options);
     this.streamId = streamId;
   }
 }

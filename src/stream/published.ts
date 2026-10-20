@@ -1,6 +1,6 @@
 import { TeamspeakError } from "@honeybbq/teamspeak";
 import type { ClientID, CommandRequest, Unsubscribe } from "@honeybbq/teamspeak";
-import { Emitter } from "./emitter.js";
+import { Emitter, MAX_KEPT } from "./emitter.js";
 import { ViewerPeerImpl } from "./peer.js";
 import type { PeerImpl } from "./peer.js";
 import type {
@@ -17,8 +17,13 @@ import { assertFits, respondRequest, signalRequest } from "./wire.js";
 
 /** What a published stream needs of the `Streams` that made it. */
 export interface PublishHost {
-  /** The viewer's identity, as far as the client knows it. */
-  identity(clientId: ClientID): ViewerIdentity;
+  /**
+   * The viewer's identity: from the clients in view when it is one, else asked
+   * of the server; as far as that goes.
+   */
+  identity(clientId: ClientID): ViewerIdentity | Promise<ViewerIdentity>;
+  /** Report a failure nobody awaits. */
+  report(error: Error): void;
   /** Whether a viewer was denied and is to be left unanswered. */
   isDenied(identity: ViewerIdentity): boolean;
   /** Note that a viewer was denied. */
@@ -62,12 +67,12 @@ class JoinRequestImpl implements JoinRequest {
     }
   }
 
-  async accept(offer: string): Promise<ViewerPeer> {
+  async accept(offer: string, message = ""): Promise<ViewerPeer> {
     if (typeof offer !== "string" || offer === "") {
       throw new RangeError("the offer must be a non-empty SDP string");
     }
     this.#assertPending();
-    const request = respondRequest(this.streamId, this.viewer.clientId, "", offer, true);
+    const request = respondRequest(this.streamId, this.viewer.clientId, message, offer, true);
     // Before the request is used up: a too long offer may be shortened and tried again.
     assertFits(request);
     this.#state = "accepted";
@@ -106,14 +111,31 @@ export class PublishedImpl implements PublishedStream {
   readonly host: PublishHost;
   #initial: StreamInfo;
   #ended = false;
-  #emitter = new Emitter<PublishedStreamEvents>(["request", "ended"]);
+  #emitter: Emitter<PublishedStreamEvents>;
   #peers = new Map<ClientID, ViewerPeerImpl>();
   #pending = new Map<ClientID, JoinRequestImpl>();
+  /** Viewers asked about, until the answer comes back, so that a repeat is no new request. */
+  #resolving = new Set<ClientID>();
+  /** Requests are announced in the order they came, whatever the lookups take. */
+  #announcing: Promise<void> = Promise.resolve();
+  #lookups = 0;
+  /** Viewers whose peer is over: what they still send is not worth a report. */
+  #closedViewers = new Set<ClientID>();
 
   constructor(info: StreamInfo, host: PublishHost) {
     this.id = info.id;
     this.host = host;
     this.#initial = info;
+    let reported = false;
+    this.#emitter = new Emitter<PublishedStreamEvents>(["request", "ended"], (event) => {
+      if (reported) return;
+      reported = true;
+      host.report(
+        new TeamspeakError(
+          `stream ${info.id}: dropping the oldest ${event}: ${MAX_KEPT} are waiting for a listener`,
+        ),
+      );
+    });
   }
 
   get info(): StreamInfo {
@@ -149,36 +171,69 @@ export class PublishedImpl implements PublishedStream {
     const peer = new ViewerPeerImpl(this.id, clientId, {
       sendJson: (json) => this.host.send(signalRequest(this.id, clientId, json), this.id),
       closed: (closing: PeerImpl) => {
-        if (this.#peers.get(clientId) === closing) this.#peers.delete(clientId);
+        if (this.#peers.get(clientId) !== closing) return;
+        this.#peers.delete(clientId);
+        this.#closedViewers.add(clientId);
+        // Bounded: the oldest is forgotten first, and a forgotten one is merely reported again.
+        if (this.#closedViewers.size > 1024) {
+          this.#closedViewers.delete(this.#closedViewers.values().next().value!);
+        }
       },
+      report: (error) => this.host.report(error),
     });
+    this.#closedViewers.delete(clientId);
     this.#peers.set(clientId, peer);
     return peer;
   }
 
   /** A viewer asked to watch. */
   request(clientId: ClientID, message: string): void {
-    // Asking again while pending or let in is no new request.
-    if (this.#ended || this.#peers.has(clientId)) return;
+    // Asking again while pending, being looked up or let in is no new request.
+    if (this.#ended || this.#peers.has(clientId) || this.#resolving.has(clientId)) return;
     if (this.#pending.get(clientId)?.state === "pending") return;
-    const viewer = this.host.identity(clientId);
-    if (this.host.isDenied(viewer)) return;
-    const request = new JoinRequestImpl(this, viewer, message);
-    this.#pending.set(clientId, request);
-    this.#emitter.emit("request", request);
+    this.#resolving.add(clientId);
+    const identity = this.host.identity(clientId);
+    const announce = (viewer: ViewerIdentity): void => {
+      // Withdrawn, or the stream over, while the lookup was out.
+      if (!this.#resolving.delete(clientId) || this.#ended) return;
+      if (this.host.isDenied(viewer)) return;
+      const request = new JoinRequestImpl(this, viewer, message);
+      this.#pending.set(clientId, request);
+      this.#emitter.emit("request", request);
+    };
+    // Nothing to wait for, and nothing ahead of it to wait for: at once.
+    if (!(identity instanceof Promise) && this.#lookups === 0) {
+      announce(identity);
+      return;
+    }
+    this.#lookups++;
+    this.#announcing = this.#announcing
+      .then(() => identity)
+      .then(announce)
+      .finally(() => this.#lookups--);
+  }
+
+  /** The client left view: a request of its that nobody answered is forgotten, as the clid may be reused. */
+  dropPending(clientId: ClientID): void {
+    this.#resolving.delete(clientId);
+    this.#pending.get(clientId)?.close("withdrawn");
+    this.#pending.delete(clientId);
   }
 
   /** A viewer is gone, by saying so or by disconnecting. */
   viewerGone(clientId: ClientID): void {
-    this.#pending.get(clientId)?.close("withdrawn");
-    this.#pending.delete(clientId);
+    this.dropPending(clientId);
     this.#peers.get(clientId)?.end({ cause: "left" });
   }
 
-  /** A signalling JSON from a viewer; false when this stream has no such viewer. */
+  /**
+   * A signalling JSON from a viewer; false when this stream has no such
+   * viewer. A viewer whose peer is over is answered true and ignored: the
+   * server cannot remove a viewer, so it may keep sending.
+   */
   signal(clientId: ClientID, json: string): boolean {
     const peer = this.#peers.get(clientId);
-    if (peer === undefined) return false;
+    if (peer === undefined) return this.#closedViewers.has(clientId);
     peer.deliver(json);
     return true;
   }
