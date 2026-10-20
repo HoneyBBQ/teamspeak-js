@@ -295,7 +295,8 @@ export interface JoinRequest {
 /**
  * Why a published stream ended: `"stopped"` for `stop()`, `"server"` for the
  * server's `notifystreamstopped`, `"gone"` when the server said its publisher
- * no longer streams (`client_is_streaming` cleared) without a stop, and
+ * no longer streams (`client_is_streaming` cleared) and no stop followed within
+ * two seconds, and
  * `"disconnected"` and `"disposed"` as for a peer.
  *
  * @beta

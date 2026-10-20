@@ -53,6 +53,12 @@ const DEFAULT_WATCH_TIMEOUT_MS = 60_000;
 const MAX_EARLY_SIGNALS = MAX_KEPT;
 /** How many denied clients are remembered with `rememberDenied`. */
 const MAX_DENIED = 1024;
+/**
+ * How long a cleared `client_is_streaming` waits before it ends that client's
+ * streams. The server clears the flag right before it sends `notifystreamstopped`,
+ * which carries the reason and is the authority; the flag is only a hint.
+ */
+const GONE_GRACE_MS = 2000;
 /** How many published streams that were given up on are watched for. */
 const MAX_ABANDONED = 16;
 
@@ -106,6 +112,8 @@ export class Streams {
   readonly #infos = new Map<string, StreamInfo>();
   /** The clients whose streams were asked for, until the flag clears or they go. */
   readonly #asked = new Set<ClientID>();
+  /** Streams of a client whose flag cleared, to end as gone unless something better comes first. */
+  readonly #goneTimers = new Map<ClientID, ReturnType<typeof setTimeout>>();
   readonly #published = new Map<string, PublishedImpl>();
   readonly #watching = new Map<string, Watch>();
   readonly #denied = new Set<string>();
@@ -133,15 +141,20 @@ export class Streams {
     this.#subscriptions.push(
       client.on("notification", (event) => this.#onNotification(event)),
       client.on("clientEnter", (event) => {
-        if (event.isStreaming === true) this.#discover(event.id);
+        if (event.isStreaming === true) {
+          this.#cancelGone(event.id);
+          this.#discover(event.id);
+        }
         // Coming into view not streaming: whatever was known of it is over.
         else if (event.isStreaming === false) this.#forget(event.id);
       }),
       client.on("clientUpdated", (event) => {
         if (!("isStreaming" in event.changes)) return;
         // The flag clears with the last stream; a stream that starts later is looked up again.
-        if (event.changes.isStreaming === true) this.#discover(event.clientID);
-        else if (event.changes.isStreaming === false) this.#forget(event.clientID);
+        if (event.changes.isStreaming === true) {
+          this.#cancelGone(event.clientID);
+          this.#discover(event.clientID);
+        } else if (event.changes.isStreaming === false) this.#forget(event.clientID);
       }),
       client.on("clientLeave", (event) => {
         this.#asked.delete(event.clientID);
@@ -428,9 +441,24 @@ export class Streams {
   /** A client no longer streams, or came into view not streaming: its streams are over. */
   #forget(clid: ClientID): void {
     this.#asked.delete(clid);
-    for (const info of this.#infos.values()) {
-      if (info.clientId === clid) this.#end(info.id, 0, "gone");
-    }
+    if (this.#goneTimers.has(clid)) return;
+    if (![...this.#infos.values()].some((info) => info.clientId === clid)) return;
+    // The stop notification may follow at once, with the reason: it wins.
+    const timer = setTimeout(() => {
+      this.#goneTimers.delete(clid);
+      for (const info of this.#infos.values()) {
+        if (info.clientId === clid) this.#end(info.id, 0, "gone");
+      }
+    }, GONE_GRACE_MS);
+    timer.unref?.();
+    this.#goneTimers.set(clid, timer);
+  }
+
+  #cancelGone(clid: ClientID): void {
+    const timer = this.#goneTimers.get(clid);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    this.#goneTimers.delete(clid);
   }
 
   // ---- Discovery ------------------------------------------------------------
@@ -624,6 +652,12 @@ export class Streams {
   #end(id: string, reason: number, cause: "stopped" | "server" | "gone"): void {
     const info = this.#infos.get(id);
     this.#infos.delete(id);
+    if (
+      info !== undefined &&
+      ![...this.#infos.values()].some((i) => i.clientId === info.clientId)
+    ) {
+      this.#cancelGone(info.clientId);
+    }
 
     const published = this.#published.get(id);
     this.#published.delete(id);
@@ -656,6 +690,8 @@ export class Streams {
       for (const stream of published) this.#bestEffort(this.#stop(stream.id, 0));
       for (const [id, watch] of watching) this.#bestEffort(this.#leave(id, watch.streamer));
     }
+    for (const timer of this.#goneTimers.values()) clearTimeout(timer);
+    this.#goneTimers.clear();
     this.#published.clear();
     this.#watching.clear();
     this.#infos.clear();

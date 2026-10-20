@@ -638,7 +638,9 @@ Things to know:
   watched, while the client is connected. A stream whose `publish` gave up after the command
   went out is stopped when its announcement arrives, so none is left running unseen.
 - A client whose `client_is_streaming` clears, or that comes into view not streaming, has
-  its streams dropped: `stopped` with the cause `"gone"`.
+  its streams dropped, after a grace of two seconds: `stopped` with the cause `"gone"`. The
+  server clears the flag right before it reports the stop, so a stop that arrives in that time
+  ends the stream with its own cause and reason instead, and a flag set again cancels the drop.
 - The bitrate the server reports for a stream is not the one requested.
 - A client announces that it streams only with `client_is_streaming`, and a stream that was
   running before you came is not announced at all. `Streams` asks for the streams of each

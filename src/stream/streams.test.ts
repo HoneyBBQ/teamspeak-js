@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CommandTimeoutError,
   ErrorCode,
@@ -1408,52 +1408,133 @@ describe("review fixes", () => {
   });
 
   describe("a publisher that stops streaming", () => {
-    it("drops its streams, with the cause gone, when the flag clears", () => {
+    const clear = (client: FakeClient, id = OTHER): void =>
+      client.emit("clientUpdated", { clientID: asClientID(id), changes: { isStreaming: false } });
+    /** Fake timers for the rest of a test whose setup needed real ones. */
+    const fake = (): void => {
+      vi.useFakeTimers();
+    };
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("drops its streams, with the cause gone, once the flag has stayed clear for the grace", () => {
+      fake();
       const { client, streams } = setup();
       const stopped: Array<[string, string]> = [];
       streams.on("stopped", (e) => stopped.push([e.info.id, e.cause]));
       client.notify("notifystreamstarted", started({ id: "a" }));
       client.notify("notifystreamstarted", started({ id: "b" }));
-      client.emit("clientUpdated", {
-        clientID: asClientID(OTHER),
-        changes: { isStreaming: false },
-      });
+      clear(client);
+      // A hint only: nothing ends at once.
+      expect(streams.list()).toHaveLength(2);
+      vi.advanceTimersByTime(1999);
+      expect(streams.list()).toHaveLength(2);
+      vi.advanceTimersByTime(1);
       expect(streams.list()).toEqual([]);
       expect(stopped).toEqual([
         ["a", "gone"],
         ["b", "gone"],
       ]);
+      expect(vi.getTimerCount()).toBe(0);
     });
 
-    it("drops its streams when it comes into view not streaming", () => {
+    it("lets the stop notification that follows the clear win, with its reason", () => {
+      fake();
+      const { client, streams } = setup();
+      const stopped: Array<[string, string, number]> = [];
+      streams.on("stopped", (e) => stopped.push([e.info.id, e.cause, e.reason]));
+      client.notify("notifystreamstarted", started({ id: "a" }));
+      clear(client);
+      client.notify("notifystreamstopped", { id: "a", reason: "3" });
+      expect(stopped).toEqual([["a", "server", 3]]);
+      // Nothing is left to end, and no timer is left running.
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(5000);
+      expect(stopped).toHaveLength(1);
+    });
+
+    it("cancels the end when the flag is set again within the grace", () => {
+      fake();
+      const { client, streams } = setup();
+      client.notify("notifystreamstarted", started({ id: "a" }));
+      clear(client);
+      vi.advanceTimersByTime(1000);
+      client.emit("clientUpdated", {
+        clientID: asClientID(OTHER),
+        changes: { isStreaming: true },
+      });
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(5000);
+      expect(streams.list().map((x) => x.id)).toEqual(["a"]);
+    });
+
+    it("does not run the end after dispose, and leaves no timer", () => {
+      fake();
+      const { client, streams } = setup();
+      const stopped: string[] = [];
+      streams.on("stopped", (e) => stopped.push(e.info.id));
+      client.notify("notifystreamstarted", started({ id: "a" }));
+      clear(client);
+      expect(vi.getTimerCount()).toBe(1);
+      streams.dispose();
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(5000);
+      expect(stopped).toEqual([]);
+    });
+
+    it("leaves no timer when the connection ends", () => {
+      fake();
+      const { client, streams } = setup();
+      client.notify("notifystreamstarted", started({ id: "a" }));
+      clear(client);
+      client.emit("disconnected", undefined);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(streams.list()).toEqual([]);
+    });
+
+    it("drops its streams after the grace when it comes into view not streaming", () => {
+      fake();
       const { client, streams } = setup();
       client.notify("notifystreamstarted", started());
       client.emit("clientEnter", { id: asClientID(OTHER), isStreaming: false });
+      expect(streams.list()).toHaveLength(1);
+      vi.advanceTimersByTime(2000);
       expect(streams.list()).toEqual([]);
     });
 
     it("keeps a stream when the flag says nothing, and the streams of others", () => {
+      fake();
       const { client, streams } = setup();
       client.notify("notifystreamstarted", started());
       client.notify("notifystreamstarted", started({ id: "z", clid: "30" }));
       client.emit("clientUpdated", { clientID: asClientID(OTHER), changes: { isAway: true } });
-      client.emit("clientUpdated", {
-        clientID: asClientID(OTHER),
-        changes: { isStreaming: false },
-      });
+      clear(client);
+      vi.advanceTimersByTime(5000);
       expect(streams.list().map((s) => s.id)).toEqual(["z"]);
     });
 
-    it("ends the viewer's side of a stream that is gone", async () => {
+    it("ends the viewer's side of a stream that is gone, after the grace", async () => {
       const { client, streams } = setup();
       const view = await watchOne(client, streams);
+      fake();
       const closed: PeerClosed[] = [];
       view.on("closed", (c) => closed.push(c));
-      client.emit("clientUpdated", {
-        clientID: asClientID(OTHER),
-        changes: { isStreaming: false },
-      });
+      clear(client);
+      expect(closed).toEqual([]);
+      vi.advanceTimersByTime(2000);
       expect(closed).toEqual([{ cause: "stopped", reason: 0 }]);
+    });
+
+    it("keeps the real reason for a viewer when the stop follows the clear", async () => {
+      const { client, streams } = setup();
+      const view = await watchOne(client, streams);
+      fake();
+      const closed: PeerClosed[] = [];
+      view.on("closed", (c) => closed.push(c));
+      clear(client);
+      client.notify("notifystreamstopped", { id: view.streamId, reason: "3" });
+      expect(closed).toEqual([{ cause: "stopped", reason: 3 }]);
     });
   });
 
@@ -1591,9 +1672,15 @@ describe("review fixes", () => {
   it("says why a published stream ended, so a reason of 0 is not ambiguous", async () => {
     const { client, streams } = setup();
     const pub = await publishOne(client, streams);
-    const ended: StreamEnded[] = [];
-    pub.on("ended", (e) => ended.push(e));
-    client.emit("clientUpdated", { clientID: client.clientID, changes: { isStreaming: false } });
-    expect(ended).toEqual([{ cause: "gone", reason: 0 }]);
+    vi.useFakeTimers();
+    try {
+      const ended: StreamEnded[] = [];
+      pub.on("ended", (e) => ended.push(e));
+      client.emit("clientUpdated", { clientID: client.clientID, changes: { isStreaming: false } });
+      vi.advanceTimersByTime(2000);
+      expect(ended).toEqual([{ cause: "gone", reason: 0 }]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
