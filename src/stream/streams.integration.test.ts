@@ -39,6 +39,7 @@ import type {
   StreamInfo,
   StreamStoppedEvent,
   StreamView,
+  StreamViewerEvent,
   ViewerPeer,
 } from "./types.js";
 import { MAX_COMMAND_LINE_BYTES, signalRequest } from "./wire.js";
@@ -583,6 +584,102 @@ describe.skipIf(SKIP)("Streams — live", { timeout: 30_000 }, () => {
     expect(pub.ended).toBe(false);
     const who = await whoAmI(b);
     expect(who.clientID).toBe(b.clientID);
+  });
+
+  it("tells the publisher a viewer left when the viewer disposes, and a viewer the stream stopped when the publisher does", async (ctx) => {
+    ts6(ctx);
+    const { publisher, viewer, pub, peer } = await connectedPair();
+    const peerClosed = first<PeerClosed>("closed", (l) => peer.on("closed", l));
+    const left = first<StreamViewerEvent>("viewerLeft", (l) => publisher.on("viewerLeft", l));
+    viewer.dispose();
+    // What the viewer's dispose sent, seen from the publisher: a leave, not silence.
+    expect(await peerClosed).toEqual({ cause: "left" });
+    expect((await left).clientId).toBe(b.clientID);
+    expect(pub.viewers()).toEqual([]);
+    expect(pub.ended).toBe(false);
+
+    // A new viewer, whose publisher then disposes: the stop reaches it.
+    const second = attach(b);
+    const info =
+      second.get(pub.id) ?? (await first<StreamInfo>("started", (l) => second.on("started", l)));
+    const requested = first<JoinRequest>("request", (l) => pub.on("request", l));
+    const watching = second.watch(info);
+    await (await requested).accept(sdpLike(500));
+    const view = await watching;
+    const viewClosed = first<PeerClosed>("closed", (l) => view.on("closed", l));
+    const stopped = first<StreamStoppedEvent>("stopped", (l) => second.on("stopped", l));
+    publisher.dispose();
+    expect((await viewClosed).cause).toBe("stopped");
+    expect((await stopped).info.id).toBe(pub.id);
+    expect(second.list()).toEqual([]);
+  });
+
+  it("rejects watch of an id nobody announced, without asking the server", async (ctx) => {
+    ts6(ctx);
+    const viewer = attach(b);
+    const t0 = Date.now();
+    const error = await viewer
+      .watch("00000000-0000-4000-8000-000000000000")
+      .catch((e: unknown) => e);
+    expect((error as Error).name).toBe("StreamEndedError");
+    expect(Date.now() - t0).toBeLessThan(500);
+  });
+
+  it("knows who asked from a channel it does not follow, and leaves their remembered denial unanswered", async (ctx) => {
+    ts6(ctx);
+    if (other === 0n) ctx.skip();
+    const publisher = attach(a, { rememberDenied: true });
+    const viewer = attach(b);
+    const learned = first<StreamInfo>("started", (l) => viewer.on("started", l));
+    const pub = await publisher.publish({ name: "across" });
+    const info = await learned;
+    // The publisher does not follow that channel, so the viewer is out of its view and can still ask.
+    await a.send({ command: "channelunsubscribe", params: [["cid", other]] });
+    try {
+      await moveClient(b, b.clientID, other, { password: OTHER_CHANNEL_PASSWORD });
+      await sleep(800);
+      expect(a.view.client(b.clientID)).toBeUndefined();
+
+      const requested = first<JoinRequest>("request", (l) => pub.on("request", l));
+      const denied = viewer.watch(info).catch((e: unknown) => e);
+      const request = await requested;
+      expect(request.viewer.clientId).toBe(b.clientID);
+      expect(request.viewer.uid).toBe(b.uid);
+      expect(request.viewer.nickname).toBe("ts-js-stream-b");
+      await request.deny("no");
+      expect(await denied).toBeInstanceOf(StreamJoinDeniedError);
+
+      const requests: JoinRequest[] = [];
+      pub.on("request", (r) => requests.push(r));
+      await expect(viewer.watch(info, { timeoutMs: 2500 })).rejects.toBeInstanceOf(
+        CommandTimeoutError,
+      );
+      expect(requests).toEqual([]);
+    } finally {
+      await a.send({ command: "channelsubscribe", params: [["cid", other]] }).catch(() => {});
+    }
+  });
+
+  it("stops a stream whose publish was given up on after it was sent", async (ctx) => {
+    ts6(ctx);
+    const publisher = attach(a);
+    const viewer = attach(b);
+    const started = first<StreamInfo>("started", (l) => viewer.on("started", l));
+    // Aborted while the command is on its way: the stream may still be announced.
+    const abort = new AbortController();
+    const publishing = publisher
+      .publish({ name: "abandoned", signal: abort.signal })
+      .catch((e: unknown) => e);
+    setImmediate(() => abort.abort());
+    expect(await publishing).toBeInstanceOf(Error);
+    const info = await started;
+    await first<StreamStoppedEvent>(
+      "stopped",
+      (l) => viewer.on("stopped", l),
+      (e) => e.info.id === info.id,
+    );
+    expect(viewer.list()).toEqual([]);
+    expect(publisher.list()).toEqual([]);
   });
 
   describe("on a server without streams", () => {
