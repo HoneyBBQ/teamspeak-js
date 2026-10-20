@@ -27,7 +27,7 @@ export interface IceCandidate {
 
 // @beta
 export interface JoinRequest {
-    accept(offer: string): Promise<ViewerPeer>;
+    accept(offer: string, message?: string): Promise<ViewerPeer>;
     deny(reason?: string): Promise<void>;
     readonly message: string;
     readonly state: JoinRequestState;
@@ -106,7 +106,7 @@ export interface RawSignal {
 export type StreamAccessibility = "none" | "public" | "contacts" | "private";
 
 // @beta
-export type StreamEndCause = "stopped" | "server" | "disconnected" | "disposed";
+export type StreamEndCause = "stopped" | "server" | "gone" | "disconnected" | "disposed";
 
 // @beta
 export interface StreamEnded {
@@ -205,6 +205,7 @@ export type StreamSource = "none" | "camera" | "screen" | "window" | "session";
 
 // @beta
 export interface StreamStoppedEvent {
+    readonly cause: "server" | "stopped" | "gone";
     readonly info: StreamInfo;
     readonly reason: number;
 }

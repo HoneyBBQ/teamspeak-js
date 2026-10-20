@@ -559,7 +559,7 @@ takes them back, so any WebRTC stack plugs in, in a browser, in Electron or in N
 package has no WebRTC dependency.
 
 TeamSpeak does not document this protocol. It was measured on TeamSpeak 6 6.0.0-beta13.1,
-and has not been tried against the native client's own streams yet, so every export is
+and has not been tried against the native TeamSpeak 6 client yet, so every export is
 `@beta` and may change in a minor release. A TeamSpeak 3 server does not answer the stream
 commands at all, so `publish` and `watch` throw a `StreamsUnsupportedError` before sending
 anything.
@@ -629,8 +629,16 @@ Things to know:
   ICE candidate is a few kilobytes at most.
 - The server lets anyone stop any stream. `Streams` sends `stopstream` only for streams it
   published, and treats a `notifystreamstopped` for any stream as final.
-- The server forgets a refused request, and a native client asks again at once. To refuse
-  for good, pass `rememberDenied: true`, or leave the request unanswered.
+- The server remembers no decision, so a client can ask again, and every ask is relayed.
+  To refuse for good, pass `rememberDenied: true` (the 1024 most recent uids, in memory
+  only; a requester out of view is looked up with `clientgetuidfromclid`), or leave the
+  request unanswered. The server has no way to remove a viewer: closing a viewer's peer
+  ends your side of it, and stopping the stream ends it for everyone.
+- `dispose()` stops the streams published through that `Streams` and leaves the ones it
+  watched, while the client is connected. A stream whose `publish` gave up after the command
+  went out is stopped when its announcement arrives, so none is left running unseen.
+- A client whose `client_is_streaming` clears, or that comes into view not streaming, has
+  its streams dropped: `stopped` with the cause `"gone"`.
 - The bitrate the server reports for a stream is not the one requested.
 - A client announces that it streams only with `client_is_streaming`, and a stream that was
   running before you came is not announced at all. `Streams` asks for the streams of each
