@@ -116,6 +116,10 @@ export class PacketHandler {
 
   #recvWindowCommand = new GenerationWindow(1 << 16, RECEIVE_PACKET_WINDOW_SIZE);
   #recvWindowCommandLow = new GenerationWindow(1 << 16, RECEIVE_PACKET_WINDOW_SIZE);
+  #recvWindowVoice = new GenerationWindow(1 << 16, RECEIVE_PACKET_WINDOW_SIZE);
+  #recvWindowVoiceWhisper = new GenerationWindow(1 << 16, RECEIVE_PACKET_WINDOW_SIZE);
+  #recvWindowPing = new GenerationWindow(1 << 16, RECEIVE_PACKET_WINDOW_SIZE);
+  #recvWindowPong = new GenerationWindow(1 << 16, RECEIVE_PACKET_WINDOW_SIZE);
   #sendWindowCommand = new GenerationWindow(1 << 16, RECEIVE_PACKET_WINDOW_SIZE);
   #sendWindowCommandLow = new GenerationWindow(1 << 16, RECEIVE_PACKET_WINDOW_SIZE);
 
@@ -588,12 +592,12 @@ export class PacketHandler {
 
     const decrypted = this.#decryptPacketData(p, header, ciphertext, tag);
     if (decrypted === null) return;
+    const pType = packetType(p);
+    this.#advanceReceiveGeneration(pType, p.id);
     p.data = decrypted.plaintext;
     // Only a packet that decrypted shows the server is there: anyone can send
     // datagrams that do not, and they must not keep a dead session alive.
     this.#lastMessageReceived = performance.now();
-
-    const pType = packetType(p);
 
     if (pType === PacketType.Pong && p.data.length >= 2) {
       const acked = new DataView(p.data.buffer, p.data.byteOffset).getUint16(0, false);
@@ -626,13 +630,29 @@ export class PacketHandler {
       case PacketType.AckLow:
         return this.#sendWindowCommandLow.getGeneration(id);
       case PacketType.Voice:
+        return this.#recvWindowVoice.getGeneration(id);
       case PacketType.VoiceWhisper:
+        return this.#recvWindowVoiceWhisper.getGeneration(id);
       case PacketType.Ping:
+        return this.#recvWindowPing.getGeneration(id);
       case PacketType.Pong:
+        return this.#recvWindowPong.getGeneration(id);
       case PacketType.Init1:
       default:
         return 0;
     }
+  }
+
+  /**
+   * Follow the packet id of an authenticated non-command packet. Voice has no
+   * retransmission or acknowledgement window, but its 16-bit id still wraps
+   * and changes the generation used by the encryption key.
+   */
+  #advanceReceiveGeneration(pType: PacketType, id: number): void {
+    if (pType === PacketType.Voice) this.#recvWindowVoice.advanceAfter(id);
+    if (pType === PacketType.VoiceWhisper) this.#recvWindowVoiceWhisper.advanceAfter(id);
+    if (pType === PacketType.Ping) this.#recvWindowPing.advanceAfter(id);
+    if (pType === PacketType.Pong) this.#recvWindowPong.advanceAfter(id);
   }
 
   #decryptPacketData(
