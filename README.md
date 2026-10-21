@@ -2,7 +2,7 @@
 
 # @honeybbq/teamspeak
 
-**A clean-room TeamSpeak client protocol library written in pure TypeScript.**
+**An independent TeamSpeak client protocol library written in pure TypeScript.**
 
 Works with TeamSpeak 3 and TeamSpeak 6 servers. No proprietary SDK, no copied code.
 
@@ -993,9 +993,11 @@ Protocol knowledge was primarily informed by the [TSLib](https://github.com/Spla
 
 ## Disclaimer
 
-TeamSpeak is a registered trademark of [TeamSpeak Systems GmbH](https://teamspeak.com/). This project is not affiliated with, endorsed by, or associated with TeamSpeak Systems GmbH in any way.
+TeamSpeak is a registered trademark of [TeamSpeak Systems, Inc.](https://teamspeak.com/). This project is not affiliated with, endorsed by, or associated with TeamSpeak Systems, Inc. in any way.
 
-This library is a **clean-room implementation** developed from publicly available documentation, protocol analysis of network traffic, and independent research. No proprietary TeamSpeak SDK code, headers, or libraries were used in its creation.
+This library is an **independent implementation** built from public documentation, observation of network traffic, and independent research. It contains no TeamSpeak proprietary code, headers, libraries, or binaries.
+
+The project implements the client side only and does not implement a TeamSpeak server.
 
 ## Contributing
 

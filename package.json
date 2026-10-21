@@ -1,7 +1,7 @@
 {
   "name": "@honeybbq/teamspeak",
   "version": "1.0.0-beta.14",
-  "description": "TeamSpeak SDK for TypeScript: a clean-room voice client for Node.js, and the typed commands, ids and errors every connection shares",
+  "description": "TeamSpeak SDK for TypeScript: an independent voice client for Node.js, and the typed commands, ids and errors every connection shares",
   "keywords": [
     "client",
     "sdk",
