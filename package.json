@@ -24,11 +24,13 @@
     "dist/core",
     "dist/client",
     "dist/query",
+    "dist/stream",
     "dist/versions",
     "src",
     "!src/**/*.test.ts",
     "!src/**/*.typetest.ts",
     "!src/client/testing",
+    "!src/stream/testing",
     "!src/query/**/*.test.ts"
   ],
   "type": "module",
@@ -37,6 +39,7 @@
     ".": "./src/core/index.ts",
     "./client": "./src/client/index.ts",
     "./query": "./src/query/index.ts",
+    "./stream": "./src/stream/index.ts",
     "./versions": "./src/versions/index.ts",
     "./package.json": "./package.json"
   },
@@ -54,6 +57,10 @@
       "./query": {
         "types": "./dist/query/index.d.ts",
         "default": "./dist/query/index.js"
+      },
+      "./stream": {
+        "types": "./dist/stream/index.d.ts",
+        "default": "./dist/stream/index.js"
       },
       "./versions": {
         "types": "./dist/versions/index.d.ts",
@@ -85,7 +92,7 @@
     "check:changesets": "node scripts/check-changesets.mts",
     "check:docs": "node scripts/check-docs.mts",
     "check:theme": "pnpm docs:build && node scripts/check-theme.mts",
-    "api:report": "pnpm build && api-extractor run --local -c api-extractor.core.json && api-extractor run --local -c api-extractor.client.jsonc && api-extractor run --local -c api-extractor.query.jsonc",
+    "api:report": "pnpm build && api-extractor run --local -c api-extractor.core.json && api-extractor run --local -c api-extractor.client.jsonc && api-extractor run --local -c api-extractor.query.jsonc && api-extractor run --local -c api-extractor.stream.jsonc",
     "api:check": "pnpm build && node scripts/api-check.mts",
     "docs:build": "typedoc",
     "example": "tsx examples/connect.ts"
@@ -113,7 +120,8 @@
     "typescript": "^7.0.2",
     "typescript-api": "npm:typescript@^5.9.3",
     "vite": "^8.3.4",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.0",
+    "werift": "^0.25.1"
   },
   "peerDependencies": {
     "ssh2": "^1.17.0"

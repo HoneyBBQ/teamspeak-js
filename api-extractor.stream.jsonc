@@ -1,0 +1,22 @@
+{
+  "extends": "./api-extractor.base.jsonc",
+  "mainEntryPointFilePath": "<projectFolder>/dist/stream/index.d.ts",
+  "apiReport": { "reportFileName": "stream.api.md" },
+  "compiler": {
+    "overrideTsconfig": {
+      "extends": "./tsconfig.base.json",
+      "compilerOptions": {
+        // api-extractor treats a module as external only when TypeScript resolved
+        // it through a path containing node_modules, and a mapping into ./dist
+        // makes every core type a forgotten export. The package lists itself as
+        // a devDependency (`link:.`), so pnpm links it into its own node_modules,
+        // which is the path a consumer's install would resolve. It needs
+        // `pnpm install`, which the build needs anyway.
+        "paths": {
+          "@honeybbq/teamspeak": ["./node_modules/@honeybbq/teamspeak/dist/core/index.d.ts"],
+        },
+      },
+      "files": ["./dist/stream/index.d.ts"],
+    },
+  },
+}

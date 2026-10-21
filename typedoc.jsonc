@@ -1,13 +1,19 @@
 {
   "$schema": "https://typedoc.org/schema.json",
   // One module per entry point users import: `@honeybbq/teamspeak` (the core),
-  // `@honeybbq/teamspeak/client` and `@honeybbq/teamspeak/query`, each named
+  // `@honeybbq/teamspeak/client`, `@honeybbq/teamspeak/query` and
+  // `@honeybbq/teamspeak/stream`, each named
   // by an `@module` tag in its entry file. The client's and query's
   // declarations refer to the core through the package's own name, which
   // resolves to the sources, so {@link}s between the entries work and no
   // build is needed before running typedoc.
   "name": "teamspeak-js",
-  "entryPoints": ["src/core/index.ts", "src/client/index.ts", "src/query/index.ts"],
+  "entryPoints": [
+    "src/core/index.ts",
+    "src/client/index.ts",
+    "src/query/index.ts",
+    "src/stream/index.ts",
+  ],
   "tsconfig": "tsconfig.typedoc.json",
   "readme": "README.md",
   "projectDocuments": ["docs/migrating-to-1.0.md", "docs/voice-protocol-responses.md"],

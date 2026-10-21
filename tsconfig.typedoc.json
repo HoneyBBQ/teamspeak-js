@@ -7,5 +7,10 @@
     "sourceMap": false,
     "isolatedDeclarations": false
   },
-  "include": ["src/core/index.ts", "src/client/index.ts", "src/query/index.ts"]
+  "include": [
+    "src/core/index.ts",
+    "src/client/index.ts",
+    "src/query/index.ts",
+    "src/stream/index.ts"
+  ]
 }

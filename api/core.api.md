@@ -954,6 +954,7 @@ const commandNameValues: {
     readonly HostInfo: "hostinfo";
     readonly InstanceEdit: "instanceedit";
     readonly InstanceInfo: "instanceinfo";
+    readonly JoinStreamRequest: "joinstreamrequest";
     readonly LicenseSignMessage: "licensesignmessage";
     readonly LogAdd: "logadd";
     readonly Login: "login";
@@ -978,6 +979,8 @@ const commandNameValues: {
     readonly QueryLoginDel: "querylogindel";
     readonly QueryLoginList: "queryloginlist";
     readonly Quit: "quit";
+    readonly RequestStreamInfo: "requeststreaminfo";
+    readonly RespondJoinStreamRequest: "respondjoinstreamrequest";
     readonly SendTextMessage: "sendtextmessage";
     readonly ServerCreate: "servercreate";
     readonly ServerDelete: "serverdelete";
@@ -1012,7 +1015,10 @@ const commandNameValues: {
     readonly ServerTempPasswordDel: "servertemppassworddel";
     readonly ServerTempPasswordList: "servertemppasswordlist";
     readonly SetClientChannelGroup: "setclientchannelgroup";
+    readonly SetupStream: "setupstream";
     readonly SetConnectionInfo: "setconnectioninfo";
+    readonly StopStream: "stopstream";
+    readonly StreamSignaling: "streamsignaling";
     readonly TokenAdd: "tokenadd";
     readonly TokenDelete: "tokendelete";
     readonly TokenList: "tokenlist";
@@ -1426,6 +1432,10 @@ const errorCodeValues: {
     readonly APIKeyOutOfScope: 5120;
     readonly APIKeyInvalid: 5122;
     readonly APIKeyMissing: 5124;
+    readonly StreamNotFound: 5635;
+    readonly StreamNotParticipating: 5636;
+    readonly StreamAlreadyJoined: 5638;
+    readonly StreamJoinRequestRedacted: 5639;
 };
 
 // @public
@@ -1918,6 +1928,7 @@ const notificationNameValues: {
     readonly FileList: "notifyfilelist";
     readonly FileListFinished: "notifyfilelistfinished";
     readonly FileTransferList: "notifyfiletransferlist";
+    readonly JoinStreamRequest: "notifyjoinstreamrequest";
     readonly Message: "notifymessage";
     readonly MessageList: "notifymessagelist";
     readonly PermFind: "notifypermfind";
@@ -1926,6 +1937,7 @@ const notificationNameValues: {
     readonly PermGet: "notifypermget";
     readonly PluginCmd: "notifyplugincmd";
     readonly ServerConnectionInfo: "notifyserverconnectioninfo";
+    readonly RespondJoinStreamRequest: "notifyrespondjoinstreamrequest";
     readonly ServerEdited: "notifyserveredited";
     readonly ServerGroupClientAdded: "notifyservergroupclientadded";
     readonly ServerGroupClientDeleted: "notifyservergroupclientdeleted";
@@ -1939,6 +1951,12 @@ const notificationNameValues: {
     readonly StartDownload: "notifystartdownload";
     readonly StartUpload: "notifystartupload";
     readonly StatusFileTransfer: "notifystatusfiletransfer";
+    readonly StreamClientJoined: "notifystreamclientjoined";
+    readonly StreamClientLeft: "notifystreamclientleft";
+    readonly StreamInfo: "notifystreaminfo";
+    readonly StreamSignaling: "notifystreamsignaling";
+    readonly StreamStarted: "notifystreamstarted";
+    readonly StreamStopped: "notifystreamstopped";
     readonly TextMessage: "notifytextmessage";
     readonly TokenAdd: "notifytokenadd";
     readonly TokenList: "notifytokenlist";

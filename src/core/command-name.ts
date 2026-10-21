@@ -204,6 +204,8 @@ const commandNameValues = {
   InstanceEdit: "instanceedit",
   /** `instanceinfo`: Displays the server instance configuration including database revision number, the file transfer port, default group IDs, etc. */
   InstanceInfo: "instanceinfo",
+  /** `joinstreamrequest`: Asks the owner of a stream to let this client watch it, or, with `is_remove=1`, says it stops watching. Voice protocol only, TeamSpeak 6 only; undocumented by TeamSpeak. */
+  JoinStreamRequest: "joinstreamrequest",
   /** `licensesignmessage`: Signs the message with the private key of your license. TeamSpeak 6 only. */
   LicenseSignMessage: "licensesignmessage",
   /** `logadd`: Writes a custom entry into the server's log. */
@@ -252,6 +254,10 @@ const commandNameValues = {
   QueryLoginList: "queryloginlist",
   /** `quit`: Closes the ServerQuery connection to the server instance. */
   Quit: "quit",
+  /** `requeststreaminfo`: Asks for the streams a client has running, each answered with a `notifystreaminfo`. Voice protocol only, TeamSpeak 6 only; undocumented by TeamSpeak. */
+  RequestStreamInfo: "requeststreaminfo",
+  /** `respondjoinstreamrequest`: The stream owner's answer to a join request: accepts with the SDP offer, or denies. Voice protocol only, TeamSpeak 6 only; undocumented by TeamSpeak. */
+  RespondJoinStreamRequest: "respondjoinstreamrequest",
   /** `sendtextmessage`: Sends a text message to a specified target. */
   SendTextMessage: "sendtextmessage",
   /** `servercreate`: Creates a new virtual server using the given properties and displays its ID, port and initial administrator privilege key. */
@@ -320,8 +326,14 @@ const commandNameValues = {
   ServerTempPasswordList: "servertemppasswordlist",
   /** `setclientchannelgroup`: Sets the channel group of a client to the ID specified with cgid. */
   SetClientChannelGroup: "setclientchannelgroup",
+  /** `setupstream`: Starts a stream and announces it to the channel with a `notifystreamstarted`. Voice protocol only, TeamSpeak 6 only; undocumented by TeamSpeak. */
+  SetupStream: "setupstream",
   /** `setconnectioninfo`: A client reporting its own connection statistics, in answer to notifyconnectioninforequest. Voice protocol only. */
   SetConnectionInfo: "setconnectioninfo",
+  /** `stopstream`: Stops a stream. The server does not check who asks. Voice protocol only, TeamSpeak 6 only; undocumented by TeamSpeak. */
+  StopStream: "stopstream",
+  /** `streamsignaling`: Relays a signalling message, a JSON string, between the owner of a stream and a viewer it accepted. Voice protocol only, TeamSpeak 6 only; undocumented by TeamSpeak. */
+  StreamSignaling: "streamsignaling",
   /** `tokenadd`: Alias for privilegekeyadd. */
   TokenAdd: "tokenadd",
   /** `tokendelete`: Alias for privilegekeydelete. */
