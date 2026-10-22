@@ -118,8 +118,6 @@ interface Watch {
  * const view = await streams.watch(info);
  * // hand view.offer to an RTCPeerConnection, send its answer with view.answer()
  * ```
- *
- * @beta
  */
 export class Streams {
   readonly #client: StreamsClient;

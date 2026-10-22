@@ -32,7 +32,7 @@ Upgrading from 0.x? The package was renamed; see the [migration guide](https://g
 - **Identity management** — Generate, import/export, and upgrade security level of identities
 - **Full command set** — 111 typed functions covering every command the voice protocol answers
 - **Reconnection** — Opt-in retry with backoff, tuned for TeamSpeak's antiflood ban
-- **Streams** — TeamSpeak 6 screen share signalling: find, publish and watch streams, with SDP and ICE as strings for any WebRTC stack (experimental)
+- **Streams** — TeamSpeak 6 screen share signalling: find, publish and watch streams, with SDP and ICE as strings for any WebRTC stack
 - **Server capabilities** — Reports the server version and the uid hash it uses (SHA-1 on TS3, SHA-256 on TS6), and the server's name, icon, banner and welcome message
 - **Custom transports** — Supply your own socket, for proxies, tunnels or tests
 - **ESM with types** — Ships ES modules with full TypeScript declarations
@@ -549,7 +549,7 @@ The uid hash matters because TS3 hashes a client's public key with SHA-1 and TS6
 with SHA-256 — a client that assumes either one computes an identifier the other
 server never sends.
 
-### Streams (experimental)
+### Streams
 
 TeamSpeak 6 clients can share a screen, a window or a camera. `@honeybbq/teamspeak/stream`
 does the signalling of that: it finds the streams of the clients in view, publishes one,
@@ -558,9 +558,9 @@ WebRTC, which is yours: `Streams` hands you the SDP and the ICE candidates as st
 takes them back, so any WebRTC stack plugs in, in a browser, in Electron or in Node. The
 package has no WebRTC dependency.
 
-TeamSpeak does not document this protocol. It was measured on TeamSpeak 6 6.0.0-beta13.1
-and tried against the TeamSpeak 6 client 6.0.0-beta5 (macOS), so every export is `@beta`
-and may change in a minor release. A TeamSpeak 3 server does not answer the stream
+TeamSpeak does not document this protocol. It was verified against the TeamSpeak 6 server
+6.0.0-beta13.1 and the TeamSpeak 6 client 6.0.0-beta5 (macOS), and a TeamSpeak update may
+break it. A TeamSpeak 3 server does not answer the stream
 commands at all, so `publish` and `watch` throw a `StreamsUnsupportedError` before sending
 anything.
 
@@ -869,9 +869,8 @@ From 1.0 the package follows semver, as described under
 event map may gain members in a minor release; give a `switch` over them a
 default case.
 
-An API that may still change in a minor release is marked `@experimental` (or, for
-`@honeybbq/teamspeak/stream`, `@beta`) in its TSDoc, which editors and the API reference
-show. Today that is the whole `@honeybbq/teamspeak/stream` entry point, and the whole
+An API that may still change in a minor release is marked `@experimental` in its TSDoc,
+which editors and the API reference show. Today that is the whole
 `@honeybbq/teamspeak/query` entry point, the server view (`client.view` and the
 view events), the `previous` field of the client-left and channel-deleted
 events, and `getServerVariables`.
@@ -1086,7 +1085,7 @@ with the same semantics, apart from what the languages make differ:
 | `@honeybbq/teamspeak`          | What every TeamSpeak connection shares: the command language, ids, errors, the typed commands, the event types and the status and reconnection types |
 | `@honeybbq/teamspeak/client`   | The voice client, identities, file transfers, diagnostics and its retry policy                                                                       |
 | `@honeybbq/teamspeak/versions` | Client versions a server accepts, for the client's `version` option; data only, one export each                                                      |
-| `@honeybbq/teamspeak/stream`   | TeamSpeak 6 streams, the screen share: finding, publishing and watching them; signalling only, no WebRTC code; `@beta`                               |
+| `@honeybbq/teamspeak/stream`   | TeamSpeak 6 streams, the screen share: finding, publishing and watching them; signalling only, no WebRTC code                                        |
 | `@honeybbq/teamspeak/query`    | The ServerQuery client, running the same typed commands over raw TCP, SSH or WebQuery; `@experimental`                                               |
 
 Each entry exports only its own symbols. The client entry does not re-export

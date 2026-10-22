@@ -18,8 +18,6 @@ import type {
 /**
  * What `Streams` needs of a client: a voice `Client` is one, and so is a test
  * double with these members.
- *
- * @beta
  */
 export interface StreamsClient extends CommandExecutor {
   /** Where the client is in its connection's life. */
@@ -50,23 +48,17 @@ export interface StreamsClient extends CommandExecutor {
 /**
  * What a stream shows. The server stores any number, so a stream from a client
  * that sends another value reports it as the number.
- *
- * @beta
  */
 export type StreamSource = "none" | "camera" | "screen" | "window" | "session";
 
 /**
  * Who a stream says may watch it. Only the publisher enforces it: the server
  * relays every request. A value outside the four is reported as the number.
- *
- * @beta
  */
 export type StreamAccessibility = "none" | "public" | "contacts" | "private";
 
 /**
  * A stream, as the server describes it.
- *
- * @beta
  */
 export interface StreamInfo {
   /** The stream's id, assigned by the server. */
@@ -99,8 +91,6 @@ export interface StreamInfo {
 /**
  * An ICE candidate, in the shape of the browser's `RTCIceCandidateInit`, so one
  * passes to `addIceCandidate` as it is.
- *
- * @beta
  */
 export interface IceCandidate {
   /** The candidate line, such as `candidate:1 1 udp 2122260223 …`. */
@@ -114,8 +104,6 @@ export interface IceCandidate {
 /**
  * A signalling message the SDK has no name for, or that was not shaped as the
  * ones it has: handed over rather than dropped.
- *
- * @beta
  */
 export interface RawSignal {
   /** The message's `cmd`; empty when the JSON had none. */
@@ -136,15 +124,11 @@ export interface RawSignal {
  * Why a peer closed: `"closed"` for its own `close()`, `"left"` for the other
  * end leaving, `"stopped"` for the stream ending, `"disconnected"` for the
  * client's connection ending and `"disposed"` for `Streams.dispose()`.
- *
- * @beta
  */
 export type PeerCloseCause = "closed" | "left" | "stopped" | "disconnected" | "disposed";
 
 /**
  * A peer closing.
- *
- * @beta
  */
 export interface PeerClosed {
   /** Why it closed. */
@@ -157,8 +141,6 @@ export interface PeerClosed {
  * The events of a peer. An event that happens before a listener for it has
  * been added is kept and delivered to the first listener, so nothing is lost
  * in the time between receiving a peer and attaching to it.
- *
- * @beta
  */
 export interface PeerEvents {
   /** A renegotiation offer from the publisher: an SDP. */
@@ -176,8 +158,6 @@ export interface PeerEvents {
 /**
  * One end of a stream's signalling with one other client. SDP and ICE are
  * opaque strings here: any WebRTC stack can be plugged in.
- *
- * @beta
  */
 export interface Peer {
   /** The stream. */
@@ -208,8 +188,6 @@ export interface Peer {
 
 /**
  * The publisher's end for one accepted viewer.
- *
- * @beta
  */
 export interface ViewerPeer extends Peer {
   /**
@@ -222,8 +200,6 @@ export interface ViewerPeer extends Peer {
 
 /**
  * The viewer's end of a stream it was let into.
- *
- * @beta
  */
 export interface StreamView extends Peer {
   /** The publisher's SDP offer. */
@@ -238,8 +214,6 @@ export interface StreamView extends Peer {
 
 /**
  * Who asked to watch.
- *
- * @beta
  */
 export interface ViewerIdentity {
   /** The client's id. */
@@ -254,23 +228,17 @@ export interface ViewerIdentity {
  * Where a join request stands: `"pending"` until it is accepted or denied,
  * `"failed"` when the answer did not reach the server, `"withdrawn"` when the
  * viewer left first and `"ended"` when the stream stopped.
- *
- * @beta
  */
 export type JoinRequestState = "pending" | "accepted" | "denied" | "failed" | "withdrawn" | "ended";
 
 /**
  * Why a request stopped waiting for an answer: `"withdrawn"` when the viewer
  * took it back or left view, `"ended"` when the stream ended first.
- *
- * @beta
  */
 export type JoinRequestCloseCause = "withdrawn" | "ended";
 
 /**
  * A pending join request closing without an answer.
- *
- * @beta
  */
 export interface JoinRequestClosed {
   /** Why it closed. */
@@ -280,8 +248,6 @@ export interface JoinRequestClosed {
 /**
  * The events of a join request. As for a peer, one that happens before a
  * listener is added is delivered to the first.
- *
- * @beta
  */
 export interface JoinRequestEvents {
   /**
@@ -298,8 +264,6 @@ export interface JoinRequestEvents {
  * every request, from any channel, and enforces neither `viewerLimit` nor
  * `accessibility`: deciding is the publisher's job, and nothing is accepted
  * for it. A request is answered once.
- *
- * @beta
  */
 export interface JoinRequest {
   /** The stream asked for. */
@@ -339,15 +303,11 @@ export interface JoinRequest {
  * no longer streams (`client_is_streaming` cleared) and no stop followed within
  * two seconds, and
  * `"disconnected"` and `"disposed"` as for a peer.
- *
- * @beta
  */
 export type StreamEndCause = "stopped" | "server" | "gone" | "disconnected" | "disposed";
 
 /**
  * A published stream ending.
- *
- * @beta
  */
 export interface StreamEnded {
   /** Why it ended. Always set: a `reason` of 0 alone does not say. */
@@ -363,8 +323,6 @@ export interface StreamEnded {
 /**
  * The events of a published stream. As for a peer, one that happens before a
  * listener is added is delivered to the first.
- *
- * @beta
  */
 export interface PublishedStreamEvents {
   /** A client asking to watch. */
@@ -375,8 +333,6 @@ export interface PublishedStreamEvents {
 
 /**
  * A stream this client publishes.
- *
- * @beta
  */
 export interface PublishedStream {
   /** The stream's id. */
@@ -404,8 +360,6 @@ export interface PublishedStream {
 
 /**
  * How `Streams.publish` starts a stream.
- *
- * @beta
  */
 export interface PublishOptions {
   /** The stream's name. */
@@ -432,8 +386,6 @@ export interface PublishOptions {
 
 /**
  * How `Streams.watch` asks to watch.
- *
- * @beta
  */
 export interface WatchOptions {
   /** A message for the publisher, shown with the request. */
@@ -448,8 +400,6 @@ export interface WatchOptions {
 
 /**
  * How a `Streams` behaves.
- *
- * @beta
  */
 export interface StreamsOptions {
   /**
@@ -465,8 +415,6 @@ export interface StreamsOptions {
 
 /**
  * A stream ending, as `Streams` reports it.
- *
- * @beta
  */
 export interface StreamStoppedEvent {
   /** The stream, as it was last known. */
@@ -485,8 +433,6 @@ export interface StreamStoppedEvent {
 /**
  * A viewer joining or leaving a stream, as the server tells the owner, the
  * other viewers and, for a join, the clients of the owner's channel.
- *
- * @beta
  */
 export interface StreamViewerEvent {
   /** The stream. */
@@ -498,16 +444,12 @@ export interface StreamViewerEvent {
 /**
  * Why `Streams` warns: `"offer-without-audio"` for an SDP offer with no
  * `m=audio` section.
- *
- * @beta
  */
 export type StreamWarningCode = "offer-without-audio";
 
 /**
  * Something the SDK noticed and did not stop: the offer or message goes out
  * unchanged.
- *
- * @beta
  */
 export interface StreamWarning {
   /** What was noticed. */
@@ -522,8 +464,6 @@ export interface StreamWarning {
 
 /**
  * The events of `Streams`.
- *
- * @beta
  */
 export interface StreamsEventMap {
   /** A stream becoming known: it started while this client could see it, or discovery found it. */

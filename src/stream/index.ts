@@ -2,9 +2,9 @@
  * TeamSpeak 6 streams, the screen share: finding the streams of the clients in
  * view, publishing one, and watching one.
  *
- * TeamSpeak does not document the protocol, and it has been measured against
- * TeamSpeak 6 6.0.0-beta13.1 and tried with the TeamSpeak 6 client
- * 6.0.0-beta5, so everything here is `@beta` and may change in a minor release.
+ * TeamSpeak does not document the protocol. It was verified against the
+ * TeamSpeak 6 server 6.0.0-beta13.1 and the TeamSpeak 6 client 6.0.0-beta5, and
+ * a TeamSpeak update may break it.
  *
  * Only the signalling is in this package. The video itself travels over WebRTC
  * between the publisher and each viewer, which the application brings: SDP and
@@ -19,7 +19,6 @@
  * ```
  *
  * @module @honeybbq/teamspeak/stream
- * @beta
  */
 
 export { Streams } from "./streams.js";

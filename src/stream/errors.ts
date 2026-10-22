@@ -6,8 +6,6 @@ import type { ServerFamily } from "@honeybbq/teamspeak";
  * TeamSpeak 3 server answers none of the stream commands, not even with an
  * error, so `publish` and `watch` refuse before sending rather than wait out
  * a timeout.
- *
- * @beta
  */
 export class StreamsUnsupportedError extends TeamspeakError {
   /** {@inheritDoc @honeybbq/teamspeak!TeamspeakError.kind} */
@@ -45,8 +43,6 @@ export class StreamsUnsupportedError extends TeamspeakError {
  * The server remembers no decision, so a client can ask again, and every ask
  * is relayed to the publisher. A publisher that means to refuse for good can
  * set `rememberDenied`, or leave the request unanswered.
- *
- * @beta
  */
 export class StreamJoinDeniedError extends TeamspeakError {
   /** {@inheritDoc @honeybbq/teamspeak!TeamspeakError.kind} */
@@ -81,8 +77,6 @@ export class StreamJoinDeniedError extends TeamspeakError {
  * line of about 9.2 KB, escaped, without an answer, so the call fails before
  * sending instead of timing out; `MAX_COMMAND_LINE_BYTES` has the exact
  * figure. An SDP offer of a few kilobytes is far under it.
- *
- * @beta
  */
 export class StreamPayloadTooLargeError extends TeamspeakError {
   /** {@inheritDoc @honeybbq/teamspeak!TeamspeakError.kind} */
@@ -119,8 +113,6 @@ export class StreamPayloadTooLargeError extends TeamspeakError {
  * of, and when the stream ends before its owner answers; a signalling call
  * does when the stream ended under it. The server's
  * own refusal, when there was one, is the `cause`.
- *
- * @beta
  */
 export class StreamEndedError extends TeamspeakError {
   /** {@inheritDoc @honeybbq/teamspeak!TeamspeakError.kind} */
