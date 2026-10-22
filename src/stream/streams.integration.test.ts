@@ -16,6 +16,7 @@ import type { TestContext } from "vitest";
 import {
   CommandTimeoutError,
   ErrorCode,
+  NotConnectedError,
   ServerError,
   asChannelID,
   moveClient,
@@ -827,29 +828,23 @@ describe.skipIf(SKIP)("Streams — live", { timeout: 30_000 }, () => {
       });
     }
 
-    it("publishes cleanly on a client that reconnected in the middle of a publish", async (ctx) => {
+    // The command is held in the middleware while the connection ends, so the
+    // call is certainly in flight; nothing here waits for time to pass.
+    it("rejects a publish in flight when the connection ends, and publishes on the next one", async (ctx) => {
       ts6(ctx);
-      const client = await connectClient("ts-js-stream-reconnect");
+      const gate = gated();
+      const client = await connectClient("ts-js-stream-reconnect", DEFAULT_CHANNEL, [
+        gate.middleware,
+      ]);
       extra.push(client);
       const publisher = attach(client);
-      let sent = false;
-      onSentLine((c, line) => {
-        if (c === client && line.startsWith("setupstream")) sent = true;
-      });
-      try {
-        const publishing = publisher.publish({ name: "interrupted" }).catch((e: unknown) => e);
-        await until(() => sent);
-        await client.disconnect();
-        // Either the answer beat the goodbye or the call failed; what matters is the next connection.
-        await publishing;
-      } finally {
-        onSentLine(undefined);
-      }
+      const interrupted = publisher.publish({ name: "interrupted", viewerLimit: 1 });
+      const rejected = expect(interrupted).rejects.toBeInstanceOf(NotConnectedError);
+      await client.disconnect();
+      await rejected;
+      gate.open(1);
       await client.connect({ signal: AbortSignal.timeout(10_000) });
       await client.view.whenReady({ signal: AbortSignal.timeout(10_000) });
-      await sleep(1500);
-      // Nothing from the first connection reached the second.
-      expect(publisher.list()).toEqual([]);
       const pub = await publisher.publish({ name: "after" });
       expect(pub.info.name).toBe("after");
       expect(publisher.list().map((i) => i.id)).toEqual([pub.id]);
