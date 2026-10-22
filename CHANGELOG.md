@@ -4,6 +4,14 @@ Until 1.0.0-beta.4 this package was published as `@honeybbq/teamspeak-core`, and
 `@honeybbq/teamspeak-client` was a second package. The sections below, down to
 the last version heading, are the core's history; the client's is at the bottom.
 
+## 1.0.0-beta.16
+
+### Minor Changes
+
+- [#121](https://github.com/HoneyBBQ/teamspeak-js/pull/121) [`45643e6`](https://github.com/HoneyBBQ/teamspeak-js/commit/45643e6db3b946d2a2137fef5b73f2058b19736f) - Streams: a `JoinRequest` now has `on("closed", ({ cause }) => …)`, emitted once when a request nobody had answered ends, with the cause `"withdrawn"` (the viewer took it back, left the stream or went out of view) or `"ended"` (the stream ended or was disposed), so an application can drop the request from its UI without polling `state`. It is not emitted for a request that is accepted or denied, and a listener added late still receives it. `Streams` has a `"warning"` event, kept for the first listener as errors are, with `{ code, streamId, clientId, message }`; the first code is `"offer-without-audio"`, for an offer given to `JoinRequest.accept` or `ViewerPeer.sendOffer` with no `m=audio` section, which is sent unchanged. The TeamSpeak 6 client 6.0.0-beta5 never answers a video-only offer, and its Join button then does nothing. The README gains an interop section for the TeamSpeak 6 client: always offer audio, trim the codecs, accept every request, and what a channel switch does.
+
+- [#122](https://github.com/HoneyBBQ/teamspeak-js/pull/122) [`ce058fb`](https://github.com/HoneyBBQ/teamspeak-js/commit/ce058fb31d9cb620ef73e2eb6850a7dd23d2249a) - The `@honeybbq/teamspeak/stream` entry point is no longer `@beta`: its exports follow the package's semver like the rest. TeamSpeak does not document the stream protocol; it was verified against the TeamSpeak 6 server 6.0.0-beta13.1 and the TeamSpeak 6 client 6.0.0-beta5, and a TeamSpeak update may break it.
+
 ## 1.0.0-beta.15
 
 ### Minor Changes
