@@ -17,11 +17,13 @@ import {
 import { Streams } from "./streams.js";
 import type {
   JoinRequest,
+  JoinRequestClosed,
   PeerClosed,
   PublishedStream,
   StreamEnded,
   StreamInfo,
   StreamView,
+  StreamWarning,
   ViewerPeer,
 } from "./types.js";
 import { FakeClient, param, settle } from "./testing/fake-client.js";
@@ -660,6 +662,223 @@ describe("join requests", () => {
     const { client } = setup();
     client.notify("notifyjoinstreamrequest", { id: "other", clid: "9", msg: "", is_remove: "0" });
     expect(client.sent).toEqual([]);
+  });
+});
+
+describe("a join request closing", () => {
+  const ask = (client: FakeClient, pub: PublishedStream, clid = 9, remove = "0"): void =>
+    client.notify("notifyjoinstreamrequest", {
+      id: pub.id,
+      clid: String(clid),
+      msg: "",
+      is_remove: remove,
+    });
+
+  async function pending(): Promise<{
+    client: FakeClient;
+    pub: PublishedStream;
+    request: JoinRequest;
+    closed: JoinRequestClosed[];
+  }> {
+    const { client, streams } = setup();
+    const pub = await publishOne(client, streams);
+    const requests: JoinRequest[] = [];
+    pub.on("request", (r) => requests.push(r));
+    ask(client, pub);
+    const closed: JoinRequestClosed[] = [];
+    requests[0]!.on("closed", (c) => closed.push(c));
+    return { client, pub, request: requests[0]!, closed };
+  }
+
+  it("emits withdrawn when the viewer takes the request back", async () => {
+    const { client, pub, request, closed } = await pending();
+    ask(client, pub, 9, "1");
+    expect(closed).toEqual([{ cause: "withdrawn" }]);
+    expect(request.state).toBe("withdrawn");
+    await expect(request.accept("v=0")).rejects.toThrow(/withdrawn/);
+    await expect(request.deny()).rejects.toThrow(/withdrawn/);
+    expect(client.sent.filter((r) => r.command === "respondjoinstreamrequest")).toEqual([]);
+  });
+
+  it("emits withdrawn when the viewer leaves view, and when it leaves the stream", async () => {
+    const a = await pending();
+    a.client.emit("clientLeave", { clientID: asClientID(9) });
+    expect(a.closed).toEqual([{ cause: "withdrawn" }]);
+    const b = await pending();
+    b.client.notify("notifystreamclientleft", { id: b.pub.id, clid: "9" });
+    expect(b.closed).toEqual([{ cause: "withdrawn" }]);
+  });
+
+  it("emits ended when the stream stops, is stopped here or is disposed", async () => {
+    const a = await pending();
+    a.client.notify("notifystreamstopped", { clid: String(SELF), id: a.pub.id, reason: "0" });
+    expect(a.closed).toEqual([{ cause: "ended" }]);
+    await expect(a.request.deny()).rejects.toThrow(/ended/);
+
+    const b = await pending();
+    await b.pub.stop();
+    expect(b.closed).toEqual([{ cause: "ended" }]);
+
+    const { client, streams } = setup();
+    const pub = await publishOne(client, streams);
+    const requests: JoinRequest[] = [];
+    pub.on("request", (r) => requests.push(r));
+    ask(client, pub);
+    const closed: JoinRequestClosed[] = [];
+    requests[0]!.on("closed", (c) => closed.push(c));
+    streams.dispose();
+    expect(closed).toEqual([{ cause: "ended" }]);
+  });
+
+  it("emits once", async () => {
+    const { client, pub, closed } = await pending();
+    ask(client, pub, 9, "1");
+    ask(client, pub, 9, "1");
+    client.notify("notifystreamstopped", { clid: String(SELF), id: pub.id, reason: "0" });
+    expect(closed).toHaveLength(1);
+  });
+
+  it("emits nothing for a request that is accepted or denied, then the stream ends", async () => {
+    const a = await pending();
+    await a.request.accept("v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n");
+    ask(a.client, a.pub, 9, "1");
+    a.client.notify("notifystreamstopped", { clid: String(SELF), id: a.pub.id, reason: "0" });
+    expect(a.closed).toEqual([]);
+    expect(a.request.state).toBe("accepted");
+
+    const b = await pending();
+    await b.request.deny("no");
+    ask(b.client, b.pub, 9, "1");
+    b.client.notify("notifystreamstopped", { clid: String(SELF), id: b.pub.id, reason: "0" });
+    expect(b.closed).toEqual([]);
+    expect(b.request.state).toBe("denied");
+  });
+
+  it("emits nothing for a request whose answer failed", async () => {
+    const { client, pub, request, closed } = await pending();
+    client.answer = () => {
+      throw refusal(1);
+    };
+    await expect(request.deny()).rejects.toThrow();
+    ask(client, pub, 9, "1");
+    client.notify("notifystreamstopped", { clid: String(SELF), id: pub.id, reason: "0" });
+    expect(closed).toEqual([]);
+    expect(request.state).toBe("failed");
+  });
+
+  it("keeps the event for a listener that comes late, and delivers it to the first only", async () => {
+    const { client, streams } = setup();
+    const pub = await publishOne(client, streams);
+    const requests: JoinRequest[] = [];
+    pub.on("request", (r) => requests.push(r));
+    ask(client, pub);
+    ask(client, pub, 9, "1");
+    const first: JoinRequestClosed[] = [];
+    const second: JoinRequestClosed[] = [];
+    requests[0]!.on("closed", (c) => first.push(c));
+    requests[0]!.on("closed", (c) => second.push(c));
+    expect(first).toEqual([{ cause: "withdrawn" }]);
+    expect(second).toEqual([]);
+  });
+
+  it("gives a request asked again after a withdrawal its own event", async () => {
+    const { client, streams } = setup();
+    const pub = await publishOne(client, streams);
+    const requests: JoinRequest[] = [];
+    pub.on("request", (r) => requests.push(r));
+    ask(client, pub);
+    ask(client, pub, 9, "1");
+    ask(client, pub);
+    expect(requests).toHaveLength(2);
+    expect(requests[1]!.state).toBe("pending");
+  });
+});
+
+describe("offers without audio", () => {
+  const VIDEO = "v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=sendonly\r\n";
+  const AUDIO = `${VIDEO}m=audio 9 UDP/TLS/RTP/SAVPF 111\r\n`;
+
+  const request = (client: FakeClient, pub: PublishedStream): Promise<JoinRequest> =>
+    new Promise((resolve) => {
+      pub.on("request", resolve);
+      client.notify("notifyjoinstreamrequest", { id: pub.id, clid: "9", msg: "", is_remove: "0" });
+    });
+
+  it("warns on accept, and still sends the offer unchanged", async () => {
+    const { client, streams } = setup();
+    const pub = await publishOne(client, streams);
+    const warnings: StreamWarning[] = [];
+    streams.on("warning", (w) => warnings.push(w));
+    const r = await request(client, pub);
+    const peer = await r.accept(VIDEO);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({
+      code: "offer-without-audio",
+      streamId: pub.id,
+      clientId: 9,
+    });
+    expect(warnings[0]!.message).toMatch(/m=audio/);
+    expect(r.state).toBe("accepted");
+    expect(peer.closed).toBe(false);
+    const sent = client.sent.find((c) => c.command === "respondjoinstreamrequest");
+    expect(param(sent!, "offer")).toBe(VIDEO);
+  });
+
+  it("does not warn for an offer with an audio section, in any order", async () => {
+    const { client, streams } = setup();
+    const pub = await publishOne(client, streams);
+    const warnings: StreamWarning[] = [];
+    streams.on("warning", (w) => warnings.push(w));
+    await (await request(client, pub)).accept(AUDIO);
+    const audioFirst = "v=0\nm=audio 9 UDP/TLS/RTP/SAVPF 111\nm=video 9 UDP/TLS/RTP/SAVPF 96\n";
+    const peer = await admit(client, pub, 10).then((a) => a.peer);
+    await peer.sendOffer(audioFirst);
+    expect(warnings.filter((w) => w.clientId === 9)).toEqual([]);
+    expect(warnings.filter((w) => w.clientId === 10)).toHaveLength(1); // admit's own "v=0" offer
+  });
+
+  it("warns on a renegotiation offer without audio, and sends it", async () => {
+    const { client, streams } = setup();
+    const pub = await publishOne(client, streams);
+    const { peer } = await admit(client, pub);
+    const warnings: StreamWarning[] = [];
+    streams.on("warning", (w) => warnings.push(w));
+    await peer.sendOffer(VIDEO);
+    expect(warnings).toHaveLength(2); // the one kept from admit, then this
+    expect(client.sent.some((c) => c.command === "streamsignaling")).toBe(true);
+  });
+
+  it("does not warn for a denial, or for an offer refused as too long", async () => {
+    const { client, streams } = setup();
+    const pub = await publishOne(client, streams);
+    const warnings: StreamWarning[] = [];
+    streams.on("warning", (w) => warnings.push(w));
+    const r = await request(client, pub);
+    await expect(r.accept("a".repeat(10_000))).rejects.toBeInstanceOf(StreamPayloadTooLargeError);
+    await r.deny("no");
+    expect(warnings).toEqual([]);
+  });
+
+  it("keeps warnings for the first listener, bounded", async () => {
+    const { client, streams } = setup();
+    const pub = await publishOne(client, streams);
+    const { peer } = await admit(client, pub);
+    await peer.sendOffer(VIDEO);
+    const warnings: StreamWarning[] = [];
+    streams.on("warning", (w) => warnings.push(w));
+    expect(warnings).toHaveLength(2);
+    await peer.sendOffer(VIDEO);
+    expect(warnings).toHaveLength(3);
+  });
+
+  it("drops the oldest warnings past the bound", async () => {
+    const { client, streams } = setup();
+    const pub = await publishOne(client, streams);
+    const { peer } = await admit(client, pub);
+    for (let i = 0; i < 300; i++) await peer.sendOffer(VIDEO);
+    const warnings: StreamWarning[] = [];
+    streams.on("warning", (w) => warnings.push(w));
+    expect(warnings).toHaveLength(256);
   });
 });
 
