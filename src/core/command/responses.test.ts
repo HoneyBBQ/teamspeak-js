@@ -45,6 +45,17 @@ describe("getconnectioninfo", () => {
   });
 });
 
+describe("setupstream", () => {
+  // The announcement echoes the number the client appended; the publisher's
+  // streams of the same name differ in nothing else.
+  it("is answered by notifystreamstarted echoing the return_code", () => {
+    expect(responseSpec("setupstream")?.correlated).toEqual({
+      notifications: ["notifystreamstarted"],
+      key: "return_code",
+    });
+  });
+});
+
 describe("RESPONSES", () => {
   // Every name the table keys on or waits for is one the name tables know, so
   // a typo here cannot go unnoticed.

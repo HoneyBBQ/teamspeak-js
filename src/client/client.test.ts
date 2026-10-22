@@ -1,4 +1,4 @@
-import { clientInternals } from "./client.js";
+import { clientInternals, onSentLine } from "./client.js";
 import { asChannelID } from "@honeybbq/teamspeak";
 import { afterEach, describe, it, expect } from "vitest";
 import { createSocket, type Socket } from "node:dgram";
@@ -515,6 +515,75 @@ describe("being removed by the server", () => {
     await settle();
 
     expect(disconnected).toEqual([undefined]);
+  });
+});
+
+describe("setupstream", () => {
+  /** A connected client whose sent commands are recorded, with a way to feed it lines. */
+  async function streaming(): Promise<{
+    client: Client;
+    sent: string[];
+    feed: (...lines: string[]) => Promise<void>;
+  }> {
+    const client = await silentServerClient();
+    const connecting = client.connect();
+    await until(() => clientInternals(client).handler.isOpen);
+    completeCryptoInit(clientInternals(client).crypt);
+    clientInternals(client).clid = 5;
+    clientInternals(client).markConnected();
+    await connecting;
+    const sent: string[] = [];
+    onSentLine((_, line) => sent.push(line));
+    const feed = async (...lines: string[]): Promise<void> => {
+      for (const l of lines) clientInternals(client).handler.onPacket?.(commandPacket(l));
+      await settle();
+    };
+    await feed("channellistfinished");
+    return { client, sent, feed };
+  }
+  const returnCode = (line: string | undefined): string =>
+    /return_code=(\d+)/.exec(line ?? "")![1]!;
+  const request =
+    "setupstream name=same type=2 bitrate=1 accessibility=1 mode=1 viewer_limit=0 audio=0";
+
+  it("resolves each of two same-name publishes with its own announcement, in either order", async () => {
+    const { client, sent, feed } = await streaming();
+    try {
+      const first = client.exec(request, { timeoutMs: 1_000 });
+      const second = client.exec(request, { timeoutMs: 1_000 });
+      await until(() => sent.filter((l) => l.startsWith("setupstream")).length === 2);
+      const [a, b] = sent.map(returnCode);
+
+      // The second command's announcement and error come first.
+      await feed(
+        `notifystreamstarted id=B clid=5 name=same return_code=${b}`,
+        `error id=0 msg=ok return_code=${b}`,
+        `error id=0 msg=ok return_code=${a}`,
+        `notifystreamstarted id=A clid=5 name=same return_code=${a}`,
+      );
+      expect((await first).map((r) => r["id"])).toEqual(["A"]);
+      expect((await second).map((r) => r["id"])).toEqual(["B"]);
+    } finally {
+      onSentLine(undefined);
+      await client.disconnect({ signal: AbortSignal.timeout(50) });
+    }
+  });
+
+  it("does not take another client's copy of the announcement", async () => {
+    const { client, sent, feed } = await streaming();
+    try {
+      const answered = client.exec(request, { timeoutMs: 1_000 });
+      await until(() => sent.length === 1);
+      await feed(
+        "notifystreamstarted id=F clid=9 name=same",
+        `error id=0 msg=ok return_code=${returnCode(sent[0])}`,
+        `notifystreamstarted id=A clid=5 name=same return_code=${returnCode(sent[0])}`,
+      );
+      expect((await answered).map((r) => r["id"])).toEqual(["A"]);
+    } finally {
+      onSentLine(undefined);
+      await client.disconnect({ signal: AbortSignal.timeout(50) });
+    }
   });
 });
 

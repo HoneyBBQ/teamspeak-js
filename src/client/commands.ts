@@ -69,6 +69,8 @@ export class CommandTracker {
   ): [rc: number, promise: Promise<CommandResult>] {
     this.#nextRC++;
     const rc = this.#nextRC;
+    // The tracker's own number is the one request field no caller can supply.
+    if (spec?.correlated?.key === "return_code") correlation = String(rc);
     const promise = new Promise<CommandResult>((resolve) => {
       this.#pending.set(rc, { resolve, spec, correlation, echo, correlated: [] });
     });
@@ -162,7 +164,8 @@ export class CommandTracker {
     for (const p of pending) p.resolve({ err, data: [] });
     this.#buffer = [];
     this.#welcomeComplete = false;
-    this.#nextRC = 0;
+    // Not restarted: a row still in flight from before the reset carries an old
+    // number, which a restarted counter would hand to an unrelated command.
   }
 
   #answers(p: PendingCommand, row: BufferedRow): boolean {

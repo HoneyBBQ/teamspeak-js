@@ -257,6 +257,88 @@ describe("CommandTracker", () => {
     });
   });
 
+  describe("answers matched on the return_code", () => {
+    const setup = responseSpec("setupstream");
+    const announce = (rc: number | undefined, id = "s"): Record<string, string> =>
+      rc === undefined ? { id, clid: "7" } : { id, clid: "7", return_code: String(rc) };
+
+    it("takes the announcement that beats the error", async () => {
+      const t = ready();
+      const [rc, done] = t.register(setup);
+      t.offerCorrelated("notifystreamstarted", announce(rc));
+      t.resolve(rc, null);
+
+      expect((await done).data).toEqual([announce(rc)]);
+    });
+
+    it("waits for the announcement that follows the error", async () => {
+      const t = ready();
+      const [rc, done] = t.register(setup);
+      let settled = false;
+      void done.then(() => (settled = true));
+      t.resolve(rc, null);
+      await Promise.resolve();
+      expect(settled).toBe(false);
+
+      t.offerCorrelated("notifystreamstarted", announce(rc));
+      expect((await done).data).toEqual([announce(rc)]);
+    });
+
+    // Same name, same everything: the number is all that tells them apart.
+    it("gives each of two in-flight commands its own announcement, in either order", async () => {
+      const t = ready();
+      const [first, firstDone] = t.register(setup);
+      const [second, secondDone] = t.register(setup);
+      t.offerCorrelated("notifystreamstarted", announce(second, "b"));
+      t.offerCorrelated("notifystreamstarted", announce(first, "a"));
+      t.resolve(first, null);
+      t.resolve(second, null);
+
+      expect((await firstDone).data).toEqual([announce(first, "a")]);
+      expect((await secondDone).data).toEqual([announce(second, "b")]);
+    });
+
+    it("ignores a copy without a return_code, and a number nobody sent", async () => {
+      const t = ready();
+      const [rc, done] = t.register(setup);
+      t.resolve(rc, null);
+      t.offerCorrelated("notifystreamstarted", announce(undefined, "foreign"));
+      t.offerCorrelated("notifystreamstarted", announce(rc + 5, "stranger"));
+      t.offerCorrelated("notifystreamstarted", announce(rc, "mine"));
+
+      expect((await done).data).toEqual([announce(rc, "mine")]);
+    });
+
+    it("reports a refusal without waiting for an announcement", async () => {
+      const t = ready();
+      const [rc, done] = t.register(setup);
+      const refusal = new ServerError(2568, "insufficient client permissions");
+      t.resolve(rc, refusal);
+
+      expect((await done).err).toBe(refusal);
+    });
+
+    // The count is kept past a reset, so a row still in flight from before it
+    // cannot match a command registered after.
+    it("never reuses a number after a reset", async () => {
+      const t = ready();
+      const [before] = t.register(setup);
+      t.reset(new NotConnectedError());
+      t.signalWelcomeComplete();
+      const [after, done] = t.register(setup);
+
+      expect(after).toBeGreaterThan(before);
+      t.offerCorrelated("notifystreamstarted", announce(before, "stale"));
+      t.resolve(after, null);
+      let settled = false;
+      void done.then(() => (settled = true));
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      t.offerCorrelated("notifystreamstarted", announce(after, "fresh"));
+      expect((await done).data).toEqual([announce(after, "fresh")]);
+    });
+  });
+
   it("fails every in-flight command on reset", async () => {
     const t = ready();
     const [, first] = t.register();

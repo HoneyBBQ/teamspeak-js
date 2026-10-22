@@ -8,9 +8,11 @@
  * rows reports an empty success for every one of those — which this SDK did,
  * and documented as a property of the protocol.
  *
- * Notifications carry no return_code, so nothing on the wire ties one to the
- * command that caused it. The pairing is a property of the command, and this
- * table is where it lives. It was measured command by command
+ * Most notifications carry no return_code, so nothing on the wire ties one to
+ * the command that caused it; the two stream notifications that answer
+ * `setupstream` and `requeststreaminfo` are the exceptions and echo it, and
+ * `setupstream` is matched on that echo. The
+ * pairing is a property of the command, and this table is where it lives. It was measured command by command
  * against TS3 3.13.8 and TS6 6.0.0-beta13.1, which answer identically — see
  * scripts/probe-response-shapes.mts to re-run that measurement.
  *
@@ -50,6 +52,9 @@ export interface ResponseSpec {
    * `error`, matched on a request field. A row that arrived before the `error`
    * counts; if none has, the command waits for one, until its timeout or
    * signal gives up.
+   *
+   * The key `return_code` is the number the client itself appended to the
+   * command, for answers that echo it.
    *
    * File transfer negotiation reports its key once the command has already
    * succeeded, echoing the `clientftfid` the request carried; that echo is the
@@ -143,6 +148,12 @@ export const RESPONSES: Readonly<Record<string, ResponseSpec>> = {
   servergroupsbyclientid: inline("notifyservergroupsbyclientid"),
   serverrequestconnectioninfo: inline("notifyserverconnectioninfo"),
   servertemppasswordlist: inline("notifyservertemppasswordlist"),
+  // Announced to every client in the channel, the stream's own copy included;
+  // only the publisher's carries the `return_code`, and it arrives ahead of
+  // the `error` (measured on TeamSpeak 6 6.0.0-beta13.1: 500 of 500), which
+  // the match does not depend on. Streams with the same name cannot be told
+  // apart any other way.
+  setupstream: { correlated: { notifications: ["notifystreamstarted"], key: "return_code" } },
   tokenadd: inline("notifytokenadd"),
   tokenlist: inline("notifytokenlist"),
 };
