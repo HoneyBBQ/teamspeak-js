@@ -4,6 +4,26 @@ Until 1.0.0-beta.4 this package was published as `@honeybbq/teamspeak-core`, and
 `@honeybbq/teamspeak-client` was a second package. The sections below, down to
 the last version heading, are the core's history; the client's is at the bottom.
 
+## 1.0.0-beta.15
+
+### Minor Changes
+
+- [#110](https://github.com/HoneyBBQ/teamspeak-js/pull/110) [`79fa5f9`](https://github.com/HoneyBBQ/teamspeak-js/commit/79fa5f9edcb820ebf19d48a513d3aa3b4a2b73a8) - Streams, experimental: `@honeybbq/teamspeak/stream` does the signalling of a TeamSpeak 6 screen share. `Streams` attaches to a connected or connecting `Client` and finds the streams of the clients in view (a client that sets `client_is_streaming` is asked for them with `requeststreaminfo`, so a stream that started before you came is found too); `publish` starts a stream and emits a `request` for each client that asks to watch, to `accept` with an SDP offer or `deny`; `watch` asks to watch and resolves with the publisher's offer. Peers carry the SDP answer, ICE candidates and any other signalling message as strings, so any WebRTC stack plugs in: the package has no WebRTC dependency, and the video itself is the application's. Candidates and answers that arrive before a listener is added are kept for the first one.
+
+  The protocol is undocumented by TeamSpeak and was measured on TeamSpeak 6 6.0.0-beta13.1 only, not against the native client, so every export is `@beta`. A TeamSpeak 3 server does not answer the stream commands at all: `publish` and `watch` throw a `StreamsUnsupportedError` before sending. The server drops a command line over about 9.2 KB without an answer, so stream commands throw a `StreamPayloadTooLargeError` instead of timing out. It also enforces neither the viewer limit nor the accessibility of a stream, lets anyone stop any stream, and relays requests from every channel: deciding who watches is the publisher's job, and `Streams` sends `stopstream` only for streams it published.
+
+  The core names the stream commands (`CommandName.SetupStream`, `JoinStreamRequest`, `RespondJoinStreamRequest`, `StreamSignaling`, `StopStream`, `RequestStreamInfo`), their notifications (`NotificationName.StreamStarted`, `StreamInfo`, `StreamStopped`, `StreamClientJoined`, `StreamClientLeft`, `StreamSignaling`, `JoinStreamRequest`, `RespondJoinStreamRequest`) and the error codes `ErrorCode.StreamNotFound` (5635), `StreamNotParticipating` (5636), `StreamAlreadyJoined` (5638) and `StreamJoinRequestRedacted` (5639).
+
+  A stream whose `publish` gave up after the command went out is stopped when the server announces it, `dispose()` stops what it published and leaves what it watched while connected, and a client that stops streaming has its streams dropped with the cause `"gone"`. A requester out of view is looked up with `clientgetuidfromclid`, so `rememberDenied` works for it; the remembered uids are bounded to the 1024 most recent.
+
+### Patch Changes
+
+- [#116](https://github.com/HoneyBBQ/teamspeak-js/pull/116) [`d5aad27`](https://github.com/HoneyBBQ/teamspeak-js/commit/d5aad271ad28331d3b12936a8febc63a1e279d42) - Voice, whisper, ping and pong now follow the generation of their own inbound 16-bit packet ids, so audio from the server keeps decrypting after a packet id wraps from 65535 to 0, also when packets were lost across the wrap.
+
+- [#109](https://github.com/HoneyBBQ/teamspeak-js/pull/109) [`bf6de0d`](https://github.com/HoneyBBQ/teamspeak-js/commit/bf6de0d45d628e78c34974bb9513a83a248e18a8) - Docs: the package description, the README and the `client` entry point's doc comment call the SDK an independent implementation instead of a clean-room one, and the README's disclaimer says it implements the client side only.
+
+- [#119](https://github.com/HoneyBBQ/teamspeak-js/pull/119) [`c0b4a1b`](https://github.com/HoneyBBQ/teamspeak-js/commit/c0b4a1ba286d0ff086aa013927542e34b0d62345) - `Streams.publish` matches the server's announcement to its own call by the command's `return_code`, not by the stream's name. Two publishes of one name, or a publish after one that timed out, can no longer get each other's stream, and when a call gives up, by timeout or abort, its command stays open for five more seconds and a stream announced in that time is stopped. A call aborted or timed out before its command leaves the throttle still sends it and then stops the stream, so other clients may see it start and stop. `dispose()` during a `publish` stops the stream the server announces afterwards, while the client is connected. Calls no longer wait for one another. `client.send("setupstream", …)` now resolves with the announcement row of the stream it started, and waits for it, where it used to resolve at once with no rows. The command counter is no longer reset on reconnect, so an answer left over from an earlier connection cannot match a new command.
+
 ## 1.0.0-beta.14
 
 ### Minor Changes
