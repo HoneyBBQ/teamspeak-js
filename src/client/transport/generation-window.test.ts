@@ -23,6 +23,21 @@ describe("GenerationWindow", () => {
     expect(w.isInWindow(1124)).toBe(false);
   });
 
+  it("advanceAfter ignores a stale packet and advances past the current one", () => {
+    const w = new GenerationWindow(1 << 16, 1024);
+    w.advance((1 << 16) + 10); // base 10 of generation 1
+
+    w.advanceAfter(65535); // stale packet from generation 0
+    expect(w.isOldPacket(65535)).toBe(true);
+    expect(w.isOldPacket(10)).toBe(false);
+    expect(w.getGeneration(10)).toBe(1);
+
+    w.advanceAfter(20);
+    expect(w.isOldPacket(20)).toBe(true);
+    expect(w.isOldPacket(21)).toBe(false);
+    expect(w.getGeneration(21)).toBe(1);
+  });
+
   it("wraps generation on overflow", () => {
     const mod = 1 << 16;
     const w = new GenerationWindow(mod, 1024);
