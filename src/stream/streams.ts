@@ -59,11 +59,26 @@ const MAX_DENIED = 1024;
  * which carries the reason and is the authority; the flag is only a hint.
  */
 const GONE_GRACE_MS = 2000;
-/** How many published streams that were given up on are watched for. */
-const MAX_ABANDONED = 16;
+/**
+ * How long the `setupstream` of a `publish` stays open for the server's answer,
+ * at least, whatever timeout the caller gave and even once the caller has
+ * given up: a stream announced after that is stopped rather than left running
+ * unseen. The announcement followed the command by at most 20 ms in the
+ * measurements (five clients publishing ten streams each at once).
+ */
+const ANNOUNCE_WINDOW_MS = 5000;
+/** How many streams stopped for a publish that gave up are remembered, to ignore their late rows. */
+const MAX_ORPHANS = 16;
 
 function signalOption(signal: AbortSignal | undefined): CommandOptions {
   return signal === undefined ? {} : { signal };
+}
+
+/** A `publish` whose `setupstream` is out, and what became of it. */
+interface Attempt {
+  readonly outcome: Deferred<PublishedImpl>;
+  /** Set once the caller has stopped waiting; an announcement then is not theirs to receive. */
+  abandoned: boolean;
 }
 
 /** A join request that has been sent and not yet answered, or the view it became. */
@@ -118,17 +133,14 @@ export class Streams {
   readonly #watching = new Map<string, Watch>();
   readonly #denied = new Set<string>();
   readonly #subscriptions: Unsubscribe[] = [];
-  /** The `setupstream` waiting for the announcement; calls queue behind it. */
-  #publishing: { readonly name: string; readonly announced: Deferred<PublishedImpl> } | undefined;
+  /** The `publish` calls still waiting for their stream. */
+  readonly #publishing = new Set<Attempt>();
   /**
-   * The names of streams whose `publish` gave up after `setupstream` was sent:
-   * when one is announced after all, it is stopped, so none is orphaned. The
-   * announcement carries the stream's name and nothing that ties it to a
-   * call, so matching is by name, oldest first, and an abandoned stream is
-   * taken before a pending call of the same name.
+   * Streams stopped because their `publish` had given up, newest last. A row
+   * about one that is still on its way, such as a late `notifystreaminfo`, must
+   * not bring it back.
    */
-  readonly #abandoned: string[] = [];
-  #publishQueue: Promise<unknown> = Promise.resolve();
+  readonly #orphans = new Set<string>();
   #disposed = false;
 
   /**
@@ -216,8 +228,13 @@ export class Streams {
   /**
    * Start a stream and resolve once the server has announced it. The call
    * sends `setupstream` with all seven parameters, in peer to peer mode, the
-   * only mode the server allows. A client may publish several streams; calls
-   * wait their turn so that each announcement is matched with its call.
+   * only mode the server allows. A client may publish several streams, and
+   * several calls may be in flight: the server echoes each command's
+   * `return_code` on the announcement of the stream it started, so each call
+   * receives its own, whatever the names. When the call gives up, by timeout or
+   * abort, a stream the server announces within a few seconds more is stopped;
+   * one announced later than that cannot be told from any other of this
+   * client's, and is left to `list()`.
    *
    * Throws a `StreamsUnsupportedError`, without sending anything, on a server
    * that is not TeamSpeak 6, and a `RangeError` for an option that is out of
@@ -251,42 +268,77 @@ export class Streams {
     assertFits(request);
     options.signal?.throwIfAborted();
 
-    const run = this.#publishQueue.then(() => this.#publishOne(request, options));
-    this.#publishQueue = run.catch(() => {});
-    return run;
+    return this.#publishOne(request, options);
   }
 
+  /**
+   * The `setupstream` is answered with the announcement of the stream it
+   * started: the server echoes the command's `return_code` on it, and nothing
+   * else ties the two, since streams of one name are announced alike. The send
+   * is therefore not the caller's to cancel. When the caller gives up, by
+   * timeout or abort, the command may still have been carried out, and the
+   * answer is what says which stream it started: it is stopped then.
+   */
   async #publishOne(request: CommandRequest, options: PublishOptions): Promise<PublishedStream> {
     this.#assertUsable();
     options.signal?.throwIfAborted();
-    const name = String(request.params?.find(([key]) => key === "name")?.[1] ?? "");
-    const announced = defer<PublishedImpl>();
-    const pending = { name, announced };
-    this.#publishing = pending;
-    let sent = false;
+    const timeoutMs = options.timeoutMs ?? DEFAULT_PUBLISH_TIMEOUT_MS;
+    const attempt: Attempt = { outcome: defer<PublishedImpl>(), abandoned: false };
+    this.#publishing.add(attempt);
+    void this.#setup(request, attempt, Math.max(timeoutMs, ANNOUNCE_WINDOW_MS));
     try {
-      const timeoutMs = options.timeoutMs ?? DEFAULT_PUBLISH_TIMEOUT_MS;
-      try {
-        await this.#send(request, undefined, signalOption(options.signal));
-      } catch (error) {
-        // A refusal means nothing started. A timeout or an abort leaves it open.
-        sent = !(error instanceof ServerError) && !(error instanceof NotConnectedError);
-        throw error;
-      }
-      sent = true;
-      return await within(announced.promise, request.command, timeoutMs, options.signal);
+      return await within(attempt.outcome.promise, request.command, timeoutMs, options.signal);
     } catch (error) {
-      // Given up on after the command may have gone out: the stream may still
-      // be announced, and it is stopped then rather than left running unseen.
-      const stillOpen = this.#publishing === pending;
-      if (sent && stillOpen && !this.#disposed && !(error instanceof NotConnectedError)) {
-        this.#abandoned.push(name);
-        if (this.#abandoned.length > MAX_ABANDONED) this.#abandoned.shift();
-      }
+      attempt.abandoned = true;
       throw error;
     } finally {
-      if (this.#publishing === pending) this.#publishing = undefined;
+      this.#publishing.delete(attempt);
     }
+  }
+
+  /** Send the `setupstream` and settle `attempt` with its stream, or stop the stream if nobody waits. */
+  async #setup(request: CommandRequest, attempt: Attempt, timeoutMs: number): Promise<void> {
+    let rows: Array<Record<string, string>>;
+    try {
+      rows = await this.#client.send(request, { timeoutMs });
+    } catch (error) {
+      attempt.outcome.reject(error);
+      return;
+    }
+    if (this.#disposed) return;
+    const info = rows.reduce<StreamInfo | undefined>(
+      (found, row) => streamInfoFrom(row, this.#infos.get(row["id"] ?? "")) ?? found,
+      undefined,
+    );
+    if (info === undefined) {
+      attempt.outcome.reject(new TeamspeakError("the server answered setupstream with no stream"));
+      return;
+    }
+    if (attempt.abandoned) {
+      this.#orphan(info);
+      return;
+    }
+    attempt.outcome.resolve(this.#adopt(info));
+  }
+
+  /** The stream of a `publish` that is waiting: learned if the notification has not been, and published. */
+  #adopt(info: StreamInfo): PublishedImpl {
+    this.#learn(info);
+    let published = this.#published.get(info.id);
+    if (published === undefined) {
+      published = new PublishedImpl(this.#infos.get(info.id) ?? info, this.#publishHost);
+      this.#published.set(info.id, published);
+    }
+    return published;
+  }
+
+  /** A stream nobody is waiting for: stopped, and reported over if it was reported started. */
+  #orphan(info: StreamInfo): void {
+    this.#orphans.add(info.id);
+    if (this.#orphans.size > MAX_ORPHANS)
+      this.#orphans.delete(this.#orphans.values().next().value!);
+    this.#end(info.id, 0, "stopped");
+    this.#bestEffort(this.#stop(info.id, 0));
   }
 
   // ---- Watching -------------------------------------------------------------
@@ -494,10 +546,10 @@ export class Streams {
     const name: string = event.name;
     switch (name) {
       case "notifystreamstarted":
-        this.#onInfo(params, true);
+        this.#onInfo(params);
         break;
       case "notifystreaminfo":
-        this.#onInfo(params, false);
+        this.#onInfo(params);
         break;
       case "notifyjoinstreamrequest": {
         const id = params["id"] ?? "";
@@ -527,7 +579,10 @@ export class Streams {
         break;
       case "notifystreamstopped": {
         const id = params["id"] ?? "";
-        if (id !== "") this.#end(id, intOf(params, "reason", 0), "server");
+        if (id !== "") {
+          this.#end(id, intOf(params, "reason", 0), "server");
+          this.#orphans.delete(id);
+        }
         break;
       }
       default:
@@ -535,39 +590,22 @@ export class Streams {
     }
   }
 
-  #onInfo(params: Readonly<Record<string, string>>, announcement: boolean): void {
-    const known = this.#infos.get(params["id"] ?? "");
+  /**
+   * An announcement or a reply to `requeststreaminfo`. The publisher's own
+   * announcement is no different: `publish` finds it by the answer to its
+   * command, and this is told of it the same way, in either order.
+   */
+  #onInfo(params: Readonly<Record<string, string>>): void {
     // The empty `notifystreaminfo` for a client that streams nothing has no id.
-    const info = streamInfoFrom(params, known);
-    if (info === undefined) return;
+    const info = streamInfoFrom(params, this.#infos.get(params["id"] ?? ""));
+    if (info !== undefined) this.#learn(info);
+  }
 
-    // Only an announcement of this client's own stream can answer a `publish`.
-    if (
-      announcement &&
-      known === undefined &&
-      info.clientId === this.#client.clientID &&
-      !this.#published.has(info.id)
-    ) {
-      // A stream whose `publish` gave up: stopped, and not listed.
-      const abandoned = this.#abandoned.indexOf(info.name);
-      if (abandoned >= 0) {
-        this.#abandoned.splice(abandoned, 1);
-        this.#bestEffort(this.#stop(info.id, 0));
-        return;
-      }
-      const pending = this.#publishing;
-      if (pending !== undefined && pending.name === info.name) {
-        this.#infos.set(info.id, info);
-        const published = new PublishedImpl(info, this.#publishHost);
-        this.#published.set(info.id, published);
-        this.#publishing = undefined;
-        pending.announced.resolve(published);
-        this.#emitter.emit("started", info);
-        return;
-      }
-    }
+  /** Record what is known of a stream and report it; knowing it again changes nothing. */
+  #learn(info: StreamInfo): void {
+    if (this.#orphans.has(info.id)) return;
+    const known = this.#infos.get(info.id);
     this.#infos.set(info.id, info);
-
     if (known === undefined) this.#emitter.emit("started", info);
     else if (!sameInfo(known, info)) this.#emitter.emit("updated", info);
   }
@@ -677,9 +715,9 @@ export class Streams {
       cause === "disconnected"
         ? new NotConnectedError()
         : new TeamspeakError("these Streams were disposed");
-    this.#publishing?.announced.reject(gone);
-    this.#publishing = undefined;
-    this.#abandoned.length = 0;
+    for (const attempt of this.#publishing) attempt.outcome.reject(gone);
+    this.#publishing.clear();
+    this.#orphans.clear();
 
     const ended: StreamEnded = { cause, reason: 0 };
     const published = [...this.#published.values()];
