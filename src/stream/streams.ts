@@ -124,9 +124,9 @@ interface Watch {
 export class Streams {
   readonly #client: StreamsClient;
   readonly #rememberDenied: boolean;
-  // Errors nobody listens for wait for the first listener, as other early
-  // events do; past the bound the oldest is dropped, with no report of its own.
-  readonly #emitter = new Emitter<StreamsEventMap>(["error"]);
+  // Errors and warnings nobody listens for wait for the first listener, as other
+  // early events do; past the bound the oldest is dropped, with no report of its own.
+  readonly #emitter = new Emitter<StreamsEventMap>(["error", "warning"]);
   readonly #infos = new Map<string, StreamInfo>();
   /** The clients whose streams were asked for, until the flag clears or they go. */
   readonly #asked = new Set<ClientID>();
@@ -471,6 +471,7 @@ export class Streams {
       );
     },
     report: (error) => this.#report(error),
+    warn: (warning) => this.#emitter.emit("warning", warning),
     isDenied: (identity) =>
       this.#rememberDenied && identity.uid !== undefined && this.#denied.has(identity.uid),
     remember: (identity) => {

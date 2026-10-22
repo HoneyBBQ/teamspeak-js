@@ -7,9 +7,17 @@ import type {
   PeerClosed,
   PeerEvents,
   StreamView,
+  StreamWarning,
   ViewerPeer,
 } from "./types.js";
-import { answerJson, candidateJson, encodeSignal, offerJson, parseSignal } from "./wire.js";
+import {
+  answerJson,
+  candidateJson,
+  encodeSignal,
+  hasAudioSection,
+  offerJson,
+  parseSignal,
+} from "./wire.js";
 
 /** What a peer needs of the `Streams` that made it. */
 export interface PeerLink {
@@ -21,6 +29,18 @@ export interface PeerLink {
   closed(peer: PeerImpl): void;
   /** Something happened that nobody awaits, such as an event dropped for want of a listener. */
   report(error: Error): void;
+  /** Something noticed that is let through; absent where nothing is checked. */
+  warn?(warning: StreamWarning): void;
+}
+
+/** The warning for an offer with no audio section. */
+export function noAudioWarning(streamId: string, clientId: ClientID): StreamWarning {
+  return {
+    code: "offer-without-audio",
+    streamId,
+    clientId,
+    message: `the offer for client ${clientId} has no m=audio section: the TeamSpeak 6 client does not answer an offer without audio, and its Join button then does nothing`,
+  };
 }
 
 /** One end of a stream's signalling with one other client. */
@@ -76,6 +96,11 @@ export class PeerImpl implements Peer {
     await this.#link.leave?.();
   }
 
+  /** Warn that an offer for this peer has no audio section. */
+  protected warnWithoutAudio(): void {
+    this.#link.warn?.(noAudioWarning(this.streamId, this.clientId));
+  }
+
   /** Send a message of the subclasses'. */
   protected send(json: string): Promise<void> {
     return this.#send(() => json);
@@ -118,6 +143,7 @@ export class PeerImpl implements Peer {
 /** The publisher's end for one accepted viewer. */
 export class ViewerPeerImpl extends PeerImpl implements ViewerPeer {
   sendOffer(sdp: string): Promise<void> {
+    if (!hasAudioSection(sdp)) this.warnWithoutAudio();
     return this.send(offerJson(sdp));
   }
 }

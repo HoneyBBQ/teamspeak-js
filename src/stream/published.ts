@@ -1,19 +1,22 @@
 import { TeamspeakError } from "@honeybbq/teamspeak";
 import type { ClientID, CommandRequest, Unsubscribe } from "@honeybbq/teamspeak";
 import { Emitter, MAX_KEPT } from "./emitter.js";
-import { ViewerPeerImpl } from "./peer.js";
+import { ViewerPeerImpl, noAudioWarning } from "./peer.js";
 import type { PeerImpl } from "./peer.js";
 import type {
   JoinRequest,
+  JoinRequestCloseCause,
+  JoinRequestEvents,
   JoinRequestState,
   PublishedStream,
   PublishedStreamEvents,
   StreamEnded,
   StreamInfo,
+  StreamWarning,
   ViewerIdentity,
   ViewerPeer,
 } from "./types.js";
-import { assertFits, respondRequest, signalRequest } from "./wire.js";
+import { assertFits, hasAudioSection, respondRequest, signalRequest } from "./wire.js";
 
 /** What a published stream needs of the `Streams` that made it. */
 export interface PublishHost {
@@ -28,6 +31,8 @@ export interface PublishHost {
   isDenied(identity: ViewerIdentity): boolean;
   /** Note that a viewer was denied. */
   remember(identity: ViewerIdentity): void;
+  /** Pass on something noticed that is let through. */
+  warn(warning: StreamWarning): void;
   /** Send a stream command; a stream the server does not know is a StreamEndedError. */
   send(request: CommandRequest, streamId: string): Promise<void>;
   /** Send `stopstream` for a stream of this client's; a stream already gone is not an error. */
@@ -44,6 +49,7 @@ class JoinRequestImpl implements JoinRequest {
   readonly message: string;
   #state: JoinRequestState = "pending";
   readonly #stream: PublishedImpl;
+  readonly #emitter = new Emitter<JoinRequestEvents>(["closed"]);
 
   constructor(stream: PublishedImpl, viewer: ViewerIdentity, message: string) {
     this.#stream = stream;
@@ -56,9 +62,18 @@ class JoinRequestImpl implements JoinRequest {
     return this.#state;
   }
 
+  on<K extends keyof JoinRequestEvents>(
+    event: K,
+    listener: (payload: JoinRequestEvents[K]) => void,
+  ): Unsubscribe {
+    return this.#emitter.on(event, listener);
+  }
+
   /** The request will not be answered: the viewer withdrew it, or the stream ended. */
-  close(state: "withdrawn" | "ended"): void {
-    if (this.#state === "pending") this.#state = state;
+  close(cause: JoinRequestCloseCause): void {
+    if (this.#state !== "pending") return;
+    this.#state = cause;
+    this.#emitter.emit("closed", { cause });
   }
 
   #assertPending(): void {
@@ -75,6 +90,9 @@ class JoinRequestImpl implements JoinRequest {
     const request = respondRequest(this.streamId, this.viewer.clientId, message, offer, true);
     // Before the request is used up: a too long offer may be shortened and tried again.
     assertFits(request);
+    if (!hasAudioSection(offer)) {
+      this.#stream.host.warn(noAudioWarning(this.streamId, this.viewer.clientId));
+    }
     this.#state = "accepted";
     // Made before the offer goes out: the viewer answers, and the publisher's
     // side starts sending candidates, as soon as it has the offer, and what
@@ -180,6 +198,7 @@ export class PublishedImpl implements PublishedStream {
         }
       },
       report: (error) => this.host.report(error),
+      warn: (warning) => this.host.warn(warning),
     });
     this.#closedViewers.delete(clientId);
     this.#peers.set(clientId, peer);

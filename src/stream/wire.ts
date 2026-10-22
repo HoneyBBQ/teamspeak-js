@@ -317,3 +317,8 @@ export function intOf(
 ): number {
   return int(params[key]) ?? fallback;
 }
+
+/** Whether an SDP has an audio media section. */
+export function hasAudioSection(sdp: string): boolean {
+  return /^m=audio[ \t]/m.test(sdp);
+}

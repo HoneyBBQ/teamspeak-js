@@ -32,6 +32,9 @@ export {
 export type {
   IceCandidate,
   JoinRequest,
+  JoinRequestCloseCause,
+  JoinRequestClosed,
+  JoinRequestEvents,
   JoinRequestState,
   Peer,
   PeerClosed,
@@ -51,6 +54,8 @@ export type {
   StreamSource,
   StreamStoppedEvent,
   StreamView,
+  StreamWarning,
+  StreamWarningCode,
   StreamViewerEvent,
   ViewerIdentity,
   ViewerPeer,
