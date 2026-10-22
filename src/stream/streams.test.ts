@@ -1456,15 +1456,73 @@ describe("review fixes", () => {
       expect(streams.get("orphan")).toBeUndefined();
     });
 
-    it("keeps the command open past the caller's timeout and signal", async () => {
+    // However early the caller gives up, the command listens five seconds more.
+    it.each([[30], [10_000]])(
+      "keeps the command open five seconds past a caller timeout of %i ms, whatever the signal",
+      async (timeoutMs) => {
+        const { client, streams } = setup();
+        const controller = new AbortController();
+        const promise = streams.publish({ name: "x", timeoutMs, signal: controller.signal });
+        await settle();
+        const [options] = client.sentOptions;
+        expect(options?.signal).toBeUndefined();
+        expect(options?.timeoutMs).toBe(timeoutMs + 5000);
+        controller.abort();
+        await expect(promise).rejects.toThrow();
+      },
+    );
+
+    it("takes the default timeout and five seconds for the command", async () => {
       const { client, streams } = setup();
-      const controller = new AbortController();
-      const promise = streams.publish({ name: "x", timeoutMs: 30, signal: controller.signal });
+      const promise = streams.publish({ name: "x" });
       await settle();
-      const [options] = client.sentOptions;
-      expect(options?.signal).toBeUndefined();
-      expect(options?.timeoutMs).toBeGreaterThanOrEqual(5000);
-      await expect(promise).rejects.toBeInstanceOf(CommandTimeoutError);
+      expect(client.sentOptions[0]?.timeoutMs).toBe(15_000);
+      client.announce(own("a", "x"));
+      await promise;
+    });
+
+    it("stops the stream a publish started when disposed before the announcement", async () => {
+      const { client, streams } = setup();
+      const promise = streams.publish({ name: "x" });
+      const rejected = expect(promise).rejects.toThrow(/disposed/);
+      await settle();
+      streams.dispose();
+      await rejected;
+      client.announce(own("late", "x"));
+      await settle();
+      expect(stopped(client)).toEqual(["late"]);
+    });
+
+    it("stops nothing for a publish answered after dispose when the connection is gone", async () => {
+      const { client, streams } = setup();
+      const promise = streams.publish({ name: "x" });
+      const rejected = expect(promise).rejects.toThrow();
+      await settle();
+      client.status = "disconnected";
+      streams.dispose();
+      await rejected;
+      client.announce(own("late", "x"));
+      await settle();
+      expect(stopped(client)).toEqual([]);
+    });
+
+    // The answer and the end of the connection arrive in one tick, the answer
+    // first: the call must not be given a stream on a dead connection.
+    it("does not adopt a stream answered in the same tick as the connection ends", async () => {
+      const { client, streams } = setup();
+      const events: string[] = [];
+      streams.on("started", (info) => events.push(`started ${info.id}`));
+      const promise = streams.publish({ name: "x" });
+      const rejected = expect(promise).rejects.toBeInstanceOf(NotConnectedError);
+      await settle();
+      client.status = "disconnected";
+      client.setups.splice(0)[0]!.resolve([{ ...own("a", "x"), return_code: "1" }]);
+      client.emit("disconnected", { error: undefined, willReconnect: false });
+      await rejected;
+      await settle();
+      expect(events).toEqual([]);
+      expect(streams.list()).toEqual([]);
+      expect(streams.get("a")).toBeUndefined();
     });
 
     it("does not bring a stopped orphan back with a later row about it", async () => {
