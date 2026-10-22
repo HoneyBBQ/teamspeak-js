@@ -88,7 +88,12 @@ jobs:
           cp -r test/types "$RUNNER_TEMP/consumer"
           cd "$RUNNER_TEMP/consumer"
           npm ci --no-audit --no-fund
-          npm install --no-save --no-audit --no-fund "$RUNNER_TEMP"/packs/*.tgz
+          # Unpack the tarball by hand rather than `npm install`ing it: its name
+          # and hash change every build, so no lockfile can pin it. Its runtime
+          # dependency (@noble/curves, whose types the declarations import) is
+          # pinned in test/types/package-lock.json instead.
+          mkdir -p node_modules/@honeybbq/teamspeak
+          tar -xzf "$RUNNER_TEMP"/packs/*.tgz -C node_modules/@honeybbq/teamspeak --strip-components=1
           npx tsc --version
           npx tsc -p .
 

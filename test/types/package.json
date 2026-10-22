@@ -2,6 +2,9 @@
   "name": "consumer",
   "private": true,
   "type": "module",
+  "dependencies": {
+    "@noble/curves": "2.4.0"
+  },
   "devDependencies": {
     "@types/node": "22.20.5",
     "typescript": "5.2.2"
