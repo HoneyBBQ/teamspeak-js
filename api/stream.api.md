@@ -30,9 +30,23 @@ export interface JoinRequest {
     accept(offer: string, message?: string): Promise<ViewerPeer>;
     deny(reason?: string): Promise<void>;
     readonly message: string;
+    on<K extends keyof JoinRequestEvents>(event: K, listener: (payload: JoinRequestEvents[K]) => void): Unsubscribe;
     readonly state: JoinRequestState;
     readonly streamId: string;
     readonly viewer: ViewerIdentity;
+}
+
+// @beta
+export type JoinRequestCloseCause = "withdrawn" | "ended";
+
+// @beta
+export interface JoinRequestClosed {
+    readonly cause: JoinRequestCloseCause;
+}
+
+// @beta
+export interface JoinRequestEvents {
+    closed: JoinRequestClosed;
 }
 
 // @beta
@@ -193,6 +207,7 @@ export interface StreamsEventMap {
     updated: StreamInfo;
     viewerJoined: StreamViewerEvent;
     viewerLeft: StreamViewerEvent;
+    warning: StreamWarning;
 }
 
 // @beta
@@ -231,6 +246,17 @@ export interface StreamViewerEvent {
     readonly clientId: ClientID;
     readonly info: StreamInfo;
 }
+
+// @beta
+export interface StreamWarning {
+    readonly clientId: ClientID;
+    readonly code: StreamWarningCode;
+    readonly message: string;
+    readonly streamId: string;
+}
+
+// @beta
+export type StreamWarningCode = "offer-without-audio";
 
 // @beta
 export interface ViewerIdentity {
