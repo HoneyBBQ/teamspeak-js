@@ -18,14 +18,14 @@ import { TeamspeakError } from '@honeybbq/teamspeak';
 import type { UID } from '@honeybbq/teamspeak';
 import type { Unsubscribe } from '@honeybbq/teamspeak';
 
-// @beta
+// @public
 export interface IceCandidate {
     readonly candidate: string;
     readonly sdpMid: string | null;
     readonly sdpMLineIndex: number | null;
 }
 
-// @beta
+// @public
 export interface JoinRequest {
     accept(offer: string, message?: string): Promise<ViewerPeer>;
     deny(reason?: string): Promise<void>;
@@ -36,23 +36,23 @@ export interface JoinRequest {
     readonly viewer: ViewerIdentity;
 }
 
-// @beta
+// @public
 export type JoinRequestCloseCause = "withdrawn" | "ended";
 
-// @beta
+// @public
 export interface JoinRequestClosed {
     readonly cause: JoinRequestCloseCause;
 }
 
-// @beta
+// @public
 export interface JoinRequestEvents {
     closed: JoinRequestClosed;
 }
 
-// @beta
+// @public
 export type JoinRequestState = "pending" | "accepted" | "denied" | "failed" | "withdrawn" | "ended";
 
-// @beta
+// @public
 export interface Peer {
     readonly clientId: ClientID;
     close(): Promise<void>;
@@ -63,16 +63,16 @@ export interface Peer {
     readonly streamId: string;
 }
 
-// @beta
+// @public
 export type PeerCloseCause = "closed" | "left" | "stopped" | "disconnected" | "disposed";
 
-// @beta
+// @public
 export interface PeerClosed {
     readonly cause: PeerCloseCause;
     readonly reason?: number | undefined;
 }
 
-// @beta
+// @public
 export interface PeerEvents {
     answer: string;
     candidate: IceCandidate;
@@ -81,7 +81,7 @@ export interface PeerEvents {
     signal: RawSignal;
 }
 
-// @beta
+// @public
 export interface PublishedStream {
     readonly ended: boolean;
     readonly id: string;
@@ -91,13 +91,13 @@ export interface PublishedStream {
     viewers(): readonly ViewerPeer[];
 }
 
-// @beta
+// @public
 export interface PublishedStreamEvents {
     ended: StreamEnded;
     request: JoinRequest;
 }
 
-// @beta
+// @public
 export interface PublishOptions {
     readonly accessibility?: StreamAccessibility | undefined;
     readonly audio?: boolean | undefined;
@@ -109,26 +109,26 @@ export interface PublishOptions {
     readonly viewerLimit?: number | undefined;
 }
 
-// @beta
+// @public
 export interface RawSignal {
     readonly args: unknown;
     readonly cmd: string;
     readonly json: string;
 }
 
-// @beta
+// @public
 export type StreamAccessibility = "none" | "public" | "contacts" | "private";
 
-// @beta
+// @public
 export type StreamEndCause = "stopped" | "server" | "gone" | "disconnected" | "disposed";
 
-// @beta
+// @public
 export interface StreamEnded {
     readonly cause: StreamEndCause;
     readonly reason: number;
 }
 
-// @beta
+// @public
 export class StreamEndedError extends TeamspeakError {
     constructor(streamId: string, options?: ErrorOptions);
     // (undocumented)
@@ -136,7 +136,7 @@ export class StreamEndedError extends TeamspeakError {
     readonly streamId: string;
 }
 
-// @beta
+// @public
 export interface StreamInfo {
     readonly accessibility?: StreamAccessibility | number | undefined;
     readonly audio: boolean;
@@ -149,7 +149,7 @@ export interface StreamInfo {
     readonly viewers?: number | undefined;
 }
 
-// @beta
+// @public
 export class StreamJoinDeniedError extends TeamspeakError {
     constructor(streamId: string, message: string);
     // (undocumented)
@@ -158,7 +158,7 @@ export class StreamJoinDeniedError extends TeamspeakError {
     readonly streamId: string;
 }
 
-// @beta
+// @public
 export class StreamPayloadTooLargeError extends TeamspeakError {
     constructor(command: string, size: number, limit: number);
     readonly command: string;
@@ -168,7 +168,7 @@ export class StreamPayloadTooLargeError extends TeamspeakError {
     readonly size: number;
 }
 
-// @beta
+// @public
 export class Streams {
     constructor(client: StreamsClient, options?: StreamsOptions);
     dispose(): void;
@@ -180,7 +180,7 @@ export class Streams {
     watch(target: string | StreamInfo, options?: WatchOptions): Promise<StreamView>;
 }
 
-// @beta
+// @public
 export interface StreamsClient extends CommandExecutor {
     readonly clientID: ClientID;
     on(event: "notification", listener: (event: NotificationEvent) => void): Unsubscribe;
@@ -199,7 +199,7 @@ export interface StreamsClient extends CommandExecutor {
     };
 }
 
-// @beta
+// @public
 export interface StreamsEventMap {
     error: Error;
     started: StreamInfo;
@@ -210,22 +210,22 @@ export interface StreamsEventMap {
     warning: StreamWarning;
 }
 
-// @beta
+// @public
 export interface StreamsOptions {
     readonly rememberDenied?: boolean | undefined;
 }
 
-// @beta
+// @public
 export type StreamSource = "none" | "camera" | "screen" | "window" | "session";
 
-// @beta
+// @public
 export interface StreamStoppedEvent {
     readonly cause: "server" | "stopped" | "gone";
     readonly info: StreamInfo;
     readonly reason: number;
 }
 
-// @beta
+// @public
 export class StreamsUnsupportedError extends TeamspeakError {
     constructor(family: ServerFamily, version: string);
     readonly family: ServerFamily;
@@ -234,20 +234,20 @@ export class StreamsUnsupportedError extends TeamspeakError {
     readonly version: string;
 }
 
-// @beta
+// @public
 export interface StreamView extends Peer {
     answer(sdp: string): Promise<void>;
     leave(): Promise<void>;
     readonly offer: string;
 }
 
-// @beta
+// @public
 export interface StreamViewerEvent {
     readonly clientId: ClientID;
     readonly info: StreamInfo;
 }
 
-// @beta
+// @public
 export interface StreamWarning {
     readonly clientId: ClientID;
     readonly code: StreamWarningCode;
@@ -255,22 +255,22 @@ export interface StreamWarning {
     readonly streamId: string;
 }
 
-// @beta
+// @public
 export type StreamWarningCode = "offer-without-audio";
 
-// @beta
+// @public
 export interface ViewerIdentity {
     readonly clientId: ClientID;
     readonly nickname: string | undefined;
     readonly uid: UID | undefined;
 }
 
-// @beta
+// @public
 export interface ViewerPeer extends Peer {
     sendOffer(sdp: string): Promise<void>;
 }
 
-// @beta
+// @public
 export interface WatchOptions {
     readonly message?: string | undefined;
     readonly signal?: AbortSignal | undefined;
