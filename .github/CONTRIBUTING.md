@@ -29,7 +29,7 @@ You need Node.js 22.12 or newer and pnpm. The exact pnpm version is pinned in
 (`corepack enable`) the right one is used automatically.
 
 The Node.js and TypeScript versions the package supports, and how that changes
-over time, are in the [supported environments](../README.md#supported-environments)
+over time, are in the [supported environments](../docs/compatibility.md#supported-environments)
 policy; CI enforces them.
 
 ```sh

@@ -225,6 +225,8 @@ the last version heading, are the core's history; the client's is at the bottom.
 
 ## 1.0.0-beta.7
 
+1.0.0-beta.5 and 1.0.0-beta.6 were never published; their changes shipped in 1.0.0-beta.7.
+
 ### Minor Changes
 
 - [#56](https://github.com/HoneyBBQ/teamspeak-js/pull/56) [`db9f2c5`](https://github.com/HoneyBBQ/teamspeak-js/commit/db9f2c5a9bccf59b74e6cc277f2071d9fb238d8a) - The ServerQuery client is published, as `@honeybbq/teamspeak/query`.
