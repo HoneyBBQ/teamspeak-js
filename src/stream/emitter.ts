@@ -6,15 +6,16 @@ export const MAX_KEPT = 256;
 /**
  * A small event emitter whose events can wait for their first listener.
  *
- * The events named in `keep` are held while nobody has ever listened to them,
- * up to 256 per event, and delivered, in order, to the first listener. Past
- * that the oldest is dropped, and `onDrop` hears of it. That is what bridges the time between being
- * handed an object and attaching to it, in which the server does not wait.
+ * The events named in `keep` are held while nobody listens to them, before
+ * the first listener and again after the last has unsubscribed, up to 256 per
+ * event, and delivered, in order, to the next listener. Past that the oldest is
+ * dropped, and `onDrop` hears of it. That is what bridges the time between
+ * being handed an object and attaching to it, in which the server does not
+ * wait.
  */
 export class Emitter<M extends object> {
   #listeners = new Map<keyof M, Array<(payload: never) => void>>();
   #kept = new Map<keyof M, unknown[]>();
-  #attached = new Set<keyof M>();
   readonly #keep: ReadonlySet<keyof M>;
 
   readonly #onDrop: ((event: keyof M) => void) | undefined;
@@ -26,7 +27,8 @@ export class Emitter<M extends object> {
 
   on<K extends keyof M>(event: K, listener: (payload: M[K]) => void): Unsubscribe {
     const stored = listener as (payload: never) => void;
-    this.#listeners.set(event, [...(this.#listeners.get(event) ?? []), stored]);
+    const before = this.#listeners.get(event) ?? [];
+    this.#listeners.set(event, [...before, stored]);
     const unsubscribe = (): void => {
       const list = this.#listeners.get(event) ?? [];
       this.#listeners.set(
@@ -34,8 +36,7 @@ export class Emitter<M extends object> {
         list.filter((l) => l !== stored),
       );
     };
-    if (!this.#attached.has(event)) {
-      this.#attached.add(event);
+    if (before.length === 0) {
       const kept = this.#kept.get(event) ?? [];
       this.#kept.delete(event);
       for (const payload of kept) call(listener, payload as M[K]);
@@ -46,7 +47,7 @@ export class Emitter<M extends object> {
   emit<K extends keyof M>(event: K, payload: M[K]): void {
     const list = this.#listeners.get(event);
     if (list === undefined || list.length === 0) {
-      if (this.#keep.has(event) && !this.#attached.has(event)) {
+      if (this.#keep.has(event)) {
         const kept = this.#kept.get(event) ?? [];
         kept.push(payload);
         if (kept.length > MAX_KEPT) {

@@ -53,6 +53,8 @@ const DEFAULT_WATCH_TIMEOUT_MS = 60_000;
 const MAX_EARLY_SIGNALS = MAX_KEPT;
 /** How many denied clients are remembered with `rememberDenied`. */
 const MAX_DENIED = 1024;
+/** How many streams whose view is over are remembered, to ignore what their publisher still sends. */
+const MAX_CLOSED_VIEWS = 1024;
 /**
  * How long a cleared `client_is_streaming` waits before it ends that client's
  * streams. The server clears the flag right before it sends `notifystreamstopped`,
@@ -133,6 +135,8 @@ export class Streams {
   readonly #published = new Map<string, PublishedImpl>();
   readonly #watching = new Map<string, Watch>();
   readonly #denied = new Set<string>();
+  /** Streams whose view is over: what their publisher still signals is not worth a report. */
+  readonly #closedViews = new Set<string>();
   readonly #subscriptions: Unsubscribe[] = [];
   /** The `publish` calls still waiting for their stream. */
   readonly #publishing = new Set<Attempt>();
@@ -390,6 +394,7 @@ export class Streams {
       settled: defer<StreamViewImpl>(),
     };
     this.#watching.set(id, watch);
+    this.#closedViews.delete(id);
     try {
       await this.#send(
         joinRequest(id, streamer, options.message ?? "", false),
@@ -651,6 +656,11 @@ export class Streams {
       leave: () => this.#leave(id, watch.streamer),
       closed: (closing: PeerImpl) => {
         if (this.#watching.get(id)?.view === closing) this.#watching.delete(id);
+        this.#closedViews.delete(id);
+        this.#closedViews.add(id);
+        if (this.#closedViews.size > MAX_CLOSED_VIEWS) {
+          this.#closedViews.delete(this.#closedViews.values().next().value!);
+        }
       },
       report: (error) => this.#report(error),
     });
@@ -682,7 +692,7 @@ export class Streams {
           );
         }
       }
-    } else {
+    } else if (!this.#closedViews.has(id)) {
       this.#report(
         new TeamspeakError(`signalling for stream ${id} from client ${clid}, which has no session`),
       );
@@ -760,5 +770,6 @@ export class Streams {
       if (watch.view !== undefined) watch.view.end({ cause });
       else watch.settled.reject(gone);
     }
+    this.#closedViews.clear();
   }
 }

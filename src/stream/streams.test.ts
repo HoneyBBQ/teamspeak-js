@@ -1401,6 +1401,51 @@ describe("watch", () => {
     client.notify("notifystreamsignaling", { id: "nope", clid: "3", json: "{}" });
     expect(errors).toHaveLength(1);
   });
+
+  it("ignores what a publisher still signals to a view that is over", async () => {
+    const { client, streams } = setup();
+    const view = await watchOne(client, streams);
+    const errors: Error[] = [];
+    streams.on("error", (e) => errors.push(e));
+    await view.leave();
+    client.notify("notifystreamsignaling", { id: STREAM, clid: String(OTHER), json: "{}" });
+    client.notify("notifystreamsignaling", { id: STREAM, clid: String(OTHER), json: "{}" });
+    await settle();
+    expect(errors).toEqual([]);
+    // Another stream with no session is still reported.
+    client.notify("notifystreamsignaling", { id: "nope", clid: "3", json: "{}" });
+    expect(errors).toHaveLength(1);
+  });
+
+  it("reports signalling again once the stream is watched anew and over again", async () => {
+    const { client, streams } = setup();
+    const view = await watchOne(client, streams);
+    await view.leave();
+    const promise = streams.watch(STREAM);
+    await settle();
+    client.notify("notifyrespondjoinstreamrequest", {
+      clid: String(OTHER),
+      id: STREAM,
+      msg: "",
+      decision: "0",
+    });
+    await promise.catch(() => {});
+    const errors: Error[] = [];
+    streams.on("error", (e) => errors.push(e));
+    client.notify("notifystreamsignaling", { id: STREAM, clid: String(OTHER), json: "{}" });
+    expect(errors).toHaveLength(1);
+  });
+
+  it("forgets the views that are over when the connection ends", async () => {
+    const { client, streams } = setup();
+    const view = await watchOne(client, streams);
+    await view.leave();
+    client.emit("disconnected", { error: undefined, willReconnect: false });
+    const errors: Error[] = [];
+    streams.on("error", (e) => errors.push(e));
+    client.notify("notifystreamsignaling", { id: STREAM, clid: String(OTHER), json: "{}" });
+    expect(errors).toHaveLength(1);
+  });
 });
 
 describe("cleanup", () => {
