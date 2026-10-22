@@ -1,10 +1,11 @@
 import { readFileSync } from "node:fs";
 import { once } from "node:events";
-import { Agent, createServer, globalAgent, request, type Server } from "node:https";
+import { createServer, globalAgent, type Server } from "node:https";
 import type { AddressInfo } from "node:net";
 import { rootCertificates } from "node:tls";
 import { afterEach, describe, expect, it } from "vitest";
 import { QueryClient } from "./client.js";
+import { fetchTrusting } from "./testing/trusting-fetch.js";
 import { WebQueryTransport } from "./web.js";
 
 // Test-only material: see test/fixtures/tls/README.md.
@@ -38,30 +39,6 @@ async function listen(): Promise<string> {
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   return `https://127.0.0.1:${(server.address() as AddressInfo).port}`;
-}
-
-/**
- * A `fetch` that trusts one CA, over `node:https`. This is the example the
- * option's documentation gives for a private CA.
- */
-function fetchTrusting(trusted: Buffer): typeof fetch {
-  const agent = new Agent({ ca: trusted });
-  return ((url: string, init: RequestInit) =>
-    new Promise<Response>((resolve, reject) => {
-      const req = request(
-        url,
-        { method: init.method, headers: init.headers as Record<string, string>, agent },
-        (res) => {
-          const chunks: Buffer[] = [];
-          res.on("data", (chunk: Buffer) => chunks.push(chunk));
-          res.on("end", () =>
-            resolve(new Response(Buffer.concat(chunks), { status: res.statusCode ?? 0 })),
-          );
-        },
-      );
-      req.on("error", reject);
-      req.end(init.body as string);
-    })) as unknown as typeof fetch;
 }
 
 describe("WebQuery over HTTPS", () => {
