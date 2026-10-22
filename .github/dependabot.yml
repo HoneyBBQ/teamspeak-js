@@ -17,3 +17,9 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # The codeql-action steps of one workflow must run the same version, so
+    # they are bumped together, in one pull request with the other actions.
+    groups:
+      github-actions:
+        patterns:
+          - "*"
