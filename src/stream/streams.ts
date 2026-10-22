@@ -102,8 +102,8 @@ interface Watch {
  * and each viewer over WebRTC, which is the application's: this gives it the
  * SDP and ICE messages as strings, and takes them back, and any WebRTC stack
  * can be plugged in. TeamSpeak does not document the protocol and it was
- * measured on TeamSpeak 6 6.0.0-beta13.1 only; it has not been checked against
- * the native client.
+ * measured on TeamSpeak 6 6.0.0-beta13.1 and tried with the TeamSpeak 6 client
+ * 6.0.0-beta5.
  *
  * `Streams` attaches to a voice client, before or after it connects, and finds
  * the streams of the clients it sees: a client with `client_is_streaming` set
@@ -124,9 +124,9 @@ interface Watch {
 export class Streams {
   readonly #client: StreamsClient;
   readonly #rememberDenied: boolean;
-  // Errors nobody listens for wait for the first listener, as other early
-  // events do; past the bound the oldest is dropped, with no report of its own.
-  readonly #emitter = new Emitter<StreamsEventMap>(["error"]);
+  // Errors and warnings nobody listens for wait for the first listener, as other
+  // early events do; past the bound the oldest is dropped, with no report of its own.
+  readonly #emitter = new Emitter<StreamsEventMap>(["error", "warning"]);
   readonly #infos = new Map<string, StreamInfo>();
   /** The clients whose streams were asked for, until the flag clears or they go. */
   readonly #asked = new Set<ClientID>();
@@ -471,6 +471,7 @@ export class Streams {
       );
     },
     report: (error) => this.#report(error),
+    warn: (warning) => this.#emitter.emit("warning", warning),
     isDenied: (identity) =>
       this.#rememberDenied && identity.uid !== undefined && this.#denied.has(identity.uid),
     remember: (identity) => {

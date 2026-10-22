@@ -558,9 +558,9 @@ WebRTC, which is yours: `Streams` hands you the SDP and the ICE candidates as st
 takes them back, so any WebRTC stack plugs in, in a browser, in Electron or in Node. The
 package has no WebRTC dependency.
 
-TeamSpeak does not document this protocol. It was measured on TeamSpeak 6 6.0.0-beta13.1,
-and has not been tried against the native TeamSpeak 6 client yet, so every export is
-`@beta` and may change in a minor release. A TeamSpeak 3 server does not answer the stream
+TeamSpeak does not document this protocol. It was measured on TeamSpeak 6 6.0.0-beta13.1
+and tried against the TeamSpeak 6 client 6.0.0-beta5 (macOS), so every export is `@beta`
+and may change in a minor release. A TeamSpeak 3 server does not answer the stream
 commands at all, so `publish` and `watch` throw a `StreamsUnsupportedError` before sending
 anything.
 
@@ -603,6 +603,10 @@ stream.on("request", async (request) => {
 
   const pc = new RTCPeerConnection({ iceServers });
   for (const track of capture.getTracks()) pc.addTrack(track, capture);
+  // Always offer audio, even with no track to send (see the interop notes below).
+  if (!pc.getTransceivers().some((t) => t.receiver.track.kind === "audio")) {
+    pc.addTransceiver("audio", { direction: "sendonly" });
+  }
   await pc.setLocalDescription(await pc.createOffer());
 
   const viewer = await request.accept(pc.localDescription!.sdp);
@@ -615,6 +619,45 @@ stream.on("request", async (request) => {
 });
 
 await stream.stop();
+```
+
+A request that nobody has answered can end: the viewer withdraws it or goes out of view, or
+the stream ends. `request.on("closed", ({ cause }) => …)` fires then, with `"withdrawn"` or
+`"ended"`, so a UI can drop the request without polling `request.state`; `accept` and `deny`
+then throw. It is not emitted for a request that was accepted or denied.
+
+#### Interop with the TeamSpeak 6 client
+
+What follows was observed with the TeamSpeak 6 client 6.0.0-beta5 (macOS) against a
+TeamSpeak 6 server 6.0.0-beta13.1.
+
+- **Offer audio, always.** When you publish, the client answers an offer only if it has an
+  `m=audio` section. For a video-only offer it never answers: it shows a fallback picture and
+  keeps the "Join" button, which then does nothing, because the server already counts the
+  viewer as joined. Add a send-only audio transceiver even when there is no audio track; an
+  audio section before the video section was accepted. `accept` and `ViewerPeer.sendOffer`
+  send an offer without audio unchanged, and emit a `"warning"` event on `Streams` with the
+  code `"offer-without-audio"`.
+- **Trim the codecs.** The client's own offers carry one video and one audio section, about
+  3.9 KB. A browser's offer with every codec is about 6 KB with audio and video, and about
+  4.8 KB for video alone, against a limit of about 9.2 KB for a command line. Narrowing the
+  codecs keeps room for the candidates and the message:
+
+  ```ts
+  const video = pc.addTransceiver(track, { direction: "sendonly" });
+  const codecs = RTCRtpSender.getCapabilities("video")!.codecs;
+  video.setCodecPreferences(codecs.filter((c) => /^video\/(VP8|H264)$/.test(c.mimeType)));
+  ```
+
+- **Accept every request.** A viewer in the client shows "waiting" until the publisher
+  answers. When it withdraws and asks again, that is a new request, with a new `JoinRequest`.
+- **A channel switch ends the viewing, not the stream.** The client leaves a stream it
+  watches when it changes channel, so the publisher sees that viewer leave. The server does not end a stream when its publisher or a viewer changes channel.
+- Denying, stopping, leaving, disconnecting and several viewers at once, some of them the
+  client and some the SDK, behaved as they do between SDK clients.
+
+```ts
+streams.on("warning", (w) => console.warn(`${w.code}: ${w.message}`));
 ```
 
 Things to know:

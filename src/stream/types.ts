@@ -260,6 +260,40 @@ export interface ViewerIdentity {
 export type JoinRequestState = "pending" | "accepted" | "denied" | "failed" | "withdrawn" | "ended";
 
 /**
+ * Why a request stopped waiting for an answer: `"withdrawn"` when the viewer
+ * took it back or left view, `"ended"` when the stream ended first.
+ *
+ * @beta
+ */
+export type JoinRequestCloseCause = "withdrawn" | "ended";
+
+/**
+ * A pending join request closing without an answer.
+ *
+ * @beta
+ */
+export interface JoinRequestClosed {
+  /** Why it closed. */
+  readonly cause: JoinRequestCloseCause;
+}
+
+/**
+ * The events of a join request. As for a peer, one that happens before a
+ * listener is added is delivered to the first.
+ *
+ * @beta
+ */
+export interface JoinRequestEvents {
+  /**
+   * A request nobody had answered closing: the viewer withdrew it or left view,
+   * or the stream ended. It is emitted once, and never for a request that was
+   * accepted or denied, nor when `accept` or `deny` themselves are called. From
+   * then on `accept` and `deny` throw.
+   */
+  closed: JoinRequestClosed;
+}
+
+/**
  * A client asking to watch a stream this client publishes. The server relays
  * every request, from any channel, and enforces neither `viewerLimit` nor
  * `accessibility`: deciding is the publisher's job, and nothing is accepted
@@ -276,12 +310,19 @@ export interface JoinRequest {
   readonly message: string;
   /** Where the request stands. */
   readonly state: JoinRequestState;
+  /** Listen for an event; returns a function that removes the listener. */
+  on<K extends keyof JoinRequestEvents>(
+    event: K,
+    listener: (payload: JoinRequestEvents[K]) => void,
+  ): Unsubscribe;
   /**
    * Let the viewer in, with the SDP offer it will answer and, optionally, a
    * message that goes with it. Resolves with the peer once the server took
    * the answer. Throws if the request was answered
    * or is no longer pending, and with a `StreamPayloadTooLargeError`, before
    * sending and without using the request up, when the offer is too long.
+   * An offer with no `m=audio` section is sent as it is, with a
+   * `"offer-without-audio"` warning on `Streams`.
    */
   accept(offer: string, message?: string): Promise<ViewerPeer>;
   /**
@@ -455,6 +496,31 @@ export interface StreamViewerEvent {
 }
 
 /**
+ * Why `Streams` warns: `"offer-without-audio"` for an SDP offer with no
+ * `m=audio` section.
+ *
+ * @beta
+ */
+export type StreamWarningCode = "offer-without-audio";
+
+/**
+ * Something the SDK noticed and did not stop: the offer or message goes out
+ * unchanged.
+ *
+ * @beta
+ */
+export interface StreamWarning {
+  /** What was noticed. */
+  readonly code: StreamWarningCode;
+  /** The stream. */
+  readonly streamId: string;
+  /** The viewer the offer was for. */
+  readonly clientId: ClientID;
+  /** A sentence saying what and why. */
+  readonly message: string;
+}
+
+/**
  * The events of `Streams`.
  *
  * @beta
@@ -472,4 +538,9 @@ export interface StreamsEventMap {
   viewerLeft: StreamViewerEvent;
   /** A failure nobody awaits, such as a discovery request the server refused. */
   error: Error;
+  /**
+   * Something the SDK noticed and let through, such as an offer the TeamSpeak 6
+   * client will not answer. Kept for the first listener, as errors are.
+   */
+  warning: StreamWarning;
 }

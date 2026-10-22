@@ -3,8 +3,8 @@
  * view, publishing one, and watching one.
  *
  * TeamSpeak does not document the protocol, and it has been measured against
- * TeamSpeak 6 6.0.0-beta13.1 and not yet against the native client, so
- * everything here is `@beta` and may change in a minor release.
+ * TeamSpeak 6 6.0.0-beta13.1 and tried with the TeamSpeak 6 client
+ * 6.0.0-beta5, so everything here is `@beta` and may change in a minor release.
  *
  * Only the signalling is in this package. The video itself travels over WebRTC
  * between the publisher and each viewer, which the application brings: SDP and
@@ -32,6 +32,9 @@ export {
 export type {
   IceCandidate,
   JoinRequest,
+  JoinRequestCloseCause,
+  JoinRequestClosed,
+  JoinRequestEvents,
   JoinRequestState,
   Peer,
   PeerClosed,
@@ -51,6 +54,8 @@ export type {
   StreamSource,
   StreamStoppedEvent,
   StreamView,
+  StreamWarning,
+  StreamWarningCode,
   StreamViewerEvent,
   ViewerIdentity,
   ViewerPeer,

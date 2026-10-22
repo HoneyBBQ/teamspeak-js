@@ -1,0 +1,5 @@
+---
+"@honeybbq/teamspeak": minor
+---
+
+Streams: a `JoinRequest` now has `on("closed", ({ cause }) => …)`, emitted once when a request nobody had answered ends, with the cause `"withdrawn"` (the viewer took it back, left the stream or went out of view) or `"ended"` (the stream ended or was disposed), so an application can drop the request from its UI without polling `state`. It is not emitted for a request that is accepted or denied, and a listener added late still receives it. `Streams` has a `"warning"` event, kept for the first listener as errors are, with `{ code, streamId, clientId, message }`; the first code is `"offer-without-audio"`, for an offer given to `JoinRequest.accept` or `ViewerPeer.sendOffer` with no `m=audio` section, which is sent unchanged. The TeamSpeak 6 client 6.0.0-beta5 never answers a video-only offer, and its Join button then does nothing. The README gains an interop section for the TeamSpeak 6 client: always offer audio, trim the codecs, accept every request, and what a channel switch does.
