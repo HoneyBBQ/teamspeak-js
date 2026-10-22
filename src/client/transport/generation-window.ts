@@ -29,6 +29,17 @@ export class GenerationWindow {
     this.advance(moveDist + 1);
   }
 
+  /**
+   * Move the base to just past a packet that was just received. A stale packet,
+   * including one from the generation before a wrap, does not move the base
+   * backwards or treat the wait for the next generation as a full cycle.
+   */
+  advanceAfter(mappedValue: number): void {
+    const index = this.mappedToIndex(mappedValue);
+    if (index < 0) return;
+    this.advance(index + 1);
+  }
+
   syncTo(mappedValue: number): void {
     let moveDist = mappedValue - this.#mappedBaseOffset;
     if (moveDist < 0) moveDist += this.#mod;
