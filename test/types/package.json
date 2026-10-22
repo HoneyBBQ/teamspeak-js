@@ -1,5 +1,9 @@
 {
   "name": "consumer",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "typescript": "5.2.2"
+  }
 }

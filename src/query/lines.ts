@@ -1,3 +1,5 @@
+import { trimCarriageReturns } from "./trim.js";
+
 /**
  * Splits a byte stream into the lines ServerQuery speaks.
  *
@@ -16,10 +18,7 @@ export class LineReader {
     for (;;) {
       const end = this.#pending.indexOf(0x0a);
       if (end < 0) break;
-      const line = this.#pending
-        .subarray(0, end)
-        .toString("utf8")
-        .replace(/^\r+|\r+$/g, "");
+      const line = trimCarriageReturns(this.#pending.subarray(0, end).toString("utf8"));
       this.#pending = this.#pending.subarray(end + 1);
       lines.push(line);
     }

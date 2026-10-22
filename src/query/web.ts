@@ -2,6 +2,7 @@ import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { TeamspeakError } from "@honeybbq/teamspeak";
 import { buildCommandOrdered, parseCommand, splitCommandRows } from "../core/internal.js";
+import { trimTrailingSlashes } from "./trim.js";
 import type { QueryTransport, QueryTransportStats } from "./transport.js";
 
 /**
@@ -130,7 +131,7 @@ export class WebQueryTransport implements QueryTransport {
   #bytesReceived = 0;
 
   constructor(options: WebQueryOptions) {
-    this.#base = options.url.replace(/\/+$/, "");
+    this.#base = trimTrailingSlashes(options.url);
     if (options.guest === true) {
       if (options.apiKey !== undefined) {
         throw new TypeError("apiKey and guest were given together; a guest sends no api key");
@@ -212,7 +213,7 @@ export class WebQueryTransport implements QueryTransport {
     return {
       connectedAt: this.#openedAt,
       transport: "web",
-      address: url.toString().replace(/\/+$/, ""),
+      address: trimTrailingSlashes(url.toString()),
       bytesSent: this.#bytesSent,
       bytesReceived: this.#bytesReceived,
     };
