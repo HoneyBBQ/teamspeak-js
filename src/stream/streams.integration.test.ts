@@ -34,6 +34,7 @@ import {
 import { Streams } from "./streams.js";
 import type {
   JoinRequest,
+  JoinRequestClosed,
   PeerClosed,
   PublishedStream,
   StreamEnded,
@@ -41,6 +42,7 @@ import type {
   StreamStoppedEvent,
   StreamView,
   StreamViewerEvent,
+  StreamWarning,
   ViewerPeer,
 } from "./types.js";
 import { MAX_COMMAND_LINE_BYTES, setupRequest, signalRequest, stopRequest } from "./wire.js";
@@ -443,6 +445,57 @@ describe.skipIf(SKIP)("Streams — live", { timeout: 30_000 }, () => {
       CommandTimeoutError,
     );
     expect(requests).toEqual([]);
+  });
+
+  it("warns about an offer without audio and still lets the viewer in", async (ctx) => {
+    ts6(ctx);
+    const publisher = attach(a);
+    const viewer = attach(b);
+    const learned = first<StreamInfo>("started", (l) => viewer.on("started", l));
+    const pub = await publisher.publish({ name: "video only" });
+    const info = await learned;
+
+    const requested = first<JoinRequest>("request", (l) => pub.on("request", l));
+    const watching = viewer.watch(info);
+    const request = await requested;
+    const warned = first<StreamWarning>("warning", (l) => publisher.on("warning", l));
+    const offer = "v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=sendonly\r\n";
+    await request.accept(offer);
+    expect(await warned).toMatchObject({
+      code: "offer-without-audio",
+      streamId: pub.id,
+      clientId: b.clientID,
+    });
+    expect(request.state).toBe("accepted");
+    expect((await watching).offer).toBe(offer);
+  });
+
+  it("tells the publisher a request was withdrawn, and one that the stream ended on", async (ctx) => {
+    ts6(ctx);
+    const publisher = attach(a);
+    const viewer = attach(b);
+    const learned = first<StreamInfo>("started", (l) => viewer.on("started", l));
+    const pub = await publisher.publish({ name: "withdrawn" });
+    const info = await learned;
+
+    const requested = first<JoinRequest>("request", (l) => pub.on("request", l));
+    // The viewer gives up waiting, which withdraws the request.
+    const gaveUp = viewer.watch(info, { timeoutMs: 800 }).catch((e: unknown) => e);
+    const request = await requested;
+    const closed = first<JoinRequestClosed>("closed", (l) => request.on("closed", l));
+    expect(await closed).toEqual({ cause: "withdrawn" });
+    expect(request.state).toBe("withdrawn");
+    await expect(request.accept(sdpLike(100))).rejects.toThrow(/withdrawn/);
+    await gaveUp;
+
+    // A request pending when the stream stops ends with it.
+    const again = first<JoinRequest>("second request", (l) => pub.on("request", l));
+    const waiting = viewer.watch(info).catch((e: unknown) => e);
+    const second = await again;
+    const ended = first<JoinRequestClosed>("closed", (l) => second.on("closed", l));
+    await pub.stop();
+    expect(await ended).toEqual({ cause: "ended" });
+    await waiting;
   });
 
   it("closes the publisher's peer when the viewer leaves", async (ctx) => {

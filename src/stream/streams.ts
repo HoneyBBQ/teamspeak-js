@@ -102,8 +102,8 @@ interface Watch {
  * and each viewer over WebRTC, which is the application's: this gives it the
  * SDP and ICE messages as strings, and takes them back, and any WebRTC stack
  * can be plugged in. TeamSpeak does not document the protocol and it was
- * measured on TeamSpeak 6 6.0.0-beta13.1 only; it has not been checked against
- * the native client.
+ * measured on TeamSpeak 6 6.0.0-beta13.1 and tried with the TeamSpeak 6 client
+ * 6.0.0-beta5.
  *
  * `Streams` attaches to a voice client, before or after it connects, and finds
  * the streams of the clients it sees: a client with `client_is_streaming` set
