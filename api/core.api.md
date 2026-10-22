@@ -1520,6 +1520,9 @@ export function findChannels(client: CommandExecutor, pattern: string, options?:
 export function findClientDatabase(client: CommandExecutor, pattern: string, options?: CommandOptions): Promise<ClientDBID[]>;
 
 // @public
+export function findClientDatabaseByUID(client: CommandExecutor, pattern: string, options?: CommandOptions): Promise<ClientDBID[]>;
+
+// @public
 export function findClients(client: CommandExecutor, pattern: string, options?: ClientFindOptions): Promise<ClientMatch[]>;
 
 // @public

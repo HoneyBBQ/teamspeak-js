@@ -33,6 +33,7 @@ import {
 import { createServer, createServerSnapshot, listServers } from "./instance.js";
 import {
   findClientDatabase,
+  findClientDatabaseByUID,
   findCustomProperty,
   listCustomProperties,
   findClients,
@@ -287,6 +288,7 @@ const commands: Record<string, (c: CommandExecutor) => Promise<unknown>> = {
   getClientNameByUID: (c) => getClientNameByUID(c, asUID("x")),
   listClientDatabase: (c) => listClientDatabase(c),
   findClientDatabase: (c) => findClientDatabase(c, "x"),
+  findClientDatabaseByUID: (c) => findClientDatabaseByUID(c, "x"),
   getClientDatabaseInfo: (c) => getClientDatabaseInfo(c, cldbid),
   listClientPermissions: (c) => listClientPermissions(c, cldbid),
   listFiles: (c) => listFiles(c, cid, "/"),

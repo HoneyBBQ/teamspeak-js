@@ -21,6 +21,7 @@ import {
   deleteChannel,
   editChannel,
   findBans,
+  findClientDatabaseByUID,
   getChannelInfo,
   listBans,
   listChannels,
@@ -132,6 +133,15 @@ describe.skipIf(SKIP)("Audit corrections — live", () => {
     },
     30_000,
   );
+
+  it("finds a database record by uid over the voice protocol", async () => {
+    const uid = voice.uid;
+    const [found] = await findClientDatabaseByUID(voice, uid);
+    expect(found).toBeDefined();
+    expect(await findClientDatabaseByUID(voice, uid.toLowerCase())).toEqual([found]);
+    expect(await findClientDatabaseByUID(voice, `${uid.slice(0, 8)}%`)).toContain(found);
+    expect(await findClientDatabaseByUID(voice, uid.slice(0, 8))).toEqual([]);
+  });
 
   it("lists clients with -icon", async () => {
     const entries = await listClients(voice, { icon: true });

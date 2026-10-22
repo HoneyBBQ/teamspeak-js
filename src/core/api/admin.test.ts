@@ -10,6 +10,7 @@ import {
 } from "./credentials.js";
 import {
   deleteCustomProperty,
+  findClientDatabaseByUID,
   findClients,
   findCustomProperty,
   listCustomProperties,
@@ -317,6 +318,19 @@ describe("bans", () => {
       "banfind mytsid=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
     ]);
     expect(ban?.id).toBe(3n);
+  });
+});
+
+describe("clientdbfind -uid", () => {
+  it("searches the unique identifier and reads the database ids", async () => {
+    const { client, sent } = recording([{ cldbid: "9" }, { cldbid: "12" }]);
+    expect(await findClientDatabaseByUID(client, "Q/vfU/I2Vc%")).toEqual([9n, 12n]);
+    expect(sent).toEqual(["clientdbfind pattern=Q\\/vfU\\/I2Vc% -uid"]);
+  });
+
+  it("answers no match with []", async () => {
+    const { client } = recording([]);
+    expect(await findClientDatabaseByUID(client, "nobody")).toEqual([]);
   });
 });
 
