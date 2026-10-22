@@ -677,6 +677,8 @@ describe.skipIf(SKIP)("Streams — live", { timeout: 30_000 }, () => {
     const publisher = attach(a);
     const viewer = attach(b);
     const started = first<StreamInfo>("started", (l) => viewer.on("started", l));
+    // Both listened for from the start: the stop follows the announcement within milliseconds.
+    const stopped = first<StreamStoppedEvent>("stopped", (l) => viewer.on("stopped", l));
     // Aborted while the command is on its way: the stream may still be announced.
     const abort = new AbortController();
     const publishing = publisher
@@ -685,11 +687,7 @@ describe.skipIf(SKIP)("Streams — live", { timeout: 30_000 }, () => {
     setImmediate(() => abort.abort());
     expect(await publishing).toBeInstanceOf(Error);
     const info = await started;
-    await first<StreamStoppedEvent>(
-      "stopped",
-      (l) => viewer.on("stopped", l),
-      (e) => e.info.id === info.id,
-    );
+    expect((await stopped).info.id).toBe(info.id);
     expect(viewer.list()).toEqual([]);
     expect(publisher.list()).toEqual([]);
   });
