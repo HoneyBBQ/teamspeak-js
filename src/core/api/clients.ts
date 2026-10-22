@@ -1045,6 +1045,33 @@ export async function findClientDatabase(
   return rows.map((row) => asClientDBID(big(row, "cldbid")));
 }
 
+/**
+ * Database ids of the records whose unique identifier matches `pattern`
+ * (`clientdbfind -uid`). No match is an empty list.
+ *
+ * The match is SQL `LIKE` over the whole identifier, on TeamSpeak 3 and 6
+ * alike: without a wildcard `pattern` must be the entire uid, `%` stands for
+ * any run of characters and `_` for any one, and case is ignored. A fragment
+ * of a uid with no `%` finds nothing, so append `%` to search by prefix. A server answers
+ * at most 50 ids for one pattern.
+ */
+export async function findClientDatabaseByUID(
+  client: CommandExecutor,
+  pattern: string,
+  options?: CommandOptions,
+): Promise<ClientDBID[]> {
+  const rows = await list(
+    client,
+    "clientdbfind",
+    [
+      ["pattern", pattern],
+      ["-uid", true],
+    ],
+    options,
+  );
+  return rows.map((row) => asClientDBID(big(row, "cldbid")));
+}
+
 /** One database record. */
 export async function getClientDatabaseInfo(
   client: CommandExecutor,

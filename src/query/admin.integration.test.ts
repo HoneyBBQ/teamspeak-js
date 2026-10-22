@@ -30,6 +30,7 @@ import {
   editClientDatabase,
   findChannels,
   findClientDatabase,
+  findClientDatabaseByUID,
   getClientDatabaseInfo,
   getClientProperties,
   getConnectionInfo,
@@ -213,6 +214,15 @@ describe.skipIf(SKIP)("Integration — administration round trips", () => {
       const info = await getClientDatabaseInfo(admin(), databaseID);
       expect(info).toMatchObject({ databaseID, uid, description });
       expect(await findClientDatabase(admin(), info.nickname)).toContain(databaseID);
+      // The uid is matched whole and without regard to case; `%` and `_` are
+      // wildcards, so a fragment needs one.
+      expect(await findClientDatabaseByUID(admin(), uid)).toEqual([databaseID]);
+      expect(await findClientDatabaseByUID(admin(), uid.toLowerCase())).toEqual([databaseID]);
+      expect(await findClientDatabaseByUID(admin(), `${uid.slice(0, 8)}%`)).toContain(databaseID);
+      expect(await findClientDatabaseByUID(admin(), `${uid.slice(0, -2)}_=`)).toContain(databaseID);
+      expect(await findClientDatabaseByUID(admin(), uid.slice(0, 8))).toEqual([]);
+      expect(await findClientDatabaseByUID(admin(), info.nickname)).toEqual([]);
+      expect(await findClientDatabaseByUID(admin(), stamp("ts-js-no-such-uid"))).toEqual([]);
       // A server caps a page (TS6 at 25 rows), so the record is found by walking
       // the whole list, and then read again as a page of its own.
       let position = -1;
@@ -235,6 +245,7 @@ describe.skipIf(SKIP)("Integration — administration round trips", () => {
       expect(await findClientDatabase(admin(), info.nickname).catch(emptyResult)).not.toContain(
         databaseID,
       );
+      expect(await findClientDatabaseByUID(admin(), uid)).not.toContain(databaseID);
     }, 60_000);
 
     it("files, lists and removes complaints", async () => {
