@@ -861,7 +861,7 @@ describe.skipIf(SKIP)("Streams — live", { timeout: 30_000 }, () => {
         if (n.name === "notifystreaminfo") replies.push(n.params);
       });
       onSentLine((c, line) => {
-        const m = c === a ? /^requeststreaminfo clid=(\d+).* return_code=(\d+)/.exec(line) : null;
+        const m = c === a ? /^requeststreaminfo clid=(\d+) return_code=(\d+)$/.exec(line) : null;
         if (m) asked.push({ clid: m[1]!, rc: m[2]! });
       });
       try {
