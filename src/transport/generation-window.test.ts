@@ -23,6 +23,23 @@ describe("GenerationWindow", () => {
     expect(w.isInWindow(1124)).toBe(false);
   });
 
+  it("advanceAfter moves past a newer packet and ignores a stale one", () => {
+    const w = new GenerationWindow(1 << 16, 1 << 15);
+    w.advance((1 << 16) + 10); // base 10 of generation 1
+
+    w.advanceAfter(65535); // stale: from generation 0, before the wrap
+    expect(w.generation).toBe(1);
+    expect(w.isInWindow(10)).toBe(true);
+
+    w.advanceAfter(20);
+    expect(w.isInWindow(20)).toBe(false);
+    expect(w.isInWindow(21)).toBe(true);
+    expect(w.getGeneration(21)).toBe(1);
+
+    w.advanceAfter(20); // a duplicate of the last packet
+    expect(w.isInWindow(21)).toBe(true);
+  });
+
   it("wraps generation on overflow", () => {
     const mod = 1 << 16;
     const w = new GenerationWindow(mod, 1024);

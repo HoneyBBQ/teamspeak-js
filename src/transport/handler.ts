@@ -19,6 +19,10 @@ import { processInit1 } from "../handshake/crypt-handshake.js";
 
 const MAX_OUT_PACKET_SIZE = 500;
 const RECEIVE_PACKET_WINDOW_SIZE = 1024;
+// Voice, whisper, ping and pong are never sent again, so any number of them can
+// be lost in a row. Their window spans half the id space: a packet's generation
+// is the one that puts it nearest the last packet received.
+const UNACKED_RECEIVE_WINDOW_SIZE = 1 << 15;
 const PING_INTERVAL_MS = 5_000;
 const PACKET_TIMEOUT_MS = 60_000;
 const MAX_RETRY_INTERVAL_MS = 1_000;
@@ -66,6 +70,10 @@ export class PacketHandler {
 
   #recvWindowCommand = new GenerationWindow(1 << 16, RECEIVE_PACKET_WINDOW_SIZE);
   #recvWindowCommandLow = new GenerationWindow(1 << 16, RECEIVE_PACKET_WINDOW_SIZE);
+  #recvWindowVoice = new GenerationWindow(1 << 16, UNACKED_RECEIVE_WINDOW_SIZE);
+  #recvWindowVoiceWhisper = new GenerationWindow(1 << 16, UNACKED_RECEIVE_WINDOW_SIZE);
+  #recvWindowPing = new GenerationWindow(1 << 16, UNACKED_RECEIVE_WINDOW_SIZE);
+  #recvWindowPong = new GenerationWindow(1 << 16, UNACKED_RECEIVE_WINDOW_SIZE);
   #sendWindowCommand = new GenerationWindow(1 << 16, RECEIVE_PACKET_WINDOW_SIZE);
   #sendWindowCommandLow = new GenerationWindow(1 << 16, RECEIVE_PACKET_WINDOW_SIZE);
 
@@ -348,6 +356,7 @@ export class PacketHandler {
     p.data = decrypted.plaintext;
 
     const pType = packetType(p);
+    this.#unackedReceiveWindow(pType)?.advanceAfter(p.id);
 
     if (pType === PacketType.Ping) {
       this.#sendPong(p.id, decrypted.dummyUsed);
@@ -371,7 +380,27 @@ export class PacketHandler {
       case PacketType.AckLow:
         return this.#sendWindowCommandLow.getGeneration(id);
       default:
-        return 0;
+        return this.#unackedReceiveWindow(pType)?.getGeneration(id) ?? 0;
+    }
+  }
+
+  /**
+   * The receive window of voice, whisper, ping or pong. Their 16-bit ids wrap
+   * like a command's, and the generation that counts the wraps is part of the
+   * packet key, so each is followed although none is acknowledged.
+   */
+  #unackedReceiveWindow(pType: number): GenerationWindow | undefined {
+    switch (pType as PacketType) {
+      case PacketType.Voice:
+        return this.#recvWindowVoice;
+      case PacketType.VoiceWhisper:
+        return this.#recvWindowVoiceWhisper;
+      case PacketType.Ping:
+        return this.#recvWindowPing;
+      case PacketType.Pong:
+        return this.#recvWindowPong;
+      default:
+        return undefined;
     }
   }
 
