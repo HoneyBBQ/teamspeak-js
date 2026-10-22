@@ -29,6 +29,19 @@ export class GenerationWindow {
     this.advance(moveDist + 1);
   }
 
+  /**
+   * Move the base just past a packet received on a stream that is never sent
+   * again. A stale packet leaves the base where it is: one before the base, or
+   * one that reads as far ahead but is from before the last wrap, which only a
+   * window that has wrapped can have.
+   */
+  advanceAfter(mappedValue: number): void {
+    const index = this.mappedToIndex(mappedValue);
+    if (index < 0) return;
+    if (this.#generation > 0 && index >= this.#mod - this.#receiveWindow) return;
+    this.advance(index + 1);
+  }
+
   syncTo(mappedValue: number): void {
     let moveDist = mappedValue - this.#mappedBaseOffset;
     if (moveDist < 0) moveDist += this.#mod;
