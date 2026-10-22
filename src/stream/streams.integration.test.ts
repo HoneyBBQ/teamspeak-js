@@ -21,8 +21,8 @@ import {
   moveClient,
   whoAmI,
 } from "@honeybbq/teamspeak";
-import type { ChannelID, Unsubscribe } from "@honeybbq/teamspeak";
-import { Client } from "../client/client.js";
+import type { ChannelID, CommandMiddleware, Unsubscribe } from "@honeybbq/teamspeak";
+import { Client, onSentLine } from "../client/client.js";
 import { generateIdentitySync } from "../client/crypto/identity.js";
 import { encodeRequest } from "../core/internal.js";
 import {
@@ -42,7 +42,7 @@ import type {
   StreamViewerEvent,
   ViewerPeer,
 } from "./types.js";
-import { MAX_COMMAND_LINE_BYTES, signalRequest } from "./wire.js";
+import { MAX_COMMAND_LINE_BYTES, setupRequest, signalRequest, stopRequest } from "./wire.js";
 
 const ADDR = process.env["TEAMSPEAK_ADDR"];
 const SERVER_PASSWORD = process.env["TEAMSPEAK_SERVER_PASSWORD"] ?? "";
@@ -55,10 +55,15 @@ const EVENT_MS = 8_000;
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 /** Connect a client, trying again: a datagram can be dropped, and the server's anti-flood is touchy. */
-async function connectClient(nickname: string, channel = DEFAULT_CHANNEL): Promise<Client> {
+async function connectClient(
+  nickname: string,
+  channel = DEFAULT_CHANNEL,
+  commandMiddleware: CommandMiddleware[] = [],
+): Promise<Client> {
   const client = new Client(generateIdentitySync(8), ADDR!, nickname, {
     serverPassword: SERVER_PASSWORD,
     defaultChannel: channel,
+    commandMiddleware,
     ...(channel === OTHER_CHANNEL ? { defaultChannelPassword: OTHER_CHANNEL_PASSWORD } : {}),
   });
   for (let attempt = 1; ; attempt++) {
@@ -73,6 +78,13 @@ async function connectClient(nickname: string, channel = DEFAULT_CHANNEL): Promi
   await client.view.whenReady({ signal: AbortSignal.timeout(10_000) });
   await sleep(300);
   return client;
+}
+
+/** Poll until `condition` holds; fail after `ms`. */
+async function until(condition: () => boolean, ms = EVENT_MS): Promise<void> {
+  for (const end = Date.now() + ms; !condition(); await sleep(20)) {
+    if (Date.now() > end) throw new Error("the condition never held");
+  }
 }
 
 /** Resolve with what `register`'s listener gets first and `match` accepts; reject after EVENT_MS. */
@@ -680,6 +692,202 @@ describe.skipIf(SKIP)("Streams — live", { timeout: 30_000 }, () => {
     );
     expect(viewer.list()).toEqual([]);
     expect(publisher.list()).toEqual([]);
+  });
+
+  describe("attributing an announcement to its command by return_code", () => {
+    /** A `setupstream` as `publish` sends it; `viewerLimit` tells otherwise identical ones apart. */
+    const setup = (name: string, viewerLimit = 0) =>
+      setupRequest({
+        name,
+        source: 2,
+        bitrate: 1_500_000,
+        accessibility: 1,
+        viewerLimit,
+        audio: false,
+      });
+    const stop = (client: Client, id: string): Promise<unknown> =>
+      client.send(stopRequest(id, 0)).catch(() => {});
+
+    it("answers each of several same-name setupstream commands from one client with its own stream", async (ctx) => {
+      ts6(ctx);
+      const rows = await Promise.all([1, 2, 3].map((n) => a.send(setup("same", n))));
+      try {
+        expect(rows.map((r) => r.length)).toEqual([1, 1, 1]);
+        expect(new Set(rows.map((r) => r[0]!["id"])).size).toBe(3);
+        // Each is the row of the command that asked for that viewer limit.
+        expect(rows.map((r) => r[0]!["viewer_limit"])).toEqual(["1", "2", "3"]);
+        expect(rows.every((r) => r[0]!["clid"] === String(a.clientID))).toBe(true);
+      } finally {
+        for (const r of rows) await stop(a, r[0]!["id"]!);
+      }
+    });
+
+    it("answers same-name setupstream commands from two clients, each with its own", async (ctx) => {
+      ts6(ctx);
+      const [fromA, fromB] = await Promise.all([
+        a.send(setup("same", 4)),
+        b.send(setup("same", 5)),
+      ]);
+      try {
+        expect([fromA[0]!["clid"], fromA[0]!["viewer_limit"]]).toEqual([String(a.clientID), "4"]);
+        expect([fromB[0]!["clid"], fromB[0]!["viewer_limit"]]).toEqual([String(b.clientID), "5"]);
+      } finally {
+        await stop(a, fromA[0]!["id"]!);
+        await stop(b, fromB[0]!["id"]!);
+      }
+    });
+
+    // The publisher's own announcement carries the number and other clients'
+    // copies do not. If the server ever stops echoing it, this says so, rather
+    // than every publish timing out.
+    it("echoes the return_code on the publisher's own announcement only", async (ctx) => {
+      ts6(ctx);
+      const seenByA: Array<Record<string, string>> = [];
+      const seenByB: Array<Record<string, string>> = [];
+      const offs = [
+        a.on("notification", (n) => {
+          if (n.name === "notifystreamstarted") seenByA.push(n.params);
+        }),
+        b.on("notification", (n) => {
+          if (n.name === "notifystreamstarted") seenByB.push(n.params);
+        }),
+      ];
+      const publisher = attach(a);
+      attach(b);
+      try {
+        const pub = await publisher.publish({ name: "canary" });
+        // Events are delivered after the command's answer, so wait for both copies.
+        await until(() => [seenByA, seenByB].every((seen) => seen.some((p) => p["id"] === pub.id)));
+        expect(seenByA.find((p) => p["id"] === pub.id)?.["return_code"]).toMatch(/^\d+$/);
+        expect(seenByB.find((p) => p["id"] === pub.id)?.["return_code"]).toBeUndefined();
+      } finally {
+        for (const off of offs) off();
+      }
+    });
+
+    // Holds a command back by its viewer limit, so a test decides which of two
+    // otherwise identical commands reaches the server first.
+    function gated(): { middleware: CommandMiddleware; open: (viewerLimit: number) => void } {
+      const waiting = new Map<number, () => void>();
+      const opened = new Set<number>();
+      const middleware: CommandMiddleware = (next) => async (request, options) => {
+        const limit = Number(request.params?.find(([k]) => k === "viewer_limit")?.[1]);
+        if (request.command === "setupstream" && limit > 0 && !opened.has(limit)) {
+          await new Promise<void>((resolve) => waiting.set(limit, resolve));
+        }
+        return next(request, options);
+      };
+      return {
+        middleware,
+        open: (limit) => {
+          opened.add(limit);
+          waiting.get(limit)?.();
+        },
+      };
+    }
+
+    // The abandoned call's stream and the live call's have one name and
+    // differ in nothing but the number; matching by name stopped the live one
+    // when it was announced first.
+    for (const [first_, firstLimit, secondLimit] of [
+      ["abandoned", 1, 2],
+      ["live", 2, 1],
+    ] as const) {
+      it(`keeps the live stream and stops the abandoned one when the ${first_} command is sent first`, async (ctx) => {
+        ts6(ctx);
+        const gate = gated();
+        const publishing = await connectClient("ts-js-stream-gate", DEFAULT_CHANNEL, [
+          gate.middleware,
+        ]);
+        extra.push(publishing);
+        const publisher = attach(publishing);
+        const viewer = attach(b);
+        const stoppedIds: string[] = [];
+        const heard: Array<number | undefined> = [];
+        viewer.on("started", (info) => heard.push(info.viewerLimit));
+        viewer.on("stopped", (e) => stoppedIds.push(e.info.id));
+
+        // Held in the middleware, so the caller gives up before it is sent.
+        const abandoned = await publisher
+          .publish({ name: "same", viewerLimit: 1, timeoutMs: 100 })
+          .catch((e: unknown) => e);
+        expect(abandoned).toBeInstanceOf(CommandTimeoutError);
+        const live = publisher.publish({ name: "same", viewerLimit: 2 });
+
+        gate.open(firstLimit);
+        // Heard as an event: an abandoned stream is stopped as soon as it is known.
+        await until(() => heard.includes(firstLimit));
+        gate.open(secondLimit);
+        const pub = await live;
+
+        expect(pub.info.viewerLimit).toBe(2);
+        await until(() => stoppedIds.length === 1 || first_ === "live");
+        await until(() => viewer.list().length === 1 && publisher.list().length === 1);
+        expect(viewer.list()[0]!.id).toBe(pub.id);
+        expect(publisher.list()[0]!.id).toBe(pub.id);
+        expect(stoppedIds).not.toContain(pub.id);
+      });
+    }
+
+    it("publishes cleanly on a client that reconnected in the middle of a publish", async (ctx) => {
+      ts6(ctx);
+      const client = await connectClient("ts-js-stream-reconnect");
+      extra.push(client);
+      const publisher = attach(client);
+      let sent = false;
+      onSentLine((c, line) => {
+        if (c === client && line.startsWith("setupstream")) sent = true;
+      });
+      try {
+        const publishing = publisher.publish({ name: "interrupted" }).catch((e: unknown) => e);
+        await until(() => sent);
+        await client.disconnect();
+        // Either the answer beat the goodbye or the call failed; what matters is the next connection.
+        await publishing;
+      } finally {
+        onSentLine(undefined);
+      }
+      await client.connect({ signal: AbortSignal.timeout(10_000) });
+      await client.view.whenReady({ signal: AbortSignal.timeout(10_000) });
+      await sleep(1500);
+      // Nothing from the first connection reached the second.
+      expect(publisher.list()).toEqual([]);
+      const pub = await publisher.publish({ name: "after" });
+      expect(pub.info.name).toBe("after");
+      expect(publisher.list().map((i) => i.id)).toEqual([pub.id]);
+    });
+
+    // Not used to attribute anything yet; pins that the reply to
+    // requeststreaminfo echoes the number, the empty one included.
+    it("echoes the return_code on each reply to concurrent requeststreaminfo", async (ctx) => {
+      ts6(ctx);
+      const row = await b.send(setup("asked", 0));
+      const asked: Array<{ clid: string; rc: string }> = [];
+      const replies: Array<Record<string, string>> = [];
+      const off = a.on("notification", (n) => {
+        if (n.name === "notifystreaminfo") replies.push(n.params);
+      });
+      onSentLine((c, line) => {
+        const m = c === a ? /^requeststreaminfo clid=(\d+).* return_code=(\d+)/.exec(line) : null;
+        if (m) asked.push({ clid: m[1]!, rc: m[2]! });
+      });
+      try {
+        const ask = (clid: number) =>
+          a.send({ command: "requeststreaminfo", params: [["clid", clid]] });
+        await Promise.all([ask(b.clientID), ask(a.clientID), ask(b.clientID)]);
+        await until(() => replies.length >= 3);
+        expect(asked).toHaveLength(3);
+        const by = (rc: string) => replies.filter((r) => r["return_code"] === rc);
+        expect(by(asked[0]!.rc).map((r) => r["id"])).toEqual([row[0]!["id"]]);
+        expect(by(asked[2]!.rc).map((r) => r["id"])).toEqual([row[0]!["id"]]);
+        // The client that streams nothing is answered with a row that names no stream.
+        expect(by(asked[1]!.rc).map((r) => r["id"])).toEqual([undefined]);
+      } finally {
+        onSentLine(undefined);
+        off();
+        await stop(b, row[0]!["id"]!);
+      }
+    });
   });
 
   describe("on a server without streams", () => {

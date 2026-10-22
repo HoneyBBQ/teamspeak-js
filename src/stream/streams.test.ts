@@ -1408,6 +1408,41 @@ describe("review fixes", () => {
       },
     );
 
+    // The client delivers events after it settles a command, so the answer
+    // can be here before the notification is; the notification then changes
+    // nothing and reports nothing twice.
+    it("adopts the stream from the command's answer when the notification follows it", async () => {
+      const { client, streams } = setup();
+      const started_: string[] = [];
+      streams.on("started", (info) => started_.push(info.id));
+      const promise = streams.publish({ name: "same" });
+      await settle();
+      const row = own("a");
+      client.setups.splice(0)[0]!.resolve([{ ...row, return_code: "1" }]);
+      const pub = await promise;
+      expect(pub.id).toBe("a");
+      expect(streams.get("a")).toBeDefined();
+      client.notify("notifystreamstarted", { ...row, return_code: "1" });
+      expect(started_).toEqual(["a"]);
+      expect(streams.list()).toHaveLength(1);
+    });
+
+    it("stops an abandoned stream known only from the command's answer", async () => {
+      const { client, streams } = setup();
+      const events: string[] = [];
+      streams.on("started", (info) => events.push(`started ${info.id}`));
+      streams.on("stopped", (e) => events.push(`stopped ${e.info.id}`));
+      const promise = streams.publish({ name: "same", timeoutMs: 20 });
+      await expect(promise).rejects.toBeInstanceOf(CommandTimeoutError);
+      client.setups.splice(0)[0]!.resolve([{ ...own("a"), return_code: "1" }]);
+      await settle();
+      expect(stopped(client)).toEqual(["a"]);
+      // Never reported started, so never reported stopped; and a late notification is ignored.
+      client.notify("notifystreamstarted", { ...own("a"), return_code: "1" });
+      expect(events).toEqual([]);
+      expect(streams.list()).toEqual([]);
+    });
+
     it("stops a stream whose publish was aborted after the command went out", async () => {
       const { client, streams } = setup();
       const controller = new AbortController();
