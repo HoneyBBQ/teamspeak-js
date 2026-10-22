@@ -109,8 +109,8 @@
     "@types/node": "^26.6.5",
     "@types/ssh2": "^1.15.6",
     "fast-check": "^4.10.2",
-    "oxfmt": "^0.72.0",
-    "oxlint": "^1.87.0",
+    "oxfmt": "^0.73.0",
+    "oxlint": "^1.88.0",
     "oxlint-tsgolint": "^7.0.2004",
     "publint": "^0.3.25",
     "ssh2": "^1.17.0",
@@ -120,7 +120,7 @@
     "typescript": "^7.0.2",
     "typescript-api": "npm:typescript@^5.9.3",
     "vite": "^8.3.4",
-    "vitest": "^5.0.0",
+    "vitest": "^5.0.5",
     "werift": "^0.25.1"
   },
   "peerDependencies": {
