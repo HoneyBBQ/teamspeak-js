@@ -270,6 +270,79 @@ jobs:
           TS3_ADMIN_PW=ci-serveradmin-password \
           TS3_QUERY_GUEST='${{ matrix.server.query_guest }}' \
           ./scripts/ts3-fixture.sh
+      # WebQuery over HTTPS, with a certificate from a CA made for this run
+      # that only the HTTPS tests are told to trust. TS6 serves HTTPS itself,
+      # but a service container cannot be given files the job writes, so a
+      # second TS6 server is started here with the certificate. It also serves
+      # plain HTTP, only so the fixture can relax its query flood limit, which
+      # would otherwise ban the runner after a handful of connections. TS3 has
+      # no HTTPS WebQuery, so nginx terminates TLS in front of the service's
+      # plain HTTP one, the very server the fixture provisioned. Both append
+      # what the tests need to the fixture's file.
+      - name: Serve WebQuery over HTTPS
+        env:
+          TS3_FIXTURE_ENV: ${{ runner.temp }}/ts3-fixture.env
+          TLS_DIR: ${{ runner.temp }}/webquery-tls
+        run: |
+          ./scripts/webquery-tls.sh "$TLS_DIR"
+          # Whether the server answers over HTTP(S), whatever it says: a port
+          # that is published accepts connections before the server listens.
+          answers() {
+            [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 --cacert "$TLS_DIR/ca.pem" "$1")" != 000 ]
+          }
+          if [ '${{ matrix.server.name }}' = TS6 ]; then
+            docker run -d --name webquery-https -v "$TLS_DIR:/tls:ro" \
+              -e TSSERVER_LICENSE_ACCEPTED=accept \
+              -e TSSERVER_QUERY_HTTP_ENABLED=1 \
+              -e TSSERVER_QUERY_HTTPS_ENABLED=1 \
+              -e TSSERVER_QUERY_HTTPS_CERT=/tls/server.pem \
+              -e TSSERVER_QUERY_HTTPS_PRIVATE_KEY=/tls/server.key \
+              -p 10081:10080 -p 10443:10443 ${{ matrix.server.image }}
+            for url in http://127.0.0.1:10081 https://127.0.0.1:10443; do
+              for i in $(seq 1 60); do
+                if answers "$url/1/version"; then continue 2; fi
+                sleep 1
+              done
+              docker logs webquery-https
+              echo "$url did not answer within 60s" >&2
+              exit 1
+            done
+            TS3_FIXTURE_ENV="$RUNNER_TEMP/https-fixture.env" \
+            TS3_CONTAINER=webquery-https \
+            TS3_QUERY_HTTP=127.0.0.1:10081 \
+            TS3_QUERY_PORT=10081 \
+            ./scripts/ts3-fixture.sh
+            api_key=$(sed -n 's/^export TEAMSPEAK_QUERY_API_KEY=//p' "$RUNNER_TEMP/https-fixture.env")
+            [ -n "$api_key" ] || { echo "the fixture wrote no api key" >&2; exit 1; }
+            echo "export TEAMSPEAK_QUERY_HTTPS_API_KEY=$api_key" >> "$TS3_FIXTURE_ENV"
+          else
+            cat > "$RUNNER_TEMP/nginx.conf" <<'NGINX'
+          events {}
+          http {
+            server {
+              listen 10443 ssl;
+              ssl_certificate /tls/server.pem;
+              ssl_certificate_key /tls/server.key;
+              location / {
+                proxy_pass http://127.0.0.1:10080;
+              }
+            }
+          }
+          NGINX
+            # nginx 1.31.6 (alpine), by digest so the front cannot change under the tests.
+            docker run -d --name webquery-https --network host \
+              -v "$TLS_DIR:/tls:ro" -v "$RUNNER_TEMP/nginx.conf:/etc/nginx/nginx.conf:ro" \
+              docker.io/library/nginx@sha256:a3554c0d0b48177b1413c26e01f695334428020d9df01243fbae3e11cfd17417
+            for i in $(seq 1 30); do
+              if answers https://127.0.0.1:10443/1/version; then break; fi
+              sleep 1
+            done
+            answers https://127.0.0.1:10443/1/version || { docker logs webquery-https; exit 1; }
+          fi
+          {
+            echo "export TEAMSPEAK_QUERY_HTTPS_URL=https://127.0.0.1:10443"
+            echo "export TEAMSPEAK_QUERY_HTTPS_CA=$TLS_DIR/ca.pem"
+          } >> "$TS3_FIXTURE_ENV"
       - name: Run integration tests
         env:
           # Where the fixture wrote its environment file.
