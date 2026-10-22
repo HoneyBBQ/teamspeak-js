@@ -64,7 +64,7 @@ async function publishOne(
 ): Promise<PublishedStream> {
   const promise = streams.publish({ name });
   await settle();
-  client.notify("notifystreamstarted", started({ clid: String(SELF), id, name }));
+  client.announce(started({ clid: String(SELF), id, name }));
   return promise;
 }
 
@@ -297,7 +297,7 @@ describe("publish", () => {
     await settle();
     const [request] = client.commands("setupstream") as [CommandRequest];
     expect(request.params?.map(([, v]) => v)).toEqual(["cam", 1, 2_500_000, 3, 1, 5, true]);
-    client.notify("notifystreamstarted", started({ clid: String(SELF), name: "cam" }));
+    client.announce(started({ clid: String(SELF), name: "cam" }));
     await promise;
   });
 
@@ -319,7 +319,7 @@ describe("publish", () => {
     const { client, streams } = setup();
     const promise = streams.publish({ name: "x", viewerLimit: 65535 });
     await settle();
-    client.notify("notifystreamstarted", started({ clid: String(SELF), name: "x" }));
+    client.announce(started({ clid: String(SELF), name: "x" }));
     await promise;
   });
 
@@ -331,18 +331,16 @@ describe("publish", () => {
     expect(client.sent).toEqual([]);
   });
 
-  it("matches each announcement to its call when several are made", async () => {
+  it("matches each announcement to its call when several are made, in any order", async () => {
     const { client, streams } = setup();
     const first = streams.publish({ name: "one" });
     const second = streams.publish({ name: "two" });
     await settle();
-    expect(client.commands("setupstream")).toHaveLength(1);
-    client.notify("notifystreamstarted", started({ clid: String(SELF), id: "a", name: "one" }));
-    const a = await first;
-    await settle();
     expect(client.commands("setupstream")).toHaveLength(2);
-    client.notify("notifystreamstarted", started({ clid: String(SELF), id: "b", name: "two" }));
-    const b = await second;
+    // The second command's announcement comes first.
+    client.announce(started({ clid: String(SELF), id: "b", name: "two" }), 1);
+    client.announce(started({ clid: String(SELF), id: "a", name: "one" }), 0);
+    const [a, b] = await Promise.all([first, second]);
     expect([a.id, b.id]).toEqual(["a", "b"]);
     expect(a.info.name).toBe("one");
     expect(b.info.name).toBe("two");
@@ -352,7 +350,9 @@ describe("publish", () => {
     const { client, streams } = setup();
     const promise = streams.publish({ name: "x", timeoutMs: 30 });
     await settle();
+    // Another client's announcement, and one of ours without a command's number.
     client.notify("notifystreamstarted", started());
+    client.notify("notifystreamstarted", started({ clid: String(SELF), id: "bare" }));
     await expect(promise).rejects.toBeInstanceOf(CommandTimeoutError);
   });
 
@@ -1348,36 +1348,99 @@ describe("review fixes", () => {
     client.notify("notifyjoinstreamrequest", { id, clid, msg: "", is_remove: remove });
 
   describe("matching a publish to its announcement", () => {
-    it("does not adopt an own stream of another name", async () => {
+    const own = (id: string, name = "same"): Record<string, string> =>
+      started({ clid: String(SELF), id, name });
+    const stopped = (client: FakeClient): string[] =>
+      client.commands("stopstream").map((r) => String(param(r, "id")));
+
+    it("does not adopt an own stream that carries no command's number", async () => {
       const { client, streams } = setup();
       const promise = streams.publish({ name: "wanted", timeoutMs: 30 });
       await settle();
-      client.notify("notifystreamstarted", started({ clid: String(SELF), name: "other" }));
+      client.notify("notifystreamstarted", started({ clid: String(SELF), name: "wanted" }));
       await expect(promise).rejects.toBeInstanceOf(CommandTimeoutError);
     });
 
-    it("never lets a second publish adopt the first's stream", async () => {
+    it("gives each of two same-name publishes its own stream, whatever the order", async () => {
+      for (const order of [
+        [0, 1],
+        [1, 0],
+      ] as const) {
+        const { client, streams } = setup();
+        const first = streams.publish({ name: "same" });
+        const second = streams.publish({ name: "same" });
+        await settle();
+        const ids = ["a", "b"];
+        // `which` counts the commands still waiting, so the second goes at index 0 once the first is done.
+        for (const i of order) client.announce(own(ids[i]!), order[0] === i ? i : 0);
+        expect([(await first).id, (await second).id]).toEqual(["a", "b"]);
+        expect(stopped(client)).toEqual([]);
+      }
+    });
+
+    // The abandoned call's stream and a live call's have one name and arrive
+    // in either order; only the number says whose is whose. The old match by
+    // name stopped the live call's stream when it came first.
+    it.each([
+      ["the abandoned one first", [0, 1]],
+      ["the live one first", [1, 0]],
+    ] as const)(
+      "keeps a live publish's stream and stops an abandoned one's, %s",
+      async (_, order) => {
+        const { client, streams } = setup();
+        const events: string[] = [];
+        streams.on("started", (info) => events.push(`started ${info.id}`));
+        streams.on("stopped", (e) => events.push(`stopped ${e.info.id}`));
+        const abandoned = streams.publish({ name: "same", timeoutMs: 20 });
+        await expect(abandoned).rejects.toBeInstanceOf(CommandTimeoutError);
+        const live = streams.publish({ name: "same" });
+        await settle();
+        const ids = ["old", "live"];
+        for (const i of order) client.announce(own(ids[i]!), order[0] === i ? i : 0);
+
+        expect((await live).id).toBe("live");
+        await settle();
+        expect(stopped(client)).toEqual(["old"]);
+        expect(streams.get("old")).toBeUndefined();
+        expect(streams.get("live")).toBeDefined();
+        // Whoever heard it start hears it end.
+        expect(events.filter((e) => e.endsWith("old"))).toEqual(["started old", "stopped old"]);
+      },
+    );
+
+    // The client delivers events after it settles a command, so the answer
+    // can be here before the notification is; the notification then changes
+    // nothing and reports nothing twice.
+    it("adopts the stream from the command's answer when the notification follows it", async () => {
       const { client, streams } = setup();
-      const first = streams.publish({ name: "same", timeoutMs: 40 });
-      const second = streams.publish({ name: "same", timeoutMs: 2000 });
+      const started_: string[] = [];
+      streams.on("started", (info) => started_.push(info.id));
+      const promise = streams.publish({ name: "same" });
       await settle();
-      expect(client.commands("setupstream")).toHaveLength(1);
-      await expect(first).rejects.toBeInstanceOf(CommandTimeoutError);
+      const row = own("a");
+      client.setups.splice(0)[0]!.resolve([{ ...row, return_code: "1" }]);
+      const pub = await promise;
+      expect(pub.id).toBe("a");
+      expect(streams.get("a")).toBeDefined();
+      client.notify("notifystreamstarted", { ...row, return_code: "1" });
+      expect(started_).toEqual(["a"]);
+      expect(streams.list()).toHaveLength(1);
+    });
+
+    it("stops an abandoned stream known only from the command's answer", async () => {
+      const { client, streams } = setup();
+      const events: string[] = [];
+      streams.on("started", (info) => events.push(`started ${info.id}`));
+      streams.on("stopped", (e) => events.push(`stopped ${e.info.id}`));
+      const promise = streams.publish({ name: "same", timeoutMs: 20 });
+      await expect(promise).rejects.toBeInstanceOf(CommandTimeoutError);
+      client.setups.splice(0)[0]!.resolve([{ ...own("a"), return_code: "1" }]);
       await settle();
-      expect(client.commands("setupstream")).toHaveLength(2);
-      // The first one's stream arrives late: it is stopped, and the second waits for its own.
-      client.notify(
-        "notifystreamstarted",
-        started({ clid: String(SELF), id: "late", name: "same" }),
-      );
-      await settle();
-      expect(client.commands("stopstream").map((r) => param(r, "id"))).toEqual(["late"]);
-      expect(streams.get("late")).toBeUndefined();
-      client.notify(
-        "notifystreamstarted",
-        started({ clid: String(SELF), id: "own", name: "same" }),
-      );
-      expect((await second).id).toBe("own");
+      expect(stopped(client)).toEqual(["a"]);
+      // Never reported started, so never reported stopped; and a late notification is ignored.
+      client.notify("notifystreamstarted", { ...own("a"), return_code: "1" });
+      expect(events).toEqual([]);
+      expect(streams.list()).toEqual([]);
     });
 
     it("stops a stream whose publish was aborted after the command went out", async () => {
@@ -1387,22 +1450,124 @@ describe("review fixes", () => {
       await settle();
       controller.abort(new Error("changed my mind"));
       await expect(promise).rejects.toThrow("changed my mind");
-      client.notify(
-        "notifystreamstarted",
-        started({ clid: String(SELF), id: "orphan", name: "gone" }),
-      );
+      client.announce(own("orphan", "gone"));
       await settle();
-      expect(client.commands("stopstream").map((r) => param(r, "id"))).toEqual(["orphan"]);
+      expect(stopped(client)).toEqual(["orphan"]);
+      expect(streams.get("orphan")).toBeUndefined();
+    });
+
+    // However early the caller gives up, the command listens five seconds more.
+    it.each([[30], [10_000]])(
+      "keeps the command open five seconds past a caller timeout of %i ms, whatever the signal",
+      async (timeoutMs) => {
+        const { client, streams } = setup();
+        const controller = new AbortController();
+        const promise = streams.publish({ name: "x", timeoutMs, signal: controller.signal });
+        await settle();
+        const [options] = client.sentOptions;
+        expect(options?.signal).toBeUndefined();
+        expect(options?.timeoutMs).toBe(timeoutMs + 5000);
+        controller.abort();
+        await expect(promise).rejects.toThrow();
+      },
+    );
+
+    it("takes the default timeout and five seconds for the command", async () => {
+      const { client, streams } = setup();
+      const promise = streams.publish({ name: "x" });
+      await settle();
+      expect(client.sentOptions[0]?.timeoutMs).toBe(15_000);
+      client.announce(own("a", "x"));
+      await promise;
+    });
+
+    it("stops the stream a publish started when disposed before the announcement", async () => {
+      const { client, streams } = setup();
+      const promise = streams.publish({ name: "x" });
+      const rejected = expect(promise).rejects.toThrow(/disposed/);
+      await settle();
+      streams.dispose();
+      await rejected;
+      client.announce(own("late", "x"));
+      await settle();
+      expect(stopped(client)).toEqual(["late"]);
+    });
+
+    it("stops nothing for a publish answered after dispose when the connection is gone", async () => {
+      const { client, streams } = setup();
+      const promise = streams.publish({ name: "x" });
+      const rejected = expect(promise).rejects.toThrow();
+      await settle();
+      client.status = "disconnected";
+      streams.dispose();
+      await rejected;
+      client.announce(own("late", "x"));
+      await settle();
+      expect(stopped(client)).toEqual([]);
+    });
+
+    // The answer and the end of the connection arrive in one tick, the answer
+    // first: the call must not be given a stream on a dead connection.
+    it("does not adopt a stream answered in the same tick as the connection ends", async () => {
+      const { client, streams } = setup();
+      const events: string[] = [];
+      streams.on("started", (info) => events.push(`started ${info.id}`));
+      const promise = streams.publish({ name: "x" });
+      const rejected = expect(promise).rejects.toBeInstanceOf(NotConnectedError);
+      await settle();
+      client.status = "disconnected";
+      client.setups.splice(0)[0]!.resolve([{ ...own("a", "x"), return_code: "1" }]);
+      client.emit("disconnected", { error: undefined, willReconnect: false });
+      await rejected;
+      await settle();
+      expect(events).toEqual([]);
+      expect(streams.list()).toEqual([]);
+      expect(streams.get("a")).toBeUndefined();
+    });
+
+    it("does not bring a stopped orphan back with a later row about it", async () => {
+      const { client, streams } = setup();
+      const started_: string[] = [];
+      const promise = streams.publish({ name: "same", timeoutMs: 20 });
+      await expect(promise).rejects.toBeInstanceOf(CommandTimeoutError);
+      client.announce(own("old"));
+      await settle();
+      streams.on("started", (info) => started_.push(info.id));
+      client.notify("notifystreaminfo", own("old"));
+      expect(streams.get("old")).toBeUndefined();
+      expect(started_).toEqual([]);
     });
 
     it("does not stop anything when the server refused the command", async () => {
       const { client, streams } = setup();
       client.answer = () => Promise.reject(refusal(ErrorCode.PermissionsClientInsufficient));
       await expect(streams.publish({ name: "refused" })).rejects.toBeInstanceOf(ServerError);
-      client.notify(
-        "notifystreamstarted",
-        started({ clid: String(SELF), id: "x", name: "refused" }),
-      );
+      client.notify("notifystreamstarted", own("x", "refused"));
+      expect(stopped(client)).toEqual([]);
+    });
+
+    // Past the window the command has timed out and nothing says whose the
+    // row is: it is an ordinary stream of this client's, left running.
+    it("leaves a stream announced after the command gave up for good", async () => {
+      const { client, streams } = setup();
+      const promise = streams.publish({ name: "late" });
+      await settle();
+      client.failSetup(new CommandTimeoutError("setupstream"));
+      await expect(promise).rejects.toBeInstanceOf(CommandTimeoutError);
+      client.notify("notifystreamstarted", { ...own("late", "late"), return_code: "1" });
+      await settle();
+      expect(stopped(client)).toEqual([]);
+      expect(streams.get("late")).toBeDefined();
+    });
+
+    it("rejects, and stops nothing, when the connection ends before the answer", async () => {
+      const { client, streams } = setup();
+      const promise = streams.publish({ name: "x" });
+      await settle();
+      client.status = "disconnected";
+      client.emit("disconnected", { error: undefined, willReconnect: false });
+      client.failSetup(new NotConnectedError());
+      await expect(promise).rejects.toBeInstanceOf(NotConnectedError);
       expect(client.commands("stopstream")).toEqual([]);
     });
   });

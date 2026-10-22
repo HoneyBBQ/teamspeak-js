@@ -42,11 +42,54 @@ export class FakeClient implements StreamsClient {
   /** How a command is answered; the default succeeds with no rows. */
   answer: (request: CommandRequest) => Promise<Array<Record<string, string>>> | undefined = () =>
     undefined;
+  /** The options each command was sent with, parallel to `sent`. */
+  readonly sentOptions: Array<CommandOptions | undefined> = [];
+  /**
+   * The `setupstream` commands waiting for their announcement, oldest first.
+   * Unless `answer` takes the command, it is not answered until `announce`
+   * does, as the real client answers it with the announcement carrying its
+   * `return_code`.
+   */
+  readonly setups: Array<{
+    readonly request: CommandRequest;
+    readonly returnCode: string;
+    readonly resolve: (rows: Array<Record<string, string>>) => void;
+    readonly reject: (error: unknown) => void;
+  }> = [];
   #listeners = new Map<string, Handler[]>();
+  #returnCode = 0;
 
-  send(request: CommandRequest, _options?: CommandOptions): Promise<Array<Record<string, string>>> {
+  send(request: CommandRequest, options?: CommandOptions): Promise<Array<Record<string, string>>> {
     this.sent.push(request);
-    return this.answer(request) ?? Promise.resolve([]);
+    this.sentOptions.push(options);
+    const answered = this.answer(request);
+    if (answered !== undefined || request.command !== "setupstream") {
+      return answered ?? Promise.resolve([]);
+    }
+    return new Promise((resolve, reject) => {
+      this.setups.push({ request, returnCode: String(++this.#returnCode), resolve, reject });
+    });
+  }
+
+  /**
+   * The server announces the stream the `which`th waiting `setupstream`
+   * started: the notification, with the command's `return_code`, ahead of the
+   * answer to the command, as measured. Pass `{ answer: false }` for the
+   * notification alone, and settle the command with `failSetup` or later.
+   */
+  announce(params: Record<string, string>, which = 0): void {
+    const [setup] = this.setups.splice(which, 1);
+    if (setup === undefined) throw new Error("no setupstream is waiting");
+    const row = { ...params, return_code: setup.returnCode };
+    this.notify("notifystreamstarted", row);
+    setup.resolve([row]);
+  }
+
+  /** The server's `error` for the `which`th waiting `setupstream`. */
+  failSetup(error: unknown, which = 0): void {
+    const [setup] = this.setups.splice(which, 1);
+    if (setup === undefined) throw new Error("no setupstream is waiting");
+    setup.reject(error);
   }
 
   on(event: string, listener: Handler): Unsubscribe {
