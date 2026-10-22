@@ -4,6 +4,14 @@ Until 1.0.0-beta.4 this package was published as `@honeybbq/teamspeak-core`, and
 `@honeybbq/teamspeak-client` was a second package. The sections below, down to
 the last version heading, are the core's history; the client's is at the bottom.
 
+## 1.0.0-beta.17
+
+### Patch Changes
+
+- [#126](https://github.com/HoneyBBQ/teamspeak-js/pull/126) [`49731f7`](https://github.com/HoneyBBQ/teamspeak-js/commit/49731f716b323d83635462f925771ab166214f1f) - Stream events wait for a listener again after the last one unsubscribes, up to the same bound, instead of going nowhere. Signalling that a publisher still sends for a stream whose view the app has left or closed is ignored instead of being reported to `error` one message at a time.
+
+- [#124](https://github.com/HoneyBBQ/teamspeak-js/pull/124) [`7c8c9e9`](https://github.com/HoneyBBQ/teamspeak-js/commit/7c8c9e90763eca2883e5ac9205b0c97201d90682) - Trimming a ServerQuery line's `\r` and a web query URL's trailing `/` takes linear time. A server that sent a very long run of `\r` could stall the query client for seconds with a pattern that retried from each one.
+
 ## 1.0.0-beta.16
 
 ### Minor Changes
