@@ -705,6 +705,55 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     await recovering.disconnect();
   }, 110_000);
 
+  it("asks again for the name it requested, not the one the server gave it", async () => {
+    // A second client asking for a name another holds is renamed by the server
+    // ("name" becomes "name1"). When it reconnects it must ask for "name" again
+    // rather than for "name1", which would drift to "name12" while the old
+    // session still holds "name1".
+    const requested = "ts-js-nick-taken";
+    const holder = await connectPeer(requested);
+    let socket: Socket | undefined;
+    const second = new Client(generateIdentitySync(8), ADDR!, requested, {
+      serverPassword: SERVER_PASSWORD,
+      defaultChannel: DEFAULT_CHANNEL,
+      reconnect: { backoff: { initialDelayMs: 500, maxDelayMs: 4_000 } },
+      socketFactory: (family) => {
+        socket = createSocket(family === 6 ? "udp6" : "udp4");
+        return socket;
+      },
+    });
+    try {
+      await connectWithRetries(second);
+      const nameOf = async (client: Client): Promise<string | undefined> =>
+        (await listClients(client)).find((c) => c.id === client.clientID)?.nickname;
+      const first = await nameOf(second);
+      expect(first).not.toBe(requested);
+      expect(first?.startsWith(requested)).toBe(true);
+      const firstID = second.clientID;
+
+      socket!.close();
+      await new Promise<void>((resolve, reject) => {
+        const poll = setInterval(() => {
+          if (second.status === ClientStatus.Connected && second.clientID !== firstID) {
+            clearInterval(poll);
+            resolve();
+          }
+        }, 250);
+        setTimeout(() => {
+          clearInterval(poll);
+          reject(new Error("did not reconnect"));
+        }, 60_000);
+      });
+
+      // Still a suffix of the requested name, and one digit run, not a drift.
+      const again = await nameOf(second);
+      expect(again).toMatch(new RegExp(`^${requested}\\d$`));
+    } finally {
+      await second.disconnect();
+      await holder.disconnect().catch(() => {});
+    }
+  }, 110_000);
+
   it("does not reconnect after an explicit disconnect", async () => {
     // A deliberate disconnect means the caller is done. Retrying would keep a
     // process alive that asked to stop.

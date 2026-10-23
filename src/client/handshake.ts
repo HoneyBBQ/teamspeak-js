@@ -132,7 +132,7 @@ function buildClientInitCommand(client: ClientInternals): string {
   const hwid = createHash("sha1").update(pubKeyBase64).digest().toString("base64");
 
   return buildCommandOrdered("clientinit", [
-    ["client_nickname", client.nickname],
+    ["client_nickname", client.requestedNickname],
     ["client_version", initOptions.version.version],
     ["client_platform", initOptions.version.platform],
     ["client_input_hardware", "1"],

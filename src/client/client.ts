@@ -149,7 +149,10 @@ export interface ClientInternals {
   readonly handler: PacketHandler;
   readonly logger: Logger;
   readonly initOptions: ClientInitOptions;
+  /** The nickname the server reports for this client now. */
   nickname: string;
+  /** The nickname the caller asked for: what every connection attempt sends in clientinit. */
+  readonly requestedNickname: string;
   clid: number;
   /** The clients this one knows of, as its events and `invokerGroups` read them. */
   readonly clients: ReadonlyMap<number, ClientEntry>;
@@ -361,7 +364,18 @@ export class Client implements CommandExecutor, AsyncDisposable {
   #crypt: Crypt;
   #handler: PacketHandler;
   #logger: Logger;
+  /**
+   * The nickname the server reports for this client now. It differs from
+   * `#requestedNickname` when the server renamed the client, because the
+   * requested one was taken or an admin edited it.
+   */
   #nickname: string;
+  /**
+   * The nickname the caller asked for: the constructor's, or the one a
+   * `clientupdate` of this client's own last changed. Every connection attempt
+   * sends it, so a server-assigned "bot1" is not asked for again after a drop.
+   */
+  #requestedNickname: string;
   #clid = 0;
   /**
    * What the server reported about itself in initserver, including the UID
@@ -448,6 +462,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     this.#identity = identity;
     this.#addr = addr;
     this.#nickname = nickname;
+    this.#requestedNickname = nickname;
     this.#logger = options.logger ?? noopLogger;
     this.#resolver = options.resolver ?? new Resolver({ nicknameLookup: options.nicknameLookup });
     this.#clientInitOptions = normalizeClientInitOptions(options);
@@ -485,6 +500,9 @@ export class Client implements CommandExecutor, AsyncDisposable {
       },
       set nickname(value) {
         self.#nickname = value;
+      },
+      get requestedNickname() {
+        return self.#requestedNickname;
       },
       get clid() {
         return self.#clid;
@@ -900,6 +918,11 @@ export class Client implements CommandExecutor, AsyncDisposable {
 
       const result = await Promise.race([answered, givenUp]);
       if (result.err) throw result.err;
+      // The server took the rename, so it is what this client now asks for.
+      if (!internal && parsed?.name === "clientupdate") {
+        const renamed = parsed.params["client_nickname"];
+        if (renamed !== undefined) this.#requestedNickname = renamed;
+      }
       return result.data;
     } finally {
       // A command given up while it waited for its turn gives the turn back.
@@ -1214,7 +1237,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
           attempt: trace.attempt,
           reconnect: trace.reconnect,
           clientID: asClientID(this.#clid),
-          nickname: initServer["acn"] ?? this.#nickname,
+          nickname: initServer["acn"] ?? this.#requestedNickname,
           talkPower: Number.isNaN(talkPower) ? 0 : talkPower,
           initServer: Object.freeze(safe),
           capabilities: this.#capabilities,
@@ -1681,9 +1704,13 @@ export class Client implements CommandExecutor, AsyncDisposable {
         // sends more welcome data after it, and `channellistfinished` is the
         // real terminator.
         if (info.id === this.#clid) {
-          // Carries the rename the server applied if our nickname was taken.
+          // Carries the rename the server applied if our nickname was taken;
+          // the nickname asked for stays as it was.
           this.#nickname = info.nickname;
-        } else if (this.#clid === 0 && isAutoNicknameMatch(this.#nickname, info.nickname)) {
+        } else if (
+          this.#clid === 0 &&
+          isAutoNicknameMatch(this.#requestedNickname, info.nickname)
+        ) {
           // initserver carried no aclid, so the welcome enter is the only way
           // to learn our clid. Gated on clid still being unknown so a later
           // lookalike can never hijack an established session.
@@ -1719,7 +1746,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
         this.#emitServerEvent({ name: "textMessage", payload: result.message });
         break;
       case "clientUpdated":
-        // The server may rename a client, this one included.
+        // The server may rename a client, this one included. That changes the
+        // name it reports, not the one this client asks for on reconnecting.
         if (result.event.clientID === this.#clid && "nickname" in result.event.changes) {
           this.#nickname = result.event.changes.nickname ?? this.#nickname;
         }
