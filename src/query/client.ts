@@ -29,6 +29,9 @@ import {
   buildCommandChain,
   buildCommandOrdered,
   encodeRequest,
+  floodHoldMs,
+  FLOOD_RETRIES,
+  floodRetryDelayMs,
   handleNotification,
   parseCommand,
   parseServerError,
@@ -939,7 +942,49 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     }
   }
 
+  /**
+   * Run a command, and run it again when the server refuses it as flooding
+   * with a time to wait that the command can afford. The server did not run a
+   * refused command, and the next command waits behind this one in the queue,
+   * so nothing is sent while the pause lasts.
+   *
+   * Measured on TeamSpeak 3 3.13.8 (raw TCP) and TeamSpeak 6 6.0.0 (SSH): the
+   * refusal is `error id=524 ... extra_msg=please\swait\s1\sseconds`, the
+   * connection stays open, and sending again before the pause is over only
+   * prolongs it. WebQuery has no such answer; see {@link floodRetryDelayMs}.
+   */
   async #execNow(line: string, options: CommandOptions): Promise<Array<Record<string, string>>> {
+    const { signal, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS } = options;
+    const deadline = performance.now() + timeoutMs;
+    for (let refused = 0; ; refused++) {
+      try {
+        return await this.#execOnce(line, {
+          ...options,
+          timeoutMs: Math.max(deadline - performance.now(), 0),
+        });
+      } catch (error) {
+        const wait = error instanceof Error ? floodRetryDelayMs(error) : undefined;
+        const hold = wait === undefined ? undefined : floodHoldMs(wait);
+        if (
+          wait === undefined ||
+          hold === undefined ||
+          refused >= FLOOD_RETRIES ||
+          hold >= deadline - performance.now() ||
+          this.#closed
+        ) {
+          throw error;
+        }
+        this.#logger.debug("the server asked for a pause", {
+          command: parseCommand(line)?.name,
+          waitMs: wait,
+        });
+        await sleep(hold, signal);
+        signal?.throwIfAborted();
+      }
+    }
+  }
+
+  async #execOnce(line: string, options: CommandOptions): Promise<Array<Record<string, string>>> {
     const { signal, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS } = options;
     signal?.throwIfAborted();
     if (this.#closed || this.#transport === null) throw new NotConnectedError();
@@ -1427,16 +1472,16 @@ function serverIDOf(server: ResolvedQueryOptions["server"]): ServerID | number |
 }
 
 /** Sleep, or wake early once `signal` aborts. Resolves either way, never rejects. */
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  if (ms <= 0 || signal.aborted) return Promise.resolve();
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0 || signal?.aborted) return Promise.resolve();
   return new Promise((resolve) => {
     const done = (): void => {
       clearTimeout(timer);
-      signal.removeEventListener("abort", done);
+      signal?.removeEventListener("abort", done);
       resolve();
     };
     const timer = setTimeout(done, ms);
-    signal.addEventListener("abort", done, { once: true });
+    signal?.addEventListener("abort", done, { once: true });
   });
 }
 

@@ -20,6 +20,12 @@ export type { NotificationResult } from "./notifications.js";
 export { parseIconID } from "./command/ids.js";
 export { responseSpec } from "./command/responses.js";
 export type { ResponseSpec } from "./command/responses.js";
-export { floodRetryDelayMs, parseErrorCode, parseServerError } from "./errors.js";
+export {
+  floodHoldMs,
+  FLOOD_RETRIES,
+  floodRetryDelayMs,
+  parseErrorCode,
+  parseServerError,
+} from "./errors.js";
 export { splitCommandRows, parseUint64, parseUint16, parseInt10, sleep } from "./helpers.js";
 export { jitteredDelay, resolveBackoffPolicy } from "./reconnect.js";

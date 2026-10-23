@@ -1,5 +1,5 @@
 import { Duplex } from "node:stream";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryClient } from "./index.js";
 import type {
   QueryClientOptions,
@@ -761,6 +761,123 @@ describe("QueryClient commands", () => {
 });
 
 // The seams: a caller with its own socket, its own SSH client, or neither.
+// Measured on TeamSpeak 3 3.13.8 (raw TCP) and TeamSpeak 6 6.0.0 (SSH): a
+// client over the flood limit gets this line for each command, and the command
+// is not run.
+const FLOODED = "error id=524 msg=client\\sis\\sflooding extra_msg=please\\swait\\s2\\sseconds";
+
+describe("QueryClient flood refusals", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("waits out the pause the server asks for and sends the command again", async () => {
+    const { client, transport, baseline } = await connected();
+    vi.useFakeTimers();
+
+    const answered = client.exec("whoami");
+    await transport.sentCount(baseline + 1);
+    transport.receive(FLOODED);
+    // Twice the 2 seconds the server named: still held at 3.9 seconds.
+    await vi.advanceTimersByTimeAsync(3_900);
+    expect(transport.sent).toHaveLength(baseline + 1);
+    await vi.advanceTimersByTimeAsync(120);
+    await transport.sentCount(baseline + 2);
+    transport.receive("client_id=1", "error id=0 msg=ok");
+
+    expect(await answered).toEqual([{ client_id: "1" }]);
+    expect(transport.sent.slice(baseline)).toEqual(["whoami", "whoami"]);
+  });
+
+  it("holds the commands queued behind it until the pause is over", async () => {
+    const { client, transport, baseline } = await connected();
+    vi.useFakeTimers();
+
+    const first = client.exec("first");
+    const second = client.exec("second");
+    await transport.sentCount(baseline + 1);
+    transport.receive(FLOODED);
+    await vi.advanceTimersByTimeAsync(3_900);
+    expect(transport.sent.slice(baseline)).toEqual(["first"]);
+    await vi.advanceTimersByTimeAsync(120);
+    await transport.sentCount(baseline + 2);
+    transport.receive("a=1", "error id=0 msg=ok");
+    await first;
+    await transport.sentCount(baseline + 3);
+    transport.receive("b=2", "error id=0 msg=ok");
+
+    expect(await second).toEqual([{ b: "2" }]);
+    expect(transport.sent.slice(baseline)).toEqual(["first", "first", "second"]);
+  });
+
+  it("sends the command again at most three times", async () => {
+    const { client, transport, baseline } = await connected();
+    vi.useFakeTimers();
+
+    const answered = client.exec("whoami", { timeoutMs: 60_000 });
+    const failure = answered.catch((error: unknown) => error);
+    for (let sent = 1; sent <= 4; sent++) {
+      await transport.sentCount(baseline + sent);
+      transport.receive(FLOODED);
+      await vi.advanceTimersByTimeAsync(4_020);
+    }
+
+    const error = await failure;
+    expect(error).toBeInstanceOf(ServerError);
+    expect((error as ServerError).code).toBe(ErrorCode.ClientIsFlooding);
+    expect(transport.sent).toHaveLength(baseline + 4);
+  });
+
+  it("does not wait for a pause longer than the command has left", async () => {
+    const { client, transport, baseline } = await connected();
+    vi.useFakeTimers();
+
+    const answered = client.exec("whoami", { timeoutMs: 1_500 });
+    const failure = answered.catch((error: unknown) => error);
+    await transport.sentCount(baseline + 1);
+    transport.receive(FLOODED);
+
+    // Refused at once, not after a timeout: the pause does not fit.
+    expect(await failure).toBeInstanceOf(ServerError);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(transport.sent).toHaveLength(baseline + 1);
+  });
+
+  it("gives up when the caller aborts during the pause", async () => {
+    const { client, transport, baseline } = await connected();
+    vi.useFakeTimers();
+
+    const abort = new AbortController();
+    const answered = client.exec("whoami", { signal: abort.signal });
+    const failure = answered.catch((error: unknown) => error);
+    await transport.sentCount(baseline + 1);
+    transport.receive(FLOODED);
+    await vi.advanceTimersByTimeAsync(500);
+    abort.abort(new Error("stop"));
+
+    expect(await failure).toEqual(new Error("stop"));
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(transport.sent).toHaveLength(baseline + 1);
+  });
+
+  it("does not send a command again for a refusal that names no pause, or is not this one", async () => {
+    const { client, transport, baseline } = await connected();
+    vi.useFakeTimers();
+
+    for (const line of [
+      "error id=524 msg=client\\sis\\sflooding",
+      "error id=3329 msg=flood\\sban extra_msg=please\\swait\\s2\\sseconds",
+    ]) {
+      const sent = transport.sent.length;
+      const failure = client.exec("whoami").catch((error: unknown) => error);
+      await transport.sentCount(sent + 1);
+      transport.receive(line);
+      expect(await failure).toBeInstanceOf(ServerError);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(transport.sent).toHaveLength(sent + 1);
+    }
+    expect(transport.sent).toHaveLength(baseline + 2);
+  });
+});
+
 describe("QueryClient transport seams", () => {
   it("opens a tcp connection through the connect it was given", async () => {
     const stream = fakeStream();

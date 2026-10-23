@@ -50,6 +50,8 @@ import {
   buildCommand,
   buildCommandChain,
   encodeRequest,
+  floodHoldMs,
+  FLOOD_RETRIES,
   floodRetryDelayMs,
   parseServerError,
   resolveBackoffPolicy,
@@ -192,15 +194,6 @@ export function onSentLine(hook: ((client: Client, line: string) => void) | unde
 export function clientInternals(client: Client): ClientInternals {
   return internalsOf(client);
 }
-
-/**
- * How many times a command refused as flooding is sent again after the pause
- * the server asked for. The first resend is usually refused once more with a
- * shorter wait, and the second goes through (measured on TeamSpeak 3 and 6).
- */
-const FLOOD_RETRIES = 3;
-/** Added to the server's wait, which counts down to the millisecond. */
-const FLOOD_HOLD_MARGIN_MS = 10;
 
 /** How long a command waits for its answer unless told otherwise. */
 const DEFAULT_COMMAND_TIMEOUT_MS = 10_000;
@@ -965,17 +958,18 @@ export class Client implements CommandExecutor, AsyncDisposable {
         // afford: nothing is sent until then, and the command, which the
         // server did not run, goes out again.
         const wait = result.err ? floodRetryDelayMs(result.err) : undefined;
+        const hold = wait === undefined ? undefined : floodHoldMs(wait);
         if (
-          wait !== undefined &&
+          hold !== undefined &&
           !goodbye &&
           refused < FLOOD_RETRIES &&
-          wait < deadline - performance.now()
+          hold < deadline - performance.now()
         ) {
           this.#logger.debug("the server asked for a pause", {
             command: parsed?.name,
             waitMs: wait,
           });
-          this.#throttle.hold(wait + FLOOD_HOLD_MARGIN_MS);
+          this.#throttle.hold(hold);
           this.#cmdTrack.unregister(rc);
           [rc, answered] = this.#cmdTrack.register(spec, correlation, echo);
           continue;
