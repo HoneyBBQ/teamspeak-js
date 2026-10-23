@@ -1167,6 +1167,25 @@ describe.skipIf(SKIP || !GUEST)("Integration — guest ServerQuery", () => {
     60_000,
   );
 
+  it.skipIf(!guestKinds.includes("web"))(
+    "a guest over web is refused hostinfo, and the answer names the permission",
+    async () => {
+      const client = new QueryClient(guestOptions("web"));
+      await connectWithRetries(client);
+      try {
+        const refused = await client.exec("hostinfo").catch((failure: unknown) => failure);
+        expect(refused).toMatchObject({
+          code: 2568,
+          failedPermission: "b_serverinstance_info_view",
+          failedPermissionID: undefined,
+        });
+      } finally {
+        await client.disconnect();
+      }
+    },
+    60_000,
+  );
+
   it.skipIf(!KINDS.includes("web"))(
     "a WebQuery request with a wrong api key is not a guest",
     async () => {

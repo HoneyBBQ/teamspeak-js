@@ -265,7 +265,8 @@ if (err instanceof ServerError && err.code === ErrorCode.PermissionsClientInsuff
 ```
 
 `code` is a number; `ErrorCode` names every code. `failedPermissionID` is a
-`PermissionID`. A wrong server or channel
+`PermissionID`; over WebQuery the missing permission is named in
+`failedPermission` instead. A wrong server or channel
 password is no longer retried by the reconnect loop.
 
 Every error the SDK throws is a `TeamspeakError`, and `instanceof` works even
