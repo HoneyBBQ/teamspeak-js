@@ -20,6 +20,11 @@ export interface TextMessageEvent {
    * The sender's server groups. A text message does not carry them; they are
    * those of the sender as the client knows it, so they are `undefined` for a
    * sender the client has not seen.
+   *
+   * A ServerQuery connection is not sent `notifyclientupdated`, so for a query
+   * client they are the groups from the listing taken on connecting, kept
+   * current only by clients entering, leaving and moving: a change of groups
+   * made since is not in them.
    */
   readonly invokerGroups: readonly ServerGroupID[] | undefined;
   /**
@@ -38,15 +43,21 @@ export interface TextMessageEvent {
 
 /** A client changing channel, of its own accord or moved by someone. */
 export interface ClientMovedEvent {
-  /** Who moved the client; the client itself for a move of its own. */
+  /**
+   * Who moved the client; "" when the server names no one, which it does not
+   * for a move of the client's own (reason 0).
+   */
   readonly invokerName: string;
-  /** The mover's unique identifier. */
+  /** The mover's unique identifier; "" when none is named. */
   readonly invokerUID: UID;
   /** The channel the client is now in. */
   readonly targetChannelID: ChannelID;
   /**
-   * The channel the client came from (`cfid`). Absent when the server sends
-   * none: TS3 3.13.8 sends no `cfid` on a move, TS6 6.0.0-beta13.1 does.
+   * The channel the client came from: `cfid`, or when the server sends none
+   * (TS3 3.13.8 sends no `cfid` on a move, TS6 6.0.0 does) the channel the
+   * client was known to be in. Absent only when the server sent none and the
+   * client was not known. A client's own roster entry is updated before the
+   * event is delivered, so this is the only place the previous channel is.
    */
   readonly fromChannelID?: ChannelID | undefined;
   /** Why the client moved; compare it with `Reason`. */
@@ -55,7 +66,7 @@ export interface ClientMovedEvent {
   readonly reasonMessage: string;
   /** The client that moved. */
   readonly clientID: ClientID;
-  /** The mover. */
+  /** The mover; 0 when the server names no one, as for a move of the client's own. */
   readonly invokerID: ClientID;
 }
 
@@ -113,8 +124,9 @@ export interface KickedEvent {
 /**
  * A client coming into view: the record `listClients` returns, so one type
  * describes a client however it was learned of, with what only the
- * notification says. Its own id is `id`, as in every record. The fields only
- * `clientlist -times` reports are undefined here.
+ * notification says. Its own id is `id`, as in every record. The notification
+ * carries every field but the ones only `clientlist` reports (`-times`,
+ * `-info`, `-ip`), which are undefined here.
  *
  * `fromChannelID` and `reason` belong to the event: the roster and
  * `view.clients` keep the record without them.

@@ -81,7 +81,7 @@ export type NotificationResult =
  * client's own id (0 when it is not known yet), and `clients` the clients the
  * caller knows, which the enter, leave, move, update and channel group
  * notifications keep current and the others read: a text message carries no
- * groups, and a move of the client's own carries no invoker. An entry is
+ * groups, and a move carries no `cfid` on TS3. An entry is
  * replaced, never edited, so an event that holds one stays as it was.
  *
  * The server-group notifications leave the clients alone: the update that
@@ -214,22 +214,23 @@ function handleClientMoved(cmd: Command, clients: Map<number, ClientEntry>): Not
   const existing = clients.get(clid);
   if (existing) clients.set(clid, { ...existing, channelID: ctid });
 
-  // A move the client made itself names no invoker, so the fields are empty;
-  // the client it knows by `clid` is who that was.
-  const invokerID = asClientID(parseUint16(cmd.params["invokerid"] ?? ""));
-  const invoker = clients.get(invokerID === 0 ? clid : invokerID);
+  // Where the client came from: `cfid` when the server sends it, and when it
+  // does not (TS3 sends none on a move) the channel the roster had it in,
+  // which this notification is about to replace.
+  const from = cmd.params["cfid"] === undefined ? existing?.channelID : undefined;
 
+  // A move the client made itself (reason 0) names no invoker, and the fields
+  // are left empty: it is not filled in from the roster.
   return {
     kind: "clientMoved",
     event: {
       clientID: clid,
       targetChannelID: ctid,
       ...channelOf(cmd.params, "cfid", "fromChannelID"),
+      ...(from === undefined ? {} : { fromChannelID: from }),
       reason: parseInt10(cmd.params["reasonid"] ?? ""),
       reasonMessage: cmd.params["reasonmsg"] ?? "",
-      invokerID,
-      invokerName: cmd.params["invokername"] ?? invoker?.nickname ?? "",
-      invokerUID: asUID(cmd.params["invokeruid"] ?? invoker?.uid ?? ""),
+      ...invoked(cmd.params),
     },
   };
 }

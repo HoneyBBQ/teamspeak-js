@@ -61,6 +61,74 @@ describe("handleNotification", () => {
       },
     );
 
+    const known = (): Map<number, ClientEnterEvent> =>
+      new Map([
+        [7, { id: 7, nickname: "Alice", uid: "uid7", channelID: 2n, type: 0 } as ClientEnterEvent],
+      ]);
+
+    // Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 6.0.0: a client's own move names no invoker.
+    it("names no invoker for a move of the client's own, though the roster knows it", () => {
+      const cmd = { name: "notifyclientmoved", params: { clid: "7", ctid: "4", reasonid: "0" } };
+
+      const result = handleNotification(cmd, 7, known());
+
+      if (result.kind !== "clientMoved") throw new Error(result.kind);
+      expect(result.event).toMatchObject({ invokerID: 0, invokerName: "", invokerUID: "" });
+    });
+
+    it("keeps the invoker of a move someone else made", () => {
+      const cmd = {
+        name: "notifyclientmoved",
+        params: {
+          clid: "7",
+          ctid: "4",
+          reasonid: "1",
+          invokerid: "9",
+          invokername: "Admin",
+          invokeruid: "adm",
+        },
+      };
+
+      const result = handleNotification(cmd, 1, known());
+
+      if (result.kind !== "clientMoved") throw new Error(result.kind);
+      expect(result.event).toMatchObject({
+        invokerID: 9,
+        invokerName: "Admin",
+        invokerUID: "adm",
+      });
+    });
+
+    it("takes the channel the client came from from cfid when sent", () => {
+      const cmd = { name: "notifyclientmoved", params: { clid: "7", cfid: "3", ctid: "4" } };
+
+      const result = handleNotification(cmd, 1, known());
+
+      if (result.kind !== "clientMoved") throw new Error(result.kind);
+      expect(result.event.fromChannelID).toBe(3n);
+    });
+
+    it("takes it from the roster when the server sends no cfid, as TS3 does", () => {
+      const clients = known();
+      const cmd = { name: "notifyclientmoved", params: { clid: "7", ctid: "4", reasonid: "0" } };
+
+      const result = handleNotification(cmd, 1, clients);
+
+      if (result.kind !== "clientMoved") throw new Error(result.kind);
+      expect(result.event.fromChannelID).toBe(2n);
+      // The roster moved on, so the event is where the old channel is told.
+      expect(clients.get(7)?.channelID).toBe(4n);
+    });
+
+    it("leaves it absent for a client it did not know, without a cfid", () => {
+      const cmd = { name: "notifyclientmoved", params: { clid: "8", ctid: "4" } };
+
+      const result = handleNotification(cmd, 1, known());
+
+      if (result.kind !== "clientMoved") throw new Error(result.kind);
+      expect("fromChannelID" in result.event).toBe(false);
+    });
+
     it("reads the largest channel id as itself", () => {
       const cmd = {
         name: "notifyclientmoved",

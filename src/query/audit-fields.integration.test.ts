@@ -219,7 +219,7 @@ describe.skipIf(SKIP)("Audit fields and events — live", () => {
     rmSync(scratch, { recursive: true, force: true });
   }, 30_000);
 
-  it("a move names the channel it came from where the server sends it, and a leave names both", async () => {
+  it("a move names the channel it came from, from cfid or else the roster, and a leave names both", async () => {
     const target = await makeChannel(admin, `af-move-${RUN}`);
     channels.push(target);
     const moves = collect<ClientMovedEvent>((l) => events.on("clientMoved", l));
@@ -230,8 +230,8 @@ describe.skipIf(SKIP)("Audit fields and events — live", () => {
       (e) => e.clientID === plain.clientID && e.targetChannelID === target,
     );
     console.log("move fromChannelID:", moved.fromChannelID, "family:", FAMILY);
-    if (FAMILY === "ts6") expect(moved.fromChannelID).toBe(BigInt(homeID));
-    if (FAMILY === "ts3") expect(moved.fromChannelID).toBeUndefined();
+    // TS3 sends no cfid on a move; the roster says where the client was.
+    expect(moved.fromChannelID).toBe(BigInt(homeID));
 
     await plain.disconnect();
     const left = await leaves.next((e) => e.clientID === moved.clientID);

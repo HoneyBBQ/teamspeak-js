@@ -578,12 +578,6 @@ export interface Channel {
   /** The topic shown under the name (`channel_topic`). */
   readonly topic: string;
   /**
-   * The description (`channel_description`). `channellist` does not carry it,
-   * so `listChannels` leaves it empty; `getChannelInfo` or the voice client's
-   * `getChannelDescription` has it.
-   */
-  readonly description: string;
-  /**
    * The channel this one is sorted after among its siblings, or 0 for the
    * first: `channel_order` is a channel id, not a position.
    */
@@ -645,6 +639,14 @@ export interface Channel {
   // undefined; `getChannelInfo` fills it in, and a created or edited
   // notification names the ones that changed.
 
+  /**
+   * The description (`channel_description`). Neither `channellist` nor a
+   * channel notification carries it, so `listChannels` and the voice client's
+   * view leave it undefined, and a channel's description changing is told by
+   * `channelDescriptionChanged` without the text; `getChannelInfo` has it, and
+   * so has the voice client's `getChannelDescription`.
+   */
+  readonly description?: string | undefined;
   /** How many packets of voice are sent at once, 1 to 10 (`channel_codec_latency_factor`). */
   readonly codecLatencyFactor?: number | undefined;
   /** Whether voice in the channel travels unencrypted (`channel_codec_is_unencrypted`). */
@@ -722,7 +724,7 @@ export const channelFields: {
   },
   name: { keys: ["channel_name"], read: str, always: true },
   topic: { keys: ["channel_topic"], read: str, always: true },
-  description: { keys: ["channel_description"], read: str, always: true },
+  description: { keys: ["channel_description"], read: str },
   order: { keys: ["channel_order"], read: (row, key) => asChannelID(big(row, key)), always: true },
   hasPassword: { keys: ["channel_flag_password"], read: bool, always: true },
   isDefault: { keys: ["channel_flag_default"], read: bool, always: true },

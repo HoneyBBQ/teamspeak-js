@@ -410,15 +410,16 @@ describe("Permission", () => {
     ]);
   });
 
-  it("types each location by its target, and skips a target it cannot name", async () => {
+  it("types each location by its target, and passes a target it cannot name through", async () => {
     const { client } = recordingClient([
       { t: "3", id1: "4", id2: "9", p: "1" },
       { t: "4", id1: "4", id2: "7", p: "1" },
-      { t: "99", id1: "1", id2: "1", p: "1" },
+      { t: "99", id1: "1", id2: "2", p: "1" },
     ]);
     expect(await findPermission(client, permissionByID(asPermissionID(1)))).toEqual([
       { target: 3, channelID: 4n, channelGroupID: 9n, permission: 1 },
       { target: 4, channelID: 4n, databaseID: 7n, permission: 1 },
+      { target: 99, id1: 1n, id2: 2n, permission: 1 },
     ]);
   });
 
@@ -605,6 +606,18 @@ describe("privilege keys", () => {
     expect(channel).toMatchObject({ serverGroupID: undefined, channelGroupID: 5n, channelID: 2n });
     expect(channel?.createdAt).toEqual(new Date(1_791_764_164_000));
   });
+
+  it("gives a type it does not name neither group nor channel", async () => {
+    const { client } = recordingClient([
+      { token: "c", token_type: "2", token_id1: "6", token_id2: "3", token_created: "0" },
+    ]);
+    const [key] = await listPrivilegeKeys(client);
+
+    expect(key?.type).toBe(2);
+    expect(key?.serverGroupID).toBeUndefined();
+    expect(key?.channelGroupID).toBeUndefined();
+    expect(key?.channelID).toBeUndefined();
+  });
 });
 
 describe("other fixes", () => {
@@ -716,9 +729,10 @@ describe("other fixes", () => {
       totalClients: 3,
       totalFamilyClients: 8,
       neededSubscribePower: 6,
-      description: "",
       uid: "",
     });
+    // channellist never carries the description: absent, not empty.
+    expect("description" in channel!).toBe(false);
   });
 
   it("leaves the counts undefined when channelinfo does not carry them", async () => {

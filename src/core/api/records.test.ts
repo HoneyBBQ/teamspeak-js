@@ -153,7 +153,6 @@ describe("record names against the options that write them", () => {
 
 const newFields = [
   "talkRequestedAt",
-  "databaseID",
   "awayMessage",
   "isInputMuted",
   "isOutputMuted",
@@ -250,9 +249,53 @@ describe("parseClient", () => {
       client_type: "0",
     });
     for (const field of newFields) expect(field in entry, field).toBe(false);
-    expect(entry.isAway).toBe(false);
     expect(entry.idleTimeMs).toBeUndefined();
     expect(entry.channelID).toBe(3n);
+    expect(entry.type).toBe(0);
+    expect(entry.uid).toBe("u");
+  });
+
+  it("leaves what a flag brings absent from a row without the flag", () => {
+    // What `clientlist` with no flag carries: the id, channel, database id, nickname and type.
+    const entry = parseClient({
+      clid: "7",
+      cid: "3",
+      client_database_id: "9",
+      client_nickname: "Bob",
+      client_type: "1",
+    });
+    for (const field of [
+      "uid",
+      "serverGroups",
+      "isAway",
+      "isRecording",
+      "isTalker",
+      "channelGroupID",
+      "createdAt",
+      "lastConnectedAt",
+      "idleTimeMs",
+    ])
+      expect(field in entry, field).toBe(false);
+    expect(entry).toMatchObject({ id: 7, nickname: "Bob", channelID: 3n, type: 1 });
+  });
+
+  it("reads a flag's answer as what it says, including the falsy ones", () => {
+    const entry = parseClient({
+      clid: "7",
+      cid: "3",
+      client_nickname: "Bob",
+      client_type: "0",
+      client_away: "0",
+      client_is_recording: "0",
+      client_is_talker: "0",
+      client_servergroups: "",
+      client_unique_identifier: "",
+    });
+    expect(entry.isAway).toBe(false);
+    expect(entry.isRecording).toBe(false);
+    expect(entry.isTalker).toBe(false);
+    expect(entry.serverGroups).toEqual([]);
+    expect(entry.uid).toBe("");
   });
 
   it("covers every ClientEntry field with a table row", () => {
@@ -260,6 +303,7 @@ describe("parseClient", () => {
     expect(names).toEqual(
       [
         ...newFields,
+        "databaseID",
         "nickname",
         "uid",
         "channelID",
@@ -432,20 +476,13 @@ describe("channel changes", () => {
   });
 });
 
-// A record built by hand, as a test or a fake would, still compiles.
+// A record built by hand, as a test or a fake would, needs only what every source carries.
 const handBuilt: ClientEntry = {
   id: 1 as never,
   nickname: "",
   uid: "" as never,
   channelID: 0n as never,
   type: 0,
-  serverGroups: [],
-  isAway: false,
-  isRecording: false,
-  isTalker: false,
-  channelGroupID: 0n as never,
-  createdAt: undefined,
-  lastConnectedAt: undefined,
-  idleTimeMs: undefined,
+  databaseID: 0n as never,
 };
 void handBuilt;

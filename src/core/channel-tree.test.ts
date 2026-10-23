@@ -446,7 +446,6 @@ describe("ChannelTree.applyCreated, defaults", () => {
       isDefault: false,
       hasPassword: false,
       topic: "",
-      description: "",
       codec: 4,
       codecQuality: 5,
       maxClients: -1,
@@ -464,6 +463,7 @@ describe("ChannelTree.applyCreated, defaults", () => {
     });
     // No icon is how the welcome reads icon 0; the rest are not known from a notification, so not claimed.
     expect(channel.iconID).toBeUndefined();
+    expect("description" in channel).toBe(false);
     expect(channel.isUnencrypted).toBeUndefined();
     expect(channel.storageQuota).toBeUndefined();
   });

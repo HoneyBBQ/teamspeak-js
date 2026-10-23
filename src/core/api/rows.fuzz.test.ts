@@ -370,7 +370,7 @@ describe("typed commands reading a server's answer", () => {
         for (const client of clients) {
           expect(Number.isInteger(client.id) && client.id >= 0 && client.id <= 0xffff).toBe(true);
           expect(client.channelID >= 0n && client.channelID <= UINT64_MAX).toBe(true);
-          for (const group of client.serverGroups)
+          for (const group of client.serverGroups ?? [])
             expect(group >= 0n && group <= UINT64_MAX).toBe(true);
         }
         const channels = await listChannels(executor);
