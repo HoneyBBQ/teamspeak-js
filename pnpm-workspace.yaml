@@ -2,3 +2,12 @@
 # compromised version has time to be pulled before it reaches this repo.
 # Minutes. Only resolution is affected; installs from the lockfile are not.
 minimumReleaseAge: 4320
+
+# No dependency runs an install script: esbuild gets its binary from a
+# platform package, and ssh2 falls back to JavaScript without its optional
+# native modules. Listing them says so, and keeps the install from failing on
+# the build scripts pnpm now reports.
+allowBuilds:
+  cpu-features: false
+  esbuild: false
+  ssh2: false
