@@ -922,7 +922,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     internal: boolean,
     goodbye: boolean,
   ): Promise<Array<Record<string, string>>> {
-    const { signal, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS } = options;
+    const { signal, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS, onSent } = options;
     signal?.throwIfAborted();
     // A command sent on no socket used to vanish and surface 10 seconds later
     // as a timeout, which reads like a slow server rather than a usage error.
@@ -958,6 +958,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
         if (!goodbye) await Promise.race([this.#throttle.wait(throttleAbort.signal), givenUp]);
         if (!this.#canSend(internal)) throw new NotConnectedError();
         this.#sendLine(withRc);
+        if (refused === 0) onSent?.();
 
         const result = await Promise.race([answered, givenUp]);
         // Refused as flooding with a time to wait, which the command can

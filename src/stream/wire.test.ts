@@ -7,6 +7,7 @@ import {
   assertFits,
   candidateJson,
   parseSignal,
+  reasonOf,
   respondRequest,
   setupRequest,
   signalRequest,
@@ -232,5 +233,44 @@ describe("assertFits", () => {
     expect(() =>
       assertFits(respondRequest("id", asClientID(2), "", "日".repeat(3100), true)),
     ).toThrow(StreamPayloadTooLargeError);
+  });
+});
+
+describe("unsigned wire numbers", () => {
+  it("read a type, accessibility and mode as an unsigned 32-bit number, as the Go SDK does", () => {
+    const read = (value: string): unknown =>
+      streamInfoFrom({ id: "a", type: value, accessibility: value, mode: value }, undefined);
+    const of = (value: string) => {
+      const info = read(value) as ReturnType<typeof streamInfoFrom>;
+      return [info?.source, info?.accessibility, info?.transport];
+    };
+    expect(of("4294967295")).toEqual([4294967295, 4294967295, 4294967295]);
+    for (const bad of ["4294967296", "-1", "+1", "1.5", "", "1234567890123456", "0x1"]) {
+      expect(of(bad)).toEqual([undefined, undefined, undefined]);
+    }
+  });
+
+  it("read a stop reason the same way", () => {
+    expect(reasonOf({ reason: "4294967295" })).toBe(4294967295);
+    expect(reasonOf({ reason: "4294967296" })).toBe(0);
+    expect(reasonOf({ reason: "-3" })).toBe(0);
+    expect(reasonOf({})).toBe(0);
+    expect(reasonOf({ reason: "0000000000000000007" })).toBe(7);
+  });
+
+  it("read a candidate's media section index as an unsigned 16-bit number", () => {
+    const line = (value: string): unknown =>
+      (
+        parseSignal(`{"cmd":"iceCandidate","args":{"sdp":"c","mLine":${value}}}`) as {
+          candidate: { sdpMLineIndex: number | null };
+        }
+      ).candidate.sdpMLineIndex;
+    expect(line("0")).toBe(0);
+    expect(line("65535")).toBe(65535);
+    expect(line("65536")).toBeNull();
+    expect(line("-1")).toBeNull();
+    expect(line("-0")).toBeNull();
+    expect(line("1.5")).toBeNull();
+    expect(line('"1"')).toBeNull();
   });
 });

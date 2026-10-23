@@ -57,12 +57,22 @@ export class FakeClient implements StreamsClient {
     readonly resolve: (rows: Array<Record<string, string>>) => void;
     readonly reject: (error: unknown) => void;
   }> = [];
+  /** While set, a command waits for its turn on the flood throttle: it is not sent, and gives up when its signal aborts. */
+  holdSends = false;
   #listeners = new Map<string, Handler[]>();
   #returnCode = 0;
 
   send(request: CommandRequest, options?: CommandOptions): Promise<Array<Record<string, string>>> {
     this.sent.push(request);
     this.sentOptions.push(options);
+    if (this.holdSends) {
+      return new Promise((_, reject) => {
+        options?.signal?.addEventListener("abort", () => reject(options.signal!.reason), {
+          once: true,
+        });
+      });
+    }
+    options?.onSent?.();
     const answered = this.answer(request);
     if (answered !== undefined || request.command !== "setupstream") {
       return answered ?? Promise.resolve([]);

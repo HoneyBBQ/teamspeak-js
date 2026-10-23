@@ -203,6 +203,17 @@ export type Signal =
   | { readonly kind: "candidate"; readonly candidate: IceCandidate }
   | { readonly kind: "raw"; readonly signal: RawSignal };
 
+/** Whether `value` is an integer an unsigned 16-bit field holds. */
+function isUint16(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= 0xffff &&
+    !Object.is(value, -0)
+  );
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -253,7 +264,7 @@ export function parseSignal(json: string): Signal {
         candidate: {
           candidate: args["sdp"],
           sdpMid: typeof mid === "string" ? mid : null,
-          sdpMLineIndex: typeof line === "number" && Number.isInteger(line) ? line : null,
+          sdpMLineIndex: isUint16(line) ? line : null,
         },
       };
     }
@@ -266,6 +277,17 @@ export function parseSignal(json: string): Signal {
 
 function int(raw: string | undefined): number | undefined {
   return raw !== undefined && /^-?\d{1,15}$/.test(raw) ? Number(raw) : undefined;
+}
+
+/**
+ * An unsigned 32-bit number, which is what a source, an accessibility, a mode
+ * and a stop reason are; undefined when it is absent, none, or out of range.
+ * `maxDigits` bounds the text, as for the signed numbers.
+ */
+function uint32(raw: string | undefined, maxDigits = 15): number | undefined {
+  if (raw === undefined || !/^\d+$/.test(raw) || raw.length > maxDigits) return undefined;
+  const n = Number(raw);
+  return n <= 0xffff_ffff ? n : undefined;
 }
 
 /**
@@ -283,9 +305,9 @@ export function streamInfoFrom(
   const id = params["id"];
   if (id === undefined || id === "") return undefined;
 
-  const type = int(params["type"]);
-  const access = int(params["accessibility"] ?? params["access"]);
-  const mode = int(params["mode"]);
+  const type = uint32(params["type"]);
+  const access = uint32(params["accessibility"] ?? params["access"]);
+  const mode = uint32(params["mode"]);
   const bitrate = int(params["bitrate"]);
   const limit = int(params["viewer_limit"]);
   const viewers = int(params["viewer"]);
@@ -326,13 +348,10 @@ export function clientOf(params: Readonly<Record<string, string>>, key: string):
   return asClientID(parseUint16(params[key] ?? ""));
 }
 
-/** The integer a notification carries under `key`, or `fallback`. */
-export function intOf(
-  params: Readonly<Record<string, string>>,
-  key: string,
-  fallback: number,
-): number {
-  return int(params[key]) ?? fallback;
+/** The stop reason a notification carries; 0 when it carries none. */
+export function reasonOf(params: Readonly<Record<string, string>>): number {
+  // No bound on the digits: leading zeros are as good as none.
+  return uint32(params["reason"], Infinity) ?? 0;
 }
 
 /** Whether an SDP has an audio media section. */

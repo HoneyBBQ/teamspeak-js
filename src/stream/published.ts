@@ -43,6 +43,22 @@ export interface PublishHost {
   stopped(streamId: string, reason: number): void;
 }
 
+/** How many identity lookups of one stream run at once. */
+const MAX_LOOKUPS = 8;
+
+/**
+ * A request waiting to be announced. The slot itself is the request's token: a
+ * lookup answers for the slot it was made for, not for whatever request the
+ * same client id has by then.
+ */
+interface Slot {
+  readonly clientId: ClientID;
+  readonly message: string;
+  identity: ViewerIdentity | undefined;
+  /** Whether the lookup is out. */
+  looking: boolean;
+}
+
 class JoinRequestImpl implements JoinRequest {
   readonly streamId: string;
   readonly viewer: ViewerIdentity;
@@ -133,9 +149,9 @@ export class PublishedImpl implements PublishedStream {
   #peers = new Map<ClientID, ViewerPeerImpl>();
   #pending = new Map<ClientID, JoinRequestImpl>();
   /** Viewers asked about, until the answer comes back, so that a repeat is no new request. */
-  #resolving = new Set<ClientID>();
-  /** Requests are announced in the order they came, whatever the lookups take. */
-  #announcing: Promise<void> = Promise.resolve();
+  #resolving = new Map<ClientID, Slot>();
+  /** Requests are announced in the order they came, whatever the lookups take; the lookups run side by side. */
+  #slots: Slot[] = [];
   #lookups = 0;
   /** Viewers whose peer is over: what they still send is not worth a report. */
   #closedViewers = new Set<ClientID>();
@@ -210,31 +226,60 @@ export class PublishedImpl implements PublishedStream {
     // Asking again while pending, being looked up or let in is no new request.
     if (this.#ended || this.#peers.has(clientId) || this.#resolving.has(clientId)) return;
     if (this.#pending.get(clientId)?.state === "pending") return;
-    this.#resolving.add(clientId);
-    const identity = this.host.identity(clientId);
-    const announce = (viewer: ViewerIdentity): void => {
-      // Withdrawn, or the stream over, while the lookup was out.
-      if (!this.#resolving.delete(clientId) || this.#ended) return;
-      if (this.host.isDenied(viewer)) return;
-      const request = new JoinRequestImpl(this, viewer, message);
-      this.#pending.set(clientId, request);
-      this.#emitter.emit("request", request);
-    };
-    // Nothing to wait for, and nothing ahead of it to wait for: at once.
-    if (!(identity instanceof Promise) && this.#lookups === 0) {
-      announce(identity);
-      return;
+    const slot: Slot = { clientId, message, identity: undefined, looking: false };
+    this.#resolving.set(clientId, slot);
+    this.#slots.push(slot);
+    this.#advance();
+  }
+
+  /** Start the lookups that may start, then announce the requests whose turn it is. */
+  #advance(): void {
+    for (const slot of this.#slots) {
+      if (slot.identity !== undefined || slot.looking) continue;
+      if (this.#resolving.get(slot.clientId) !== slot) continue;
+      if (this.#lookups >= MAX_LOOKUPS) break;
+      const identity = this.host.identity(slot.clientId);
+      if (!(identity instanceof Promise)) {
+        slot.identity = identity;
+        continue;
+      }
+      slot.looking = true;
+      this.#lookups++;
+      void identity.then((viewer) => {
+        slot.looking = false;
+        this.#lookups--;
+        slot.identity = viewer;
+        this.#advance();
+      });
     }
-    this.#lookups++;
-    this.#announcing = this.#announcing
-      .then(() => identity)
-      .then(announce)
-      .finally(() => this.#lookups--);
+    // In the order they came: a request waits for the ones ahead of it.
+    while (this.#slots.length > 0) {
+      const head = this.#slots[0]!;
+      const current = this.#resolving.get(head.clientId) === head && !this.#ended;
+      if (current && head.identity === undefined) break;
+      this.#slots.shift();
+      if (current) this.#announce(head);
+    }
+  }
+
+  #announce(slot: Slot): void {
+    this.#resolving.delete(slot.clientId);
+    const viewer = slot.identity!;
+    if (this.host.isDenied(viewer)) return;
+    const request = new JoinRequestImpl(this, viewer, slot.message);
+    this.#pending.set(slot.clientId, request);
+    this.#emitter.emit("request", request);
   }
 
   /** The client left view: a request of its that nobody answered is forgotten, as the clid may be reused. */
   dropPending(clientId: ClientID): void {
-    this.#resolving.delete(clientId);
+    const slot = this.#resolving.get(clientId);
+    if (slot !== undefined) {
+      this.#resolving.delete(clientId);
+      // One whose lookup is out stays until it answers, which counts it.
+      if (!slot.looking) this.#slots.splice(this.#slots.indexOf(slot), 1);
+      this.#advance();
+    }
     this.#pending.get(clientId)?.close("withdrawn");
     this.#pending.delete(clientId);
   }
@@ -261,6 +306,8 @@ export class PublishedImpl implements PublishedStream {
   finish(ended: StreamEnded): void {
     if (this.#ended) return;
     this.#ended = true;
+    this.#slots.length = 0;
+    this.#resolving.clear();
     for (const request of this.#pending.values()) request.close("ended");
     this.#pending.clear();
     const cause =
