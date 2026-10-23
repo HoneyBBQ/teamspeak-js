@@ -7,6 +7,7 @@ import {
   assertFits,
   candidateJson,
   parseSignal,
+  reasonOf,
   signalRequest,
   streamInfoFrom,
 } from "./wire.js";
@@ -81,6 +82,48 @@ describe("streamInfoFrom", () => {
           if (transport !== undefined && transport !== "p2p") {
             expect(Number.isInteger(transport)).toBe(true);
           }
+        }
+      }),
+      { numRuns: 500 },
+    );
+  });
+});
+
+describe("wire numbers", () => {
+  it("accept a type, accessibility, mode and reason only as an unsigned 32-bit number", () => {
+    fc.assert(
+      fc.property(fc.string({ maxLength: 24 }), (raw) => {
+        const info = streamInfoFrom(
+          { id: "a", type: raw, accessibility: raw, mode: raw },
+          undefined,
+        );
+        for (const n of [info?.source, info?.accessibility, info?.transport]) {
+          if (typeof n === "number") {
+            expect(n).toBeGreaterThanOrEqual(0);
+            expect(n).toBeLessThanOrEqual(0xffff_ffff);
+            expect(raw).toMatch(/^\d+$/);
+          }
+        }
+        const reason = reasonOf({ reason: raw });
+        expect(reason).toBeGreaterThanOrEqual(0);
+        expect(reason).toBeLessThanOrEqual(0xffff_ffff);
+      }),
+      { numRuns: 500 },
+    );
+  });
+
+  it("accepts a candidate's media section index only as an unsigned 16-bit number", () => {
+    fc.assert(
+      fc.property(fc.double({ noNaN: true }), (line) => {
+        const parsed = parseSignal(
+          JSON.stringify({ cmd: "iceCandidate", args: { sdp: "c", mLine: line } }),
+        );
+        if (parsed.kind !== "candidate") throw new Error("not a candidate");
+        const index = parsed.candidate.sdpMLineIndex;
+        if (index !== null) {
+          expect(Number.isInteger(index)).toBe(true);
+          expect(index).toBeGreaterThanOrEqual(0);
+          expect(index).toBeLessThanOrEqual(0xffff);
         }
       }),
       { numRuns: 500 },

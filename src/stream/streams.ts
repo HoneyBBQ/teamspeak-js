@@ -42,10 +42,10 @@ import {
   assertFits,
   clientOf,
   infoRequest,
-  intOf,
   joinRequest,
   sameInfo,
   setupRequest,
+  reasonOf,
   signalRequest,
   sourceToWire,
   STREAM_P2P,
@@ -78,6 +78,8 @@ const GONE_GRACE_MS = 2000;
 const ANNOUNCE_WINDOW_MS = 5000;
 /** How many streams stopped for a publish that gave up are remembered, to ignore their late rows. */
 const MAX_ORPHANS = 16;
+/** How many streams the server or this client stopped are remembered, so that a late answer does not bring one back. */
+const MAX_STOPPED = 256;
 
 function signalOption(signal: AbortSignal | undefined): CommandOptions {
   return signal === undefined ? {} : { signal };
@@ -152,6 +154,11 @@ export class Streams {
    * not bring it back.
    */
   readonly #orphans = new Set<string>();
+  /**
+   * Streams that were stopped, newest last. A `setupstream` answered after
+   * its stream's `notifystreamstopped` must not adopt a stream that is over.
+   */
+  readonly #stopped = new Set<string>();
   #disposed = false;
 
   /**
@@ -344,6 +351,11 @@ export class Streams {
         this.#orphan(info);
         return;
       }
+      if (this.#stopped.has(info.id)) {
+        // Stopped before its own answer came: there is nothing to adopt.
+        attempt.outcome.reject(new StreamEndedError(info.id));
+        return;
+      }
       attempt.outcome.resolve(this.#adopt(info));
     } finally {
       this.#publishing.delete(attempt);
@@ -409,12 +421,16 @@ export class Streams {
     };
     this.#watching.set(id, watch);
     this.#closedViews.delete(id);
+    // Whether the join request left the flood throttle: only then may it be answered.
+    let sent = false;
     try {
-      await this.#send(
-        joinRequest(id, streamer, options.message ?? "", false),
-        id,
-        signalOption(options.signal),
-      );
+      await this.#send(joinRequest(id, streamer, options.message ?? "", false), id, {
+        ...signalOption(options.signal),
+        onSent: () => {
+          sent = true;
+        },
+      });
+      sent = true;
       return await within(
         watch.settled.promise,
         "joinstreamrequest",
@@ -422,15 +438,26 @@ export class Streams {
         options.signal,
       );
     } catch (error) {
-      if (this.#watching.get(id) === watch && watch.view === undefined) {
-        this.#watching.delete(id);
-        // Asked and not answered, or answered without a usable offer: withdraw.
+      if (this.#watching.get(id) !== watch || watch.view !== undefined) {
+        // Settled while the request was being sent, or while this gave up: the
+        // view, or the refusal, is the outcome. The stream's end can be heard
+        // while the request is sent; the server's own refusal then says more.
+        if (watch.view !== undefined) return watch.view;
+        if (error instanceof StreamEndedError) throw error;
+        return await watch.settled.promise;
+      }
+      this.#watching.delete(id);
+      if (error instanceof StreamEndedError) {
+        // 5635 on a join request: the stream is gone, whatever this client heard.
+        this.#end(id, 0, "gone");
+      } else {
+        // Asked and not answered, or answered without a usable offer: withdraw,
+        // if the request may have reached the server.
         const answered =
           error instanceof StreamJoinDeniedError ||
-          error instanceof StreamEndedError ||
           error instanceof NotConnectedError ||
           error instanceof ServerError;
-        if (!answered) void this.#leave(id, streamer).catch(() => {});
+        if (sent && !answered) this.#bestEffort(this.#leave(id, streamer));
       }
       throw error;
     }
@@ -618,7 +645,7 @@ export class Streams {
       case "notifystreamstopped": {
         const id = params["id"] ?? "";
         if (id !== "") {
-          this.#end(id, intOf(params, "reason", 0), "server");
+          this.#end(id, reasonOf(params), "server");
           this.#orphans.delete(id);
         }
         break;
@@ -664,7 +691,7 @@ export class Streams {
       watch.settled.reject(
         new TeamspeakError("the publisher accepted the request without an offer"),
       );
-      void this.#leave(id, watch.streamer).catch(() => {});
+      this.#bestEffort(this.#leave(id, watch.streamer));
       return;
     }
     const view = new StreamViewImpl(id, watch.streamer, offer, {
@@ -731,6 +758,12 @@ export class Streams {
 
   /** A stream is over, for whatever hangs on it, and is forgotten. */
   #end(id: string, reason: number, cause: "stopped" | "server" | "gone"): void {
+    if (cause !== "gone") {
+      this.#stopped.delete(id);
+      this.#stopped.add(id);
+      if (this.#stopped.size > MAX_STOPPED)
+        this.#stopped.delete(this.#stopped.values().next().value!);
+    }
     const info = this.#infos.get(id);
     this.#infos.delete(id);
     if (
@@ -764,6 +797,7 @@ export class Streams {
     }
     this.#publishing.clear();
     this.#orphans.clear();
+    this.#stopped.clear();
 
     const ended: StreamEnded = { cause, reason: 0 };
     const published = [...this.#published.values()];

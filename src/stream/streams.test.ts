@@ -2160,3 +2160,179 @@ describe("review fixes", () => {
     }
   });
 });
+
+describe("stream lifecycle", () => {
+  const respond = (over: Record<string, string> = {}): Record<string, string> => ({
+    clid: String(OTHER),
+    id: STREAM,
+    msg: "",
+    decision: "1",
+    offer: "v=0\r\n",
+    ...over,
+  });
+
+  it("returns the view when the answer came while the join request was still being sent", async () => {
+    const { client, streams } = setup();
+    client.notify("notifystreamstarted", started());
+    client.answer = (r) => {
+      if (r.command !== "joinstreamrequest") return undefined;
+      client.notify("notifyrespondjoinstreamrequest", respond());
+      return Promise.reject(new Error("the connection broke"));
+    };
+    const view = await streams.watch(STREAM);
+    expect(view.offer).toBe("v=0\r\n");
+    await settle();
+    // The view is live, with a handle: nothing was withdrawn.
+    expect(client.commands("joinstreamrequest")).toHaveLength(1);
+    client.answer = () => undefined;
+    await view.close();
+    expect(client.commands("joinstreamrequest")).toHaveLength(2);
+  });
+
+  it("reports a failed withdrawal, and not one for a connection that is gone", async () => {
+    const { client, streams } = setup();
+    const errors: Error[] = [];
+    streams.on("error", (e) => errors.push(e));
+    client.notify("notifystreamstarted", started());
+    client.answer = (r) =>
+      r.command === "joinstreamrequest" && param(r, "is_remove") === true
+        ? Promise.reject(refusal(ErrorCode.Undefined))
+        : undefined;
+    await expect(streams.watch(STREAM, { timeoutMs: 10 })).rejects.toBeInstanceOf(
+      CommandTimeoutError,
+    );
+    await settle();
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toBeInstanceOf(ServerError);
+
+    client.answer = (r) =>
+      r.command === "joinstreamrequest" && param(r, "is_remove") === true
+        ? Promise.reject(new NotConnectedError())
+        : undefined;
+    await expect(streams.watch(STREAM, { timeoutMs: 10 })).rejects.toBeInstanceOf(
+      CommandTimeoutError,
+    );
+    await settle();
+    expect(errors).toHaveLength(1);
+  });
+
+  it("withdraws nothing for a request that never left the throttle", async () => {
+    const { client, streams } = setup();
+    client.notify("notifystreamstarted", started());
+    client.holdSends = true;
+    const controller = new AbortController();
+    const promise = streams.watch(STREAM, { signal: controller.signal });
+    await settle();
+    controller.abort(new Error("never mind"));
+    await expect(promise).rejects.toThrow("never mind");
+    await settle();
+    expect(client.commands("joinstreamrequest")).toHaveLength(1);
+  });
+
+  it("ends a stream locally when the server says it does not exist", async () => {
+    const { client, streams } = setup();
+    client.notify("notifystreamstarted", started());
+    const ended: StreamEnded[] = [];
+    streams.on("stopped", (e) => ended.push({ cause: e.cause, reason: e.reason }));
+    client.answer = () => Promise.reject(refusal(ErrorCode.StreamNotFound));
+    await expect(streams.watch(STREAM)).rejects.toBeInstanceOf(StreamEndedError);
+    expect(streams.list()).toEqual([]);
+    expect(ended).toEqual([{ cause: "gone", reason: 0 }]);
+    // No second join goes out for a stream that is over.
+    await expect(streams.watch(STREAM)).rejects.toBeInstanceOf(StreamEndedError);
+    expect(client.commands("joinstreamrequest")).toHaveLength(1);
+  });
+
+  it("does not adopt a stream whose stop came before its answer", async () => {
+    const { client, streams } = setup();
+    const startedEvents: StreamInfo[] = [];
+    streams.on("started", (i) => startedEvents.push(i));
+    const promise = streams.publish({ name: "mine" });
+    await settle();
+    const setup0 = client.setups.shift()!;
+    const row = {
+      ...started({ clid: String(SELF), name: "mine" }),
+      return_code: setup0.returnCode,
+    };
+    client.notify("notifystreamstarted", row);
+    client.notify("notifystreamstopped", { id: STREAM, reason: "3" });
+    setup0.resolve([row]);
+    await expect(promise).rejects.toBeInstanceOf(StreamEndedError);
+    expect(streams.list()).toEqual([]);
+    expect(startedEvents).toHaveLength(1);
+  });
+
+  describe("viewer lookups", () => {
+    const lookups = (client: FakeClient): Array<(uid: string) => void> => {
+      const release: Array<(uid: string) => void> = [];
+      client.answer = (r) =>
+        r.command === "clientgetuidfromclid"
+          ? new Promise((resolve) =>
+              release.push((uid) =>
+                resolve([{ clid: "1", cluid: uid, nickname: uid, mytsid: "" }]),
+              ),
+            )
+          : undefined;
+      return release;
+    };
+    const ask = (client: FakeClient, id: string, clid: number, remove = "0"): void =>
+      client.notify("notifyjoinstreamrequest", {
+        id,
+        clid: String(clid),
+        msg: "",
+        is_remove: remove,
+      });
+
+    it("does not announce a stale lookup for a client id that was reused", async () => {
+      const { client, streams } = setup();
+      const release = lookups(client);
+      const pub = await publishOne(client, streams);
+      const seen: Array<string | undefined> = [];
+      pub.on("request", (r) => seen.push(r.viewer.uid));
+      ask(client, pub.id, 40);
+      client.emit("clientLeave", { clientID: asClientID(40) });
+      ask(client, pub.id, 40);
+      await settle();
+      release[0]!("old");
+      await settle();
+      expect(seen).toEqual([]);
+      release[1]!("new");
+      await settle();
+      expect(seen).toEqual(["new"]);
+    });
+
+    it("runs the lookups side by side and still announces in order", async () => {
+      const { client, streams } = setup();
+      const release = lookups(client);
+      const pub = await publishOne(client, streams);
+      const seen: string[] = [];
+      pub.on("request", (r) => seen.push(r.viewer.uid ?? ""));
+      for (const clid of [40, 41, 42]) ask(client, pub.id, clid);
+      await settle();
+      expect(release).toHaveLength(3);
+      release[2]!("c");
+      release[1]!("b");
+      await settle();
+      expect(seen).toEqual([]);
+      release[0]!("a");
+      await settle();
+      expect(seen).toEqual(["a", "b", "c"]);
+    });
+
+    it("bounds the lookups out at once", async () => {
+      const { client, streams } = setup();
+      const release = lookups(client);
+      const pub = await publishOne(client, streams);
+      const seen: string[] = [];
+      pub.on("request", (r) => seen.push(r.viewer.uid ?? ""));
+      for (let clid = 40; clid < 60; clid++) ask(client, pub.id, clid);
+      await settle();
+      expect(release.length).toBeLessThan(20);
+      while (seen.length < 20) {
+        release.at(seen.length)?.(`u${seen.length}`);
+        await settle();
+      }
+      expect(seen).toHaveLength(20);
+    });
+  });
+});

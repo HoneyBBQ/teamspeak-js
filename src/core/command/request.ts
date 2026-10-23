@@ -40,6 +40,12 @@ export interface CommandOptions {
   readonly signal?: AbortSignal | undefined;
   /** Milliseconds to wait for the answer before failing with a CommandTimeoutError. */
   readonly timeoutMs?: number | undefined;
+  /**
+   * Called once, when the command has left the flood throttle and was handed to
+   * the connection. A command that fails without it was never sent; one that
+   * fails after it may have been carried out.
+   */
+  readonly onSent?: (() => void) | undefined;
 }
 
 /**

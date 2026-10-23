@@ -535,6 +535,32 @@ describe.skipIf(SKIP)("Streams — live", { timeout: 30_000 }, () => {
     expect(((error as Error).cause as ServerError).code).toBe(ErrorCode.StreamNotFound);
   });
 
+  // A stream that stopped while its watcher was out of the channel is reported to
+  // nobody there. The server answers a join request for it with 5635, which
+  // proves it is gone.
+  it("ends a stream locally when a join request is answered that it does not exist", async (ctx) => {
+    ts6(ctx);
+    if (other === 0n) ctx.skip();
+    const publisher = attach(a);
+    const viewer = attach(b);
+    const learned = first<StreamInfo>("started", (l) => viewer.on("started", l));
+    const pub = await publisher.publish({ name: "unheard stop" });
+    const info = await learned;
+    await moveClient(b, b.clientID, other, { password: OTHER_CHANNEL_PASSWORD });
+    await sleep(500);
+    await pub.stop();
+    await sleep(1000);
+    if (viewer.get(info.id) === undefined) ctx.skip();
+    const stopped = first<StreamStoppedEvent>("stopped", (l) => viewer.on("stopped", l));
+    const error = await viewer.watch(info).catch((e: unknown) => e);
+    expect((error as Error).name).toBe("StreamEndedError");
+    expect(((error as Error).cause as ServerError).code).toBe(ErrorCode.StreamNotFound);
+    expect((await stopped).cause).toBe("gone");
+    expect(viewer.list()).toEqual([]);
+    const again = await viewer.watch(info).catch((e: unknown) => e);
+    expect((again as Error).name).toBe("StreamEndedError");
+  });
+
   it("reports a second request to watch as the server's 5638", async (ctx) => {
     ts6(ctx);
     const { viewer, pub } = await connectedPair();
