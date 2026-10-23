@@ -108,7 +108,7 @@ Details in [the compatibility page](https://honeybbq.github.io/teamspeak-js/docu
 
 ## Acknowledgments
 
-Protocol knowledge was primarily informed by the [TSLib](https://github.com/Splamy/TS3AudioBot) implementation in [TS3AudioBot](https://github.com/Splamy/TS3AudioBot) by Splamy. Huge thanks to the TS3AudioBot project and its contributors.
+Our understanding of the voice protocol was first informed by [TSLib](https://github.com/Splamy/TS3AudioBot), part of [TS3AudioBot](https://github.com/Splamy/TS3AudioBot) by Splamy. Huge thanks to the TS3AudioBot project and its contributors.
 
 The error code names and descriptions, the permission names and descriptions, and the table of client versions with their signatures draw on [tsdeclarations](https://github.com/ReSpeak/tsdeclarations) by [ReSpeak](https://github.com/ReSpeak), used under the MIT licence; see [THIRD_PARTY_NOTICES.md](https://github.com/HoneyBBQ/teamspeak-js/blob/main/THIRD_PARTY_NOTICES.md). Thanks to ReSpeak for documenting the protocol in the open.
 
