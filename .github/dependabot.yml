@@ -20,12 +20,27 @@ updates:
 
   # The consumer project the type-check job installs with npm has its own
   # lockfile, which the root entry does not look at.
+  #
+  # typescript and @types/node here are floor pins, not stale versions: the
+  # "Types (TypeScript 5.2)" job checks the oldest supported toolchain
+  # (TypeScript 5.2, @types/node 22 for the Node 22.12 floor). Dependabot must
+  # not move them past that; raise them by hand together with ci.yml and
+  # docs/compatibility.md. Security updates still apply within the allowed
+  # range, and @noble/curves keeps tracking its latest release.
   - package-ecosystem: "npm"
     directory: "/test/types"
     schedule:
       interval: "weekly"
     cooldown:
       default-days: 3
+    ignore:
+      - dependency-name: "typescript"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+      - dependency-name: "@types/node"
+        update-types:
+          - "version-update:semver-major"
     groups:
       npm-dependencies:
         patterns:
