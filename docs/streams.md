@@ -13,6 +13,11 @@ break it. A TeamSpeak 3 server does not answer the stream
 commands at all, so `publish` and `watch` throw a `StreamsUnsupportedError` before sending
 anything.
 
+Every stream this SDK publishes and watches is peer to peer, the one mode a stock server
+allows. `StreamInfo.transport` says how a stream's media travels: `"p2p"`, or the server's
+number for another mode. `watch` refuses a stream in another mode with a
+`StreamTransportUnsupportedError`, before sending anything.
+
 Watching: find a stream in `streams.list()` or wait for `started`, ask to watch it, and
 give the publisher's offer to a peer connection. The viewer's connection is receive-only.
 

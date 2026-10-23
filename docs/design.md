@@ -58,7 +58,7 @@ the errors its own code throws:
 | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `@honeybbq/teamspeak` (shared by every connection) | `TeamspeakError`, `ServerError`, `CommandTimeoutError`, `NotConnectedError`, `AlreadyConnectedError`, `NoDataError`                                                                    |
 | `@honeybbq/teamspeak/client` (voice only)          | `ConnectionTimeoutError`, `HandshakeError` and its `PuzzleTooHardError`, `InvalidAddressError`, `InvalidIdentityError`, `FileTransferError`, `RemovedError` (kick, ban or server stop) |
-| `@honeybbq/teamspeak/stream` (streams only)        | `StreamsUnsupportedError`, `StreamJoinDeniedError`, `StreamEndedError`, `StreamPayloadTooLargeError`                                                                                   |
+| `@honeybbq/teamspeak/stream` (streams only)        | `StreamsUnsupportedError`, `StreamJoinDeniedError`, `StreamEndedError`, `StreamPayloadTooLargeError`, `StreamTransportUnsupportedError`                                                |
 | `@honeybbq/teamspeak/query` (query only)           | `QueryAuthError`, `GuestAccessError`, `SshHostKeyError`, `MissingDependencyError`, `WebQueryHttpError`                                                                                 |
 
 A call that is given a value it cannot use, such as an out-of-range id or an

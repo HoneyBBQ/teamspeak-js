@@ -136,3 +136,34 @@ export class StreamEndedError extends TeamspeakError {
     this.streamId = streamId;
   }
 }
+
+/**
+ * The stream's media does not travel peer to peer, the one mode this SDK
+ * watches: the server announced it in another mode (`StreamInfo.transport`).
+ * `watch` rejects with it before sending anything.
+ */
+export class StreamTransportUnsupportedError extends TeamspeakError {
+  /** {@inheritDoc @honeybbq/teamspeak!TeamspeakError.kind} */
+  static override readonly kind: string = "StreamTransportUnsupportedError";
+  static {
+    // On the prototype, not the instance, as built-in errors do: an own `name`
+    // would be enumerable and show up in JSON.stringify and object spread.
+    Object.defineProperty(this.prototype, "name", {
+      value: "StreamTransportUnsupportedError",
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
+
+  /** The stream that was asked for. */
+  readonly streamId: string;
+  /** The mode the server announced it in, as the wire number. */
+  readonly transport: number;
+
+  constructor(streamId: string, transport: number) {
+    super(`stream ${streamId} is in mode ${transport}; only peer to peer streams can be watched`);
+    this.streamId = streamId;
+    this.transport = transport;
+  }
+}

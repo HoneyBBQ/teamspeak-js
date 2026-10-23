@@ -28,9 +28,13 @@ describe("value tables", () => {
 
   // The server stores any integer, so a stream from another client may carry one.
   it("pass a number with no name through", () => {
-    const info = streamInfoFrom({ id: "a", clid: "2", type: "9", accessibility: "4" }, undefined);
+    const info = streamInfoFrom(
+      { id: "a", clid: "2", type: "9", accessibility: "4", mode: "2" },
+      undefined,
+    );
     expect(info?.source).toBe(9);
     expect(info?.accessibility).toBe(4);
+    expect(info?.transport).toBe(2);
   });
 });
 
@@ -163,6 +167,7 @@ describe("streamInfoFrom", () => {
       audio: true,
       bitrate: 58208,
       accessibility: "public",
+      transport: "p2p",
       viewerLimit: 0,
       viewers: undefined,
     });
@@ -176,6 +181,15 @@ describe("streamInfoFrom", () => {
     expect(info?.name).toBe("Demo");
     expect(info?.source).toBe("window");
     expect(info?.clientId).toBe(5);
+  });
+
+  it("keeps the mode it knew when a row lacks it, and takes a new one", () => {
+    const known = streamInfoFrom({ clid: "5", id: "u-1", mode: "1" }, undefined);
+    expect(known?.transport).toBe("p2p");
+    expect(streamInfoFrom({ id: "u-1" }, known)?.transport).toBe("p2p");
+    expect(streamInfoFrom({ id: "u-1", mode: "2" }, known)?.transport).toBe(2);
+    expect(streamInfoFrom({ id: "u-1" }, undefined)?.transport).toBeUndefined();
+    expect(streamInfoFrom({ id: "u-1", mode: "x" }, undefined)?.transport).toBeUndefined();
   });
 
   // The server answers a client that streams nothing with a bare row.
