@@ -34,6 +34,16 @@ updates:
           - "minor"
           - "patch"
 
+  # The server images the integration job runs against, and the nginx front.
+  # CI reads them from ci/images (scripts/ci-image.sh), as Dependabot only
+  # looks at Dockerfiles, not at `services` or `docker run` in a workflow.
+  - package-ecosystem: "docker"
+    directory: "/ci/images"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 3
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

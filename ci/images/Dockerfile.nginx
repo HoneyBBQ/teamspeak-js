@@ -1,0 +1,3 @@
+# TLS front for the TS3 job, which has no HTTPS WebQuery of its own. Pinned by
+# digest so the front cannot change under the tests.
+FROM nginx:1.31-alpine@sha256:a3554c0d0b48177b1413c26e01f695334428020d9df01243fbae3e11cfd17417

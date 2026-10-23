@@ -169,10 +169,29 @@ jobs:
           pnpm exec publint --strict "$tarball"
           pnpm exec attw --profile esm-only "$tarball"
 
+  # The server images are pinned by digest in ci/images, where Dependabot keeps
+  # them current. A job's `services` are started before its steps, so before
+  # any checkout: this job reads the references and the integration job takes
+  # them as its inputs.
+  images:
+    name: Container images
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ts3: ${{ steps.refs.outputs.ts3 }}
+      ts6: ${{ steps.refs.outputs.ts6 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: refs
+        run: |
+          echo "ts3=$(./scripts/ci-image.sh ts3)" >> "$GITHUB_OUTPUT"
+          echo "ts6=$(./scripts/ci-image.sh ts6)" >> "$GITHUB_OUTPUT"
+
   # Both supported server generations, because they differ in ways that only
   # show up live: TS6 hashes client uids with SHA-256 where TS3 uses SHA-1.
   integration:
     name: Integration (${{ matrix.server.name }})
+    needs: images
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -180,7 +199,7 @@ jobs:
       matrix:
         server:
           - name: TS3
-            image: teamspeak:latest
+            image: ${{ needs.images.outputs.ts3 }}
             # TS3 serves raw ServerQuery on 10011, and SSH and WebQuery once the
             # service below lists them in query_protocols. With a raw port the
             # fixture provisions over it and creates the WebQuery api key
@@ -192,7 +211,7 @@ jobs:
             # TS3 has no guest ServerQuery access.
             query_guest: ""
           - name: TS6
-            image: teamspeaksystems/teamspeak6-server:latest
+            image: ${{ needs.images.outputs.ts6 }}
             # TS6 dropped raw ServerQuery for HTTP, so the fixture talks
             # WebQuery here — the same commands over a different transport.
             query_host: ""
@@ -329,10 +348,10 @@ jobs:
             }
           }
           NGINX
-            # nginx 1.31.6 (alpine), by digest so the front cannot change under the tests.
+            # nginx, by digest so the front cannot change under the tests.
             docker run -d --name webquery-https --network host \
               -v "$TLS_DIR:/tls:ro" -v "$RUNNER_TEMP/nginx.conf:/etc/nginx/nginx.conf:ro" \
-              docker.io/library/nginx@sha256:a3554c0d0b48177b1413c26e01f695334428020d9df01243fbae3e11cfd17417
+              "$(./scripts/ci-image.sh nginx)"
             for i in $(seq 1 30); do
               if answers https://127.0.0.1:10443/1/version; then break; fi
               sleep 1
