@@ -15,20 +15,20 @@
 
 /** How long to wait before each attempt. */
 export interface BackoffPolicy {
-  /** Delay before the first retry, in milliseconds. */
+  /** Delay before the first retry, in milliseconds; above 0. */
   readonly initialDelayMs: number;
-  /** Ceiling for the delay; it never grows past this. */
+  /** Ceiling for the delay; it never grows past this. Above 0, and not below `initialDelayMs`. */
   readonly maxDelayMs: number;
-  /** Multiplier applied after each failed attempt. */
+  /** Multiplier applied after each failed attempt; 1 or more. */
   readonly factor: number;
   /**
-   * Fraction of the delay to randomise, 0 to 1.
+   * Fraction of the delay to randomise, up to 1; 0 or below turns it off.
    *
    * A fleet of bots that drop together would otherwise retry in lockstep and
    * hit the server in a burst. Jitter spreads them out.
    */
   readonly jitter: number;
-  /** Give up after this many consecutive failures. 0 means never give up. */
+  /** Give up after this many consecutive failures. 0 means never give up; a whole number. */
   readonly maxAttempts: number;
 }
 
@@ -88,11 +88,63 @@ export function jitteredDelay(
   return Math.round(Math.max(0, Math.min(delay, policy.maxDelayMs)));
 }
 
+/**
+ * The policy `options` asks for, with the defaults filled in. A value the
+ * caller gave that cannot work is a RangeError, thrown when the client is made
+ * rather than when the loop first runs: a delay of 0 or a NaN factor would
+ * retry in a tight loop, and the flood ban that follows outlasts the outage.
+ *
+ * Accepted: delays above 0 (an unset `maxDelayMs` is raised to `initialDelayMs`
+ * when that is larger than the default; one given below `initialDelayMs` is
+ * refused), a factor of at least 1, a jitter of at most 1 (0 or below turns it
+ * off), and a whole `maxAttempts` of 0 or more.
+ */
 export function resolveBackoffPolicy(options: ReconnectOptions): BackoffPolicy {
   const policy: Record<string, number> = { ...defaultBackoffPolicy };
   // An explicit undefined keeps the default, as an unset field does.
-  for (const [key, value] of Object.entries(options.backoff ?? {})) {
-    if (value !== undefined) policy[key] = value;
+  const given = Object.entries(options.backoff ?? {}).filter(([, value]) => value !== undefined);
+  for (const [key, value] of given) policy[key] = value as number;
+  const resolved = policy as unknown as BackoffPolicy;
+  const set = (key: keyof BackoffPolicy): boolean => given.some(([k]) => k === key);
+
+  requireNumber(
+    "initialDelayMs",
+    resolved.initialDelayMs,
+    "a number of milliseconds above 0",
+    (v) => v > 0,
+  );
+  requireNumber(
+    "maxDelayMs",
+    resolved.maxDelayMs,
+    "a number of milliseconds above 0",
+    (v) => v > 0,
+  );
+  requireNumber("factor", resolved.factor, "a number from 1 up", (v) => v >= 1);
+  requireNumber("jitter", resolved.jitter, "a number up to 1", (v) => v <= 1);
+  requireNumber(
+    "maxAttempts",
+    resolved.maxAttempts,
+    "a whole number, 0 or more",
+    (v) => Number.isInteger(v) && v >= 0,
+  );
+  if (resolved.maxDelayMs < resolved.initialDelayMs) {
+    if (set("maxDelayMs")) {
+      throw new RangeError(
+        `maxDelayMs (${resolved.maxDelayMs}) is below initialDelayMs (${resolved.initialDelayMs})`,
+      );
+    }
+    return { ...resolved, maxDelayMs: resolved.initialDelayMs };
   }
-  return policy as unknown as BackoffPolicy;
+  return resolved;
+}
+
+function requireNumber(
+  name: string,
+  value: unknown,
+  expected: string,
+  ok: (value: number) => boolean,
+): void {
+  if (typeof value !== "number" || !Number.isFinite(value) || !ok(value)) {
+    throw new RangeError(`the backoff's ${name} is ${expected}, not ${String(value)}`);
+  }
 }

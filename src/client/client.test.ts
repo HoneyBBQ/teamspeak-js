@@ -1,5 +1,5 @@
 import { clientInternals, onSentLine } from "./client.js";
-import { asChannelID } from "@honeybbq/teamspeak";
+import { asChannelID, NoDataError } from "@honeybbq/teamspeak";
 import { afterEach, describe, it, expect } from "vitest";
 import { createSocket, type Socket } from "node:dgram";
 import {
@@ -241,7 +241,7 @@ describe("getChannelDescription", () => {
     );
   });
 
-  it("is empty for a channel with none, and when no answer came", async () => {
+  it("is empty for a channel with none, and no data when no answer came", async () => {
     const { getChannelDescription } = await import("./api/voice.js");
 
     expect(
@@ -250,7 +250,16 @@ describe("getChannelDescription", () => {
         asChannelID(9),
       ),
     ).toBe("");
-    expect(await getChannelDescription(send([]) as unknown as Client, asChannelID(9))).toBe("");
+    // No answer is not an empty description.
+    await expect(
+      getChannelDescription(send([]) as unknown as Client, asChannelID(9)),
+    ).rejects.toBeInstanceOf(NoDataError);
+    await expect(
+      getChannelDescription(
+        send([{ cid: "8", channel_description: "another channel's" }]) as unknown as Client,
+        asChannelID(9),
+      ),
+    ).rejects.toBeInstanceOf(NoDataError);
   });
 });
 

@@ -50,6 +50,7 @@ import {
   buildCommand,
   buildCommandChain,
   encodeRequest,
+  floodRetryDelayMs,
   parseServerError,
   resolveBackoffPolicy,
 } from "../core/internal.js";
@@ -191,6 +192,15 @@ export function onSentLine(hook: ((client: Client, line: string) => void) | unde
 export function clientInternals(client: Client): ClientInternals {
   return internalsOf(client);
 }
+
+/**
+ * How many times a command refused as flooding is sent again after the pause
+ * the server asked for. The first resend is usually refused once more with a
+ * shorter wait, and the second goes through (measured on TeamSpeak 3 and 6).
+ */
+const FLOOD_RETRIES = 3;
+/** Added to the server's wait, which counts down to the millisecond. */
+const FLOOD_HOLD_MARGIN_MS = 10;
 
 /** How long a command waits for its answer unless told otherwise. */
 const DEFAULT_COMMAND_TIMEOUT_MS = 10_000;
@@ -468,6 +478,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
     this.#clientInitOptions = normalizeClientInitOptions(options);
     this.#socketFactory = options.socketFactory;
     this.#fileTransferSocketFactory = options.fileTransferSocketFactory;
+    // Refused here, not when the loop first runs: a bad policy would flood.
+    if (options.reconnect !== undefined) resolveBackoffPolicy(options.reconnect);
     this.#reconnectOptions = options.reconnect;
     this.#trace = options.trace === undefined ? undefined : { ...options.trace };
     this.#viewStore = new ViewStore(
@@ -696,7 +708,10 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * Leave the server and close the connection.
    *
    * Says goodbye first, waiting for the server's acknowledgement for a second
-   * at most, or less if `signal` aborts sooner. The connection is closed
+   * at most, or less if `signal` aborts sooner. The goodbye is sent at once,
+   * past the flood throttle, and also by a client still connecting whose
+   * clientinit is out; commands still waiting for their turn reject with a
+   * NotConnectedError and are never sent. The connection is closed
    * either way. A `connect()` still waiting for its handshake rejects with a
    * NotConnectedError, and so do the commands still waiting for an answer.
    * Resolves once `disconnected` has been delivered to the listeners, so one
@@ -728,13 +743,20 @@ export class Client implements CommandExecutor, AsyncDisposable {
     // still be on its way.
     if (this.#status === ClientStatus.Disconnected) return this.#disconnectedDelivered;
 
-    const wasConnected = this.#status === ClientStatus.Connected;
+    // The server may hold a session for this client from the moment clientinit
+    // is out, which is as soon as the keys exist, well before Connected.
+    const holdsSession =
+      this.#status === ClientStatus.Connected ||
+      (this.#status === ClientStatus.Connecting && this.#crypt.cryptoInitComplete);
     this.#status = ClientStatus.Disconnected;
+    // Whatever still waits for its turn is rejected and never sent; the
+    // goodbye does not wait for one.
+    this.#throttle.rejectAll(new NotConnectedError());
     let left!: () => void;
     this.#attempt.rejectAfter(new NotConnectedError(), new Promise<void>((r) => (left = r)));
 
     const leaving = this.#leave(
-      wasConnected,
+      holdsSession,
       options.signal,
       options.reasonMessage ?? "Shutdown",
     ).finally(left);
@@ -747,13 +769,13 @@ export class Client implements CommandExecutor, AsyncDisposable {
   }
 
   async #leave(
-    wasConnected: boolean,
+    holdsSession: boolean,
     signal: AbortSignal | undefined,
     reasonMessage: string,
   ): Promise<void> {
     this.#logger.info("disconnecting from server");
 
-    if (wasConnected) {
+    if (holdsSession) {
       this.#callHook(this.#trace?.disconnectStart, () => ({}));
       const goodbyeStarted = performance.now();
       // The server answers clientdisconnect with a notifyclientleftview about
@@ -770,6 +792,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
           reasonmsg: reasonMessage,
         }),
         { signal, timeoutMs: DISCONNECT_TIMEOUT_MS },
+        true,
         true,
       ).then(
         () => true,
@@ -806,6 +829,11 @@ export class Client implements CommandExecutor, AsyncDisposable {
    *
    * Rejects with a NotConnectedError unless the client is connected: while it
    * is still connecting, the session's keys may not exist yet.
+   *
+   * A command the server refuses as flooding (`ErrorCode.ClientIsFlooding`)
+   * with a time to wait is sent again after it, and every other command waits
+   * too, up to three times and while its timeout allows; the refusal that
+   * remains rejects as it is.
    */
   // oxlint-disable-next-line typescript/array-type -- the public API report spells this `[]`; respelling it changes the report
   exec(command: string, options: CommandOptions = {}): Promise<Record<string, string>[]> {
@@ -873,16 +901,26 @@ export class Client implements CommandExecutor, AsyncDisposable {
     command: string,
     options: CommandOptions,
     internal: boolean,
+    goodbye = false,
   ): Promise<Array<Record<string, string>>> {
-    if (!commandChannel.hasSubscribers) return this.#execUntraced(command, options, internal);
-    const trace: CommandTrace = { command: parseCommand(command)?.name ?? "", client: this };
-    return commandChannel.tracePromise(() => this.#execUntraced(command, options, internal), trace);
+    if (!commandChannel.hasSubscribers) {
+      return this.#execUntraced(command, options, internal, goodbye);
+    }
+    const trace: CommandTrace = {
+      command: parseCommand(command)?.name ?? "",
+      client: this,
+    };
+    return commandChannel.tracePromise(
+      () => this.#execUntraced(command, options, internal, goodbye),
+      trace,
+    );
   }
 
   async #execUntraced(
     command: string,
     options: CommandOptions,
     internal: boolean,
+    goodbye: boolean,
   ): Promise<Array<Record<string, string>>> {
     const { signal, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS } = options;
     signal?.throwIfAborted();
@@ -898,7 +936,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
     const correlation = key === undefined ? undefined : parsed?.params[key];
     const echo = spec?.echoKey === undefined ? undefined : parsed?.params[spec.echoKey];
 
-    const [rc, answered] = this.#cmdTrack.register(spec, correlation, echo);
+    let [rc, answered] = this.#cmdTrack.register(spec, correlation, echo);
+    const deadline = performance.now() + timeoutMs;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let onAbort: (() => void) | undefined;
     // Started before the throttle: the timeout bounds the whole command, its
@@ -911,19 +950,43 @@ export class Client implements CommandExecutor, AsyncDisposable {
     givenUp.catch(() => {});
     const throttleAbort = new AbortController();
     try {
-      const withRc = appendReturnCode(command, rc);
-      await Promise.race([this.#throttle.wait(throttleAbort.signal), givenUp]);
-      if (!this.#canSend(internal)) throw new NotConnectedError();
-      this.#sendLine(withRc);
+      for (let refused = 0; ; refused++) {
+        const withRc = appendReturnCode(command, rc);
+        // The goodbye of a disconnect goes out at once: queued behind other
+        // commands it would not leave in time, and the server would keep the
+        // session.
+        if (!goodbye) await Promise.race([this.#throttle.wait(throttleAbort.signal), givenUp]);
+        if (!this.#canSend(internal)) throw new NotConnectedError();
+        this.#sendLine(withRc);
 
-      const result = await Promise.race([answered, givenUp]);
-      if (result.err) throw result.err;
-      // The server took the rename, so it is what this client now asks for.
-      if (!internal && parsed?.name === "clientupdate") {
-        const renamed = parsed.params["client_nickname"];
-        if (renamed !== undefined) this.#requestedNickname = renamed;
+        const result = await Promise.race([answered, givenUp]);
+        // Refused as flooding with a time to wait, which the command can
+        // afford: nothing is sent until then, and the command, which the
+        // server did not run, goes out again.
+        const wait = result.err ? floodRetryDelayMs(result.err) : undefined;
+        if (
+          wait !== undefined &&
+          !goodbye &&
+          refused < FLOOD_RETRIES &&
+          wait < deadline - performance.now()
+        ) {
+          this.#logger.debug("the server asked for a pause", {
+            command: parsed?.name,
+            waitMs: wait,
+          });
+          this.#throttle.hold(wait + FLOOD_HOLD_MARGIN_MS);
+          this.#cmdTrack.unregister(rc);
+          [rc, answered] = this.#cmdTrack.register(spec, correlation, echo);
+          continue;
+        }
+        if (result.err) throw result.err;
+        // The server took the rename, so it is what this client now asks for.
+        if (!internal && parsed?.name === "clientupdate") {
+          const renamed = parsed.params["client_nickname"];
+          if (renamed !== undefined) this.#requestedNickname = renamed;
+        }
+        return result.data;
       }
-      return result.data;
     } finally {
       // A command given up while it waited for its turn gives the turn back.
       throttleAbort.abort();
@@ -1215,7 +1278,10 @@ export class Client implements CommandExecutor, AsyncDisposable {
     // A privilege key is spent by the join that used it: a reconnection must
     // not present it again.
     if (this.#clientInitOptions.privilegeKey !== "") {
-      this.#clientInitOptions = { ...this.#clientInitOptions, privilegeKey: "" };
+      this.#clientInitOptions = {
+        ...this.#clientInitOptions,
+        privilegeKey: "",
+      };
     }
     // Settled before the hook runs, so that nothing it does can turn this
     // attempt into a failed one; connect() resumes only after the hook returns.
@@ -1419,7 +1485,9 @@ export class Client implements CommandExecutor, AsyncDisposable {
       this.#failConnection(
         error instanceof HandshakeError
           ? error
-          : new HandshakeError("the handshake failed on a malformed packet", { cause: error }),
+          : new HandshakeError("the handshake failed on a malformed packet", {
+              cause: error,
+            }),
       );
       return;
     }
@@ -1664,7 +1732,9 @@ export class Client implements CommandExecutor, AsyncDisposable {
   #answerConnectionInfoRequest(): void {
     const line = buildSetConnectionInfo(this.#handler.trafficSnapshot(), this.#handler.roundTrip);
     this.#execNoWait(line, undefined, false).catch((error: unknown) => {
-      this.#logger.debug("could not answer a connection info request", { error: String(error) });
+      this.#logger.debug("could not answer a connection info request", {
+        error: String(error),
+      });
     });
   }
 
@@ -1762,17 +1832,29 @@ export class Client implements CommandExecutor, AsyncDisposable {
         this.#emitServerEvent({ name: "clientUpdated", payload: result.event });
         break;
       case "clientServerGroupAdded":
-        this.#emitServerEvent({ name: "clientServerGroupAdded", payload: result.event });
+        this.#emitServerEvent({
+          name: "clientServerGroupAdded",
+          payload: result.event,
+        });
         break;
       case "clientServerGroupRemoved":
-        this.#emitServerEvent({ name: "clientServerGroupRemoved", payload: result.event });
+        this.#emitServerEvent({
+          name: "clientServerGroupRemoved",
+          payload: result.event,
+        });
         break;
       case "clientChannelGroupChanged":
-        this.#emitServerEvent({ name: "clientChannelGroupChanged", payload: result.event });
+        this.#emitServerEvent({
+          name: "clientChannelGroupChanged",
+          payload: result.event,
+        });
         break;
       case "channelCreated":
         this.#viewStore.applyCreated(result.event);
-        this.#emitServerEvent({ name: "channelCreated", payload: result.event });
+        this.#emitServerEvent({
+          name: "channelCreated",
+          payload: result.event,
+        });
         break;
       case "channelEdited":
         this.#viewStore.applyEdited(result.event);
@@ -1792,31 +1874,49 @@ export class Client implements CommandExecutor, AsyncDisposable {
         break;
       }
       case "channelDescriptionChanged":
-        this.#emitServerEvent({ name: "channelDescriptionChanged", payload: result.event });
+        this.#emitServerEvent({
+          name: "channelDescriptionChanged",
+          payload: result.event,
+        });
         break;
       case "channelPasswordChanged":
-        this.#emitServerEvent({ name: "channelPasswordChanged", payload: result.event });
+        this.#emitServerEvent({
+          name: "channelPasswordChanged",
+          payload: result.event,
+        });
         break;
       case "serverEdited":
         this.#viewStore.patchServer(result.event.changes);
         this.#emitServerEvent({ name: "serverEdited", payload: result.event });
         break;
       case "channelSubscribed":
-        this.#emitServerEvent({ name: "channelSubscribed", payload: result.event });
+        this.#emitServerEvent({
+          name: "channelSubscribed",
+          payload: result.event,
+        });
         break;
       case "channelUnsubscribed":
         // The server does not say the clients of the channel left.
         this.#viewStore.dropChannel(result.event.channelID);
-        this.#emitServerEvent({ name: "channelUnsubscribed", payload: result.event });
+        this.#emitServerEvent({
+          name: "channelUnsubscribed",
+          payload: result.event,
+        });
         break;
       case "pluginCommand":
         this.#emitServerEvent({ name: "pluginCommand", payload: result.event });
         break;
       case "clientChatComposing":
-        this.#emitServerEvent({ name: "clientChatComposing", payload: result.event });
+        this.#emitServerEvent({
+          name: "clientChatComposing",
+          payload: result.event,
+        });
         break;
       case "clientChatClosed":
-        this.#emitServerEvent({ name: "clientChatClosed", payload: result.event });
+        this.#emitServerEvent({
+          name: "clientChatClosed",
+          payload: result.event,
+        });
         break;
       case "poked":
         this.#emitServerEvent({ name: "poked", payload: result.event });
@@ -1978,7 +2078,9 @@ export class Client implements CommandExecutor, AsyncDisposable {
     try {
       retry = (options.shouldRetry ?? defaultShouldRetry)(err, attempt);
     } catch (error) {
-      this.#logger.error("shouldRetry threw; not reconnecting", { error: String(error) });
+      this.#logger.error("shouldRetry threw; not reconnecting", {
+        error: String(error),
+      });
       retry = false;
       threw = true;
     }
@@ -2038,7 +2140,9 @@ export class Client implements CommandExecutor, AsyncDisposable {
         // Connected, or connecting, by hand during the wait: nothing is left to
         // retry, and an attempt now would only fail with AlreadyConnectedError.
         if (this.#status !== ClientStatus.Disconnected) {
-          this.#logger.info("reconnect loop ended: connected by other means", { attempt });
+          this.#logger.info("reconnect loop ended: connected by other means", {
+            attempt,
+          });
           return;
         }
 
@@ -2067,12 +2171,17 @@ export class Client implements CommandExecutor, AsyncDisposable {
               : new TeamspeakError(String(retryErr), { cause: retryErr });
         }
       }
-      this.#logger.warn("reconnect attempts exhausted", { attempts: policy.maxAttempts });
+      this.#logger.warn("reconnect attempts exhausted", {
+        attempts: policy.maxAttempts,
+      });
       stoppedBy = { cause: err };
     } finally {
       if (stoppedBy !== undefined) {
         const { cause } = stoppedBy;
-        this.#callHook(this.#trace?.reconnectStopped, () => ({ attempts: made, cause }));
+        this.#callHook(this.#trace?.reconnectStopped, () => ({
+          attempts: made,
+          cause,
+        }));
       }
       this.#reconnecting = false;
       this.#loopAttempt = 0;

@@ -68,3 +68,54 @@ describe("CommandThrottle", () => {
     }
   });
 });
+
+describe("CommandThrottle.rejectAll", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("rejects everyone in line, releases no one, and serves later waits as before", async () => {
+    vi.useFakeTimers();
+    const t = new CommandThrottle();
+    for (let i = 0; i < 5; i++) await t.wait();
+    const controller = new AbortController();
+    const reason = new Error("closed");
+    const waits = [t.wait(), t.wait(controller.signal)].map((p) => expect(p).rejects.toBe(reason));
+    t.rejectAll(reason);
+    await Promise.all(waits);
+    await vi.advanceTimersByTimeAsync(1000);
+
+    await vi.advanceTimersByTimeAsync(300);
+    await t.wait();
+  });
+});
+
+describe("CommandThrottle.hold", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("releases nothing for the pause, saves no burst, then goes on at the usual rate", async () => {
+    vi.useFakeTimers();
+    const t = new CommandThrottle();
+    const released: number[] = [];
+    const start = performance.now();
+    t.hold(1000);
+    for (let i = 0; i < 3; i++) void t.wait().then(() => released.push(performance.now() - start));
+    await vi.advanceTimersByTimeAsync(999);
+    expect(released).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1500);
+    // The first a quarter second after the pause, not all three at once.
+    expect(released).toHaveLength(3);
+    expect(released[0]!).toBeGreaterThanOrEqual(1250);
+    expect(released[1]! - released[0]!).toBeGreaterThanOrEqual(240);
+  });
+
+  it("holds a command that arrives during the pause behind it", async () => {
+    vi.useFakeTimers();
+    const t = new CommandThrottle();
+    t.hold(500);
+    let released = false;
+    void t.wait().then(() => (released = true));
+    await vi.advanceTimersByTimeAsync(400);
+    expect(released).toBe(false);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(released).toBe(true);
+  });
+});
