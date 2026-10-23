@@ -4,6 +4,12 @@ Until 1.0.0-beta.4 this package was published as `@honeybbq/teamspeak-core`, and
 `@honeybbq/teamspeak-client` was a second package. The sections below, down to
 the last version heading, are the core's history; the client's is at the bottom.
 
+## 1.0.0-beta.18
+
+### Minor Changes
+
+- [#128](https://github.com/HoneyBBQ/teamspeak-js/pull/128) [`44ee319`](https://github.com/HoneyBBQ/teamspeak-js/commit/44ee319b0e7d47592d4394882d9757e58a79e7b2) - `findClientDatabaseByUID` finds database ids by unique identifier (`clientdbfind -uid`), next to `findClientDatabase`, which searches nicknames. On TS3 and TS6, over ServerQuery and the voice protocol alike, the pattern is SQL `LIKE` over the whole uid, ignoring case: without `%` (any run of characters) or `_` (any one character) it must be the entire uid, so a prefix needs a trailing `%`. No match is `[]`, and a server answers at most 50 ids.
+
 ## 1.0.0-beta.17
 
 ### Patch Changes
