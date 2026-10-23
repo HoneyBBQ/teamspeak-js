@@ -441,10 +441,12 @@ export interface FieldSpec<T> {
  * Read the fields of `table` from a row into a new object.
  *
  * With `onlyPresent`, a field is read only when the row carries one of its
- * keys, and a value that reads as `undefined` is left out: what comes back
- * holds exactly the keys the row named, which is what a change needs, since
- * an explicit `undefined` would erase a field when merged. Without it, the
- * `always` fields are read whether or not the row has them, as a full record
+ * keys, and kept even when its value reads as `undefined`: what comes back
+ * holds exactly the keys the row named, which is what a change needs. A key
+ * holding `undefined` says the row carried the field and it is now none (an
+ * icon of 0, a `seconds_empty` of -1); merging it clears the field. Without
+ * `onlyPresent`, the `always` fields are read whether or not the row has
+ * them, and a field that reads as `undefined` is left out, as a full record
  * does.
  */
 export function readFields(
@@ -461,7 +463,7 @@ export function readFields(
       continue;
     }
     const value = spec.read(row, key);
-    if (value !== undefined || full) out[name] = value;
+    if (value !== undefined || full || onlyPresent) out[name] = value;
   }
   return out;
 }
@@ -687,7 +689,8 @@ export interface Channel {
  * A change to a channel: only the properties a notification named, by the
  * names of {@link Channel}. A key is present exactly when the notification
  * carried it, and a property it did not carry is not "unknown" but, for a
- * created channel, the server's default.
+ * created channel, the server's default. A key holding `undefined` says the
+ * value was cleared: `iconID` is `undefined` when the icon was removed.
  */
 export type ChannelChanges = {
   readonly [K in Exclude<keyof Channel, "id">]?: Channel[K];
@@ -696,13 +699,14 @@ export type ChannelChanges = {
 /**
  * The channel with `changes` applied, as a new object; `channel` is not
  * touched. Keys `changes` lacks keep their value, and a key holding
- * `undefined` is skipped, so no property is erased by a change that did not
- * carry it.
+ * `undefined` clears the property: the notification carried it and it is now
+ * none, as for an icon of 0.
  */
 export function applyChannelChanges(channel: Channel, changes: ChannelChanges): Channel {
   const next: Record<string, unknown> = { ...channel };
   for (const [key, value] of Object.entries(changes)) {
-    if (value !== undefined) next[key] = value;
+    if (value === undefined) delete next[key];
+    else next[key] = value;
   }
   return next as unknown as Channel;
 }

@@ -405,6 +405,76 @@ describe("the clients in the view", () => {
   });
 });
 
+describe("a cleared value in the view", () => {
+  async function live(): Promise<{ client: Client; socket: FakeSocket }> {
+    const { client, sockets } = makeClient();
+    const { connecting } = await open(client, sockets);
+    send(client, sockets[0]!, ...ts3Welcome);
+    await connecting;
+    await client.view.whenReady();
+    await settle();
+    return { client, socket: sockets[0]! };
+  }
+
+  it("follows a client's icon being set and then removed, and says so in the event", async () => {
+    const { client, socket } = await live();
+    const view = client.view;
+    const updates: Array<Record<string, unknown>> = [];
+    client.on("clientUpdated", (e) => updates.push(e.changes));
+    send(
+      client,
+      socket,
+      "notifycliententerview cfid=0 ctid=3 reasonid=0 clid=40 client_unique_identifier=uid40 client_nickname=n40 client_servergroups=8 client_icon_id=123",
+    );
+    await settle();
+    expect(view.client(asClientID(40))?.iconID).toBe(123);
+
+    const before = view.revision;
+    send(client, socket, "notifyclientupdated clid=40 client_icon_id=0");
+    await settle();
+    expect(view.revision).toBeGreaterThan(before);
+    expect(view.client(asClientID(40))?.iconID).toBeUndefined();
+    expect(updates).toHaveLength(1);
+    expect("iconID" in updates[0]!).toBe(true);
+    expect(updates[0]!["iconID"]).toBeUndefined();
+
+    // A notification without the key leaves the value.
+    send(client, socket, "notifyclientupdated clid=40 client_icon_id=77");
+    send(client, socket, "notifyclientupdated clid=40 client_nickname=renamed");
+    await settle();
+    expect(view.client(asClientID(40))?.iconID).toBe(77);
+    expect("iconID" in updates[2]!).toBe(false);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("follows a channel's icon being set and then removed, in the view and the tree", async () => {
+    const { client, socket } = await live();
+    const view = client.view;
+    const edited = (icon: string): string =>
+      `notifychanneledited cid=1 reasonid=10 invokerid=1 invokername=a invokeruid=u channel_icon_id=${icon}`;
+    send(client, socket, edited("123"));
+    await settle();
+    expect(view.channel(cid(1))?.iconID).toBe(123);
+
+    const before = view.revision;
+    send(client, socket, edited("0"));
+    await settle();
+    expect(view.revision).toBeGreaterThan(before);
+    expect(view.channel(cid(1))?.iconID).toBeUndefined();
+    expect(view.channels.get(cid(1))?.iconID).toBeUndefined();
+
+    send(client, socket, edited("5"));
+    send(
+      client,
+      socket,
+      "notifychanneledited cid=1 reasonid=10 invokerid=1 invokername=a invokeruid=u channel_topic=t",
+    );
+    await settle();
+    expect(view.channel(cid(1))?.iconID).toBe(5);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+});
+
 describe("the view across connections", () => {
   it("is stale after a disconnect, readable, and cleared by the next connect", async () => {
     const { client, sockets } = makeClient();

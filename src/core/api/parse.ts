@@ -132,8 +132,8 @@ export function parseClient(row: Record<string, string>): ClientEntry {
 
 /**
  * Read the properties a `notifyclientupdated` row named, and only those: the
- * result holds exactly the keys the row carried, none of them `undefined`.
- * The client's id is not among them; the row's `clid` is.
+ * result holds exactly the keys the row carried, and one the row cleared (an
+ * icon of 0) holds `undefined`. The client's id is not among them; the row's `clid` is.
  */
 export function parseClientChanges(row: Record<string, string>): ClientChanges {
   return readFields(clientFields, row, true);

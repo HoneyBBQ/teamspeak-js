@@ -321,9 +321,20 @@ describe("applyClientChanges", () => {
     expect(next.isAway).toBe(false);
   });
 
-  it("does not erase a field with an explicit undefined", () => {
+  it("clears a field the changes carry as undefined, and keeps one they lack", () => {
     const next = applyClientChanges(entry, { description: undefined });
-    expect(next.description).toBe("hi");
+    expect("description" in next).toBe(false);
+    expect(next.nickname).toBe("Bob");
+  });
+
+  it("carries a cleared icon as a key holding undefined, and clears it", () => {
+    const withIcon = parseClient({ ...fullRow, client_icon_id: "12" });
+    expect(withIcon.iconID).toBe(12);
+    const changes = parseClientChanges({ clid: "7", client_icon_id: "0" });
+    expect("iconID" in changes).toBe(true);
+    expect(changes.iconID).toBeUndefined();
+    expect("iconID" in applyClientChanges(withIcon, changes)).toBe(false);
+    expect(applyClientChanges(withIcon, parseClientChanges({ client_away: "1" })).iconID).toBe(12);
   });
 
   it("replaces a list whole", () => {
@@ -385,14 +396,39 @@ describe("channel changes", () => {
     expect(Object.keys(changes).sort()).toEqual(["hasPassword", "topic"]);
   });
 
-  it("applies without erasing", () => {
+  it("applies without erasing what the row did not carry", () => {
     const channel = parseChannel({ cid: "2", channel_name: "A", channel_topic: "old" });
-    const next = applyChannelChanges(channel, {
-      topic: "new",
-      name: undefined,
-    } as unknown as ChannelChanges);
+    const next = applyChannelChanges(
+      channel,
+      parseChannelChanges({ cid: "2", channel_topic: "new" }),
+    );
     expect(next).toMatchObject({ topic: "new", name: "A" });
     expect(channel.topic).toBe("old");
+  });
+
+  it("carries an icon of 0 and an empty time of -1 as cleared, and clears them", () => {
+    const channel = parseChannel({
+      cid: "2",
+      channel_icon_id: "12",
+      seconds_empty: "30",
+      channel_codec_is_unencrypted: "1",
+    });
+    expect(channel.iconID).toBe(12);
+    expect(channel.emptyForMs).toBe(30_000);
+    const changes = parseChannelChanges({ cid: "2", channel_icon_id: "0", seconds_empty: "-1" });
+    expect(Object.keys(changes).sort()).toEqual(["emptyForMs", "iconID"]);
+    expect(changes.iconID).toBeUndefined();
+    const next = applyChannelChanges(channel, changes);
+    expect(next.iconID).toBeUndefined();
+    expect(next.emptyForMs).toBeUndefined();
+    expect(next.isUnencrypted).toBe(true);
+  });
+
+  it("leaves the icon alone when the row does not carry it", () => {
+    const channel = parseChannel({ cid: "2", channel_icon_id: "12" });
+    expect(applyChannelChanges(channel, parseChannelChanges({ channel_topic: "t" })).iconID).toBe(
+      12,
+    );
   });
 });
 
