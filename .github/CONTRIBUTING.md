@@ -14,11 +14,11 @@ output taken from TeamSpeak's proprietary SDK or applications, and do not paste
 them into issues or comments either. That rule cannot bend.
 
 Protocol knowledge comes from watching traffic between a client and a server,
-from public documentation, and from open-source implementations under
-permissive licences (MIT, Apache-2.0, BSD), which you may consult for protocol
-behaviour. Write your own code rather than copying, and respect the licence
-terms of whatever you learned from. Do not consult or copy from implementations
-under a copyleft licence (GPL, AGPL, LGPL, OSL) or with no licence. Credit your
+from public documentation, and from open-source implementations, which you may
+read to understand protocol behaviour. Write your own code. Do not copy,
+translate or port code from an implementation under a copyleft licence (GPL,
+AGPL, LGPL, OSL) or with no licence. Code under a permissive licence (MIT,
+Apache-2.0, BSD) may be consulted, and its terms must be respected. Credit your
 sources where you use them in the code. If you are not sure where something you
 know came from, leave it out and say so in the pull request.
 
