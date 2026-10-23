@@ -127,6 +127,7 @@ export class WebQueryTransport implements QueryTransport {
   #prefix: string;
   #fetch: typeof fetch;
   #closed = false;
+  #inFlight = new Set<AbortController>();
   #openedAt = new Date();
   #bytesSent = 0;
   #bytesReceived = 0;
@@ -155,7 +156,7 @@ export class WebQueryTransport implements QueryTransport {
     this.#fetch = options.fetch ?? nodeFetch;
   }
 
-  async send(line: string): Promise<void> {
+  async send(line: string, options?: { readonly signal?: AbortSignal }): Promise<void> {
     if (this.#closed) throw new Error("the query connection is closed");
     const rows = splitCommandRows(line)
       .map((row) => parseCommand(row))
@@ -169,23 +170,52 @@ export class WebQueryTransport implements QueryTransport {
 
     const params = rows.map((row) => ({ ...row.params }));
     const body = JSON.stringify(params.length === 1 ? params[0] : params);
-    const response = await this.#fetch(`${this.#base}${this.#prefix}/${name}`, {
-      method: "POST",
-      headers: {
-        ...(this.#apiKey === undefined ? {} : { "x-api-key": this.#apiKey }),
-        "content-type": "application/json",
-      },
-      body,
-    });
-    this.#bytesSent += Buffer.byteLength(body);
-
+    // One controller per request: the command's own signal and `close()` both
+    // end it, so a request nobody waits for any more is not left running.
+    const abort = new AbortController();
+    this.#inFlight.add(abort);
+    const onAbort = (): void => abort.abort(options?.signal?.reason);
+    if (options?.signal?.aborted === true) onAbort();
+    else options?.signal?.addEventListener("abort", onAbort, { once: true });
+    let response: Response;
     let answer: WebAnswer | undefined;
     try {
-      const text = await response.text();
-      this.#bytesReceived += Buffer.byteLength(text);
-      answer = JSON.parse(text) as WebAnswer;
-    } catch {
-      // Not JSON: nothing the server said about the command.
+      response = await this.#fetch(`${this.#base}${this.#prefix}/${name}`, {
+        method: "POST",
+        headers: {
+          ...(this.#apiKey === undefined ? {} : { "x-api-key": this.#apiKey }),
+          "content-type": "application/json",
+        },
+        body,
+        // The api key is a header, and a followed redirect would carry it to
+        // whatever host the answer names: the 3xx is the answer.
+        redirect: "manual",
+        signal: abort.signal,
+      });
+      this.#bytesSent += Buffer.byteLength(body);
+
+      let text: string | undefined;
+      try {
+        text = await response.text();
+      } catch (error) {
+        // An abort is the command's end, not an answer that was not JSON.
+        if (abort.signal.aborted) throw error;
+      }
+      if (text !== undefined) {
+        this.#bytesReceived += Buffer.byteLength(text);
+        try {
+          answer = JSON.parse(text) as WebAnswer;
+        } catch {
+          // Not JSON: nothing the server said about the command.
+        }
+      }
+      // A fetch that ignores its signal still answers late. The command that
+      // asked has given up, and the client may be waiting on the next one: its
+      // lines must not be this answer's.
+      if (abort.signal.aborted) throw abortReason(abort.signal);
+    } finally {
+      options?.signal?.removeEventListener("abort", onAbort);
+      this.#inFlight.delete(abort);
     }
     const code = answer?.status?.code;
     if (typeof code !== "number") throw new WebQueryHttpError(response.status, response.statusText);
@@ -228,6 +258,9 @@ export class WebQueryTransport implements QueryTransport {
   close(): Promise<void> {
     if (this.#closed) return Promise.resolve();
     this.#closed = true;
+    // Nothing is waiting for these any more, and none may deliver a line.
+    for (const request of this.#inFlight)
+      request.abort(new Error("the query connection is closed"));
     this.onClose?.(undefined);
     return Promise.resolve();
   }
@@ -251,11 +284,29 @@ export class WebQueryTransport implements QueryTransport {
   }
 }
 
-/** One answer row as a line of `key=value` fields; a field that is not text is written as text. */
+/** Why an aborted request ended: the signal's own reason, as an error. */
+function abortReason(signal: AbortSignal): Error {
+  const reason: unknown = signal.reason;
+  return reason instanceof Error ? reason : new Error("the WebQuery request was aborted");
+}
+
+/**
+ * One JSON value as the text a command line carries: a string as it is, a
+ * number as written, a boolean as `1` or `0`, and anything else (a null, a
+ * nested object) as empty, which is a field the row did not carry. WebQuery
+ * sends every value as a string, measured on TeamSpeak 3 and 6; this is for
+ * a server that does not.
+ */
+function valueText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "bigint") return String(value);
+  if (typeof value === "boolean") return value ? "1" : "0";
+  return "";
+}
+
+/** One answer row as a line of `key=value` fields. */
 function rowLine(row: object): string {
-  const fields = Object.entries(row).map(
-    ([key, value]) => [key, typeof value === "string" ? value : String(value)] as const,
-  );
+  const fields = Object.entries(row).map(([key, value]) => [key, valueText(value)] as const);
   // buildCommandOrdered writes a name first; a row has none.
   return buildCommandOrdered("", fields).slice(1);
 }
@@ -270,7 +321,11 @@ const nodeFetch = ((url: string, init: RequestInit) =>
     const request = new URL(url).protocol === "https:" ? httpsRequest : httpRequest;
     const req = request(
       url,
-      { method: init.method, headers: init.headers as Record<string, string> },
+      {
+        method: init.method,
+        headers: init.headers as Record<string, string>,
+        ...(init.signal ? { signal: init.signal } : {}),
+      },
       (res) => {
         const chunks: Buffer[] = [];
         res.on("data", (chunk: Buffer) => chunks.push(chunk));

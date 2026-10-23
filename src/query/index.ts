@@ -39,6 +39,7 @@ export { defaultShouldRetry } from "./reconnect.js";
 // Errors unique to ServerQuery.
 export {
   GuestAccessError,
+  LineTooLongError,
   MissingDependencyError,
   QueryAuthError,
   SshHostKeyError,

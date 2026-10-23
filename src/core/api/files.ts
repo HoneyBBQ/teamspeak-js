@@ -105,9 +105,10 @@ export interface FileTreeEntry extends FileEntry {
 /** How {@link listFilesRecursive} walks the file area. */
 export interface FileTreeOptions extends FileOptions {
   /**
-   * How many directory levels to go down from the starting path: 0 lists the
-   * starting directory only, as {@link listFiles} does; 1 also lists the
-   * directories in it; and so on. 16 by default. A non-negative integer.
+   * How many directory levels to list, counted as `find -maxdepth` counts: 1
+   * lists the starting directory only, as {@link listFiles} does; 2 also lists
+   * the directories in it; and so on. 16 by default; there is no unbounded
+   * walk, since every level is a round trip. A positive integer.
    */
   readonly maxDepth?: number | undefined;
 }
@@ -144,8 +145,8 @@ export async function listFilesRecursive(
   options: FileTreeOptions = {},
 ): Promise<FileTreeEntry[]> {
   const { maxDepth = DEFAULT_MAX_DEPTH, ...listOptions } = options;
-  if (!Number.isInteger(maxDepth) || maxDepth < 0) {
-    throw new RangeError(`maxDepth is a non-negative integer, not ${String(maxDepth)}`);
+  if (!Number.isInteger(maxDepth) || maxDepth < 1) {
+    throw new RangeError(`maxDepth is a positive integer, not ${String(maxDepth)}`);
   }
   const found: FileTreeEntry[] = [];
   const walk = async (directory: string, depth: number): Promise<void> => {
@@ -155,7 +156,7 @@ export async function listFilesRecursive(
       if (entry.isDirectory && depth < maxDepth) await walk(entryPath, depth + 1);
     }
   };
-  await walk(asPath(path), 0);
+  await walk(asPath(path), 1);
   return found;
 }
 

@@ -138,6 +138,14 @@ export interface QueryClientOptions {
    * Registering for anything on a transport that cannot deliver notifications
    * throws a `TypeError`, at construction when the `transport` kind says so
    * and when connecting for a `custom` transport.
+   *
+   * The client keeps a roster of who is on the server, to fill the fields a
+   * notification leaves out, such as a sender's groups: a snapshot taken on
+   * connecting (`clientlist -uid -groups -away -voice`), kept up to date by the
+   * enter, leave and move notifications. A ServerQuery connection is not sent
+   * `clientupdated`, so a client's groups, away flag and mute state are as of
+   * the listing, or of the moment it entered view, and do not follow later
+   * changes.
    */
   readonly events?: QueryEventsOption | undefined;
   /**
@@ -146,6 +154,21 @@ export interface QueryClientOptions {
    * decision is {@link defaultShouldRetry}.
    */
   readonly reconnect?: ReconnectOptions | undefined;
+  /**
+   * How long a raw TCP or SSH session may sit idle before the client sends
+   * `version` to keep it open, in milliseconds. 120000 (two minutes) by default;
+   * `0` turns it off.
+   *
+   * Measured on TeamSpeak 3 3.13.8 (raw TCP and SSH) and TeamSpeak 6
+   * 6.0.0-beta13.1 (SSH): the server closes a query session that has sent no
+   * command for 300 seconds, and a session that sends one every 200 seconds
+   * stays open. Notifications arriving do not count: a raw TCP session on
+   * TeamSpeak 3 that received nine and sent nothing was closed at 300 seconds
+   * all the same. The command is sent only when none has been
+   * for this long, so a busy client sends nothing extra. WebQuery has no session
+   * to keep, and a `custom` transport is left to its own owner.
+   */
+  readonly keepAliveMs?: number | undefined;
   /**
    * Wraps every typed command, outermost first; see `CommandMiddleware`. Raw
    * lines sent with `exec` do not pass through it. Fixed for the client's life.
@@ -218,8 +241,12 @@ export interface ResolvedQueryOptions {
   readonly eventsRequested: boolean;
   readonly reconnect: ReconnectOptions | undefined;
   readonly commandMiddleware: readonly CommandMiddleware[] | undefined;
+  readonly keepAliveMs: number;
   readonly logger: Logger | undefined;
 }
+
+/** How long a session may be idle before the client keeps it open; the server drops one at 300 s. */
+export const DEFAULT_KEEP_ALIVE_MS = 120_000;
 
 function nonEmpty(value: unknown, name: string): string {
   if (typeof value !== "string" || value === "") {
@@ -449,6 +476,10 @@ export function normalizeQueryOptions(options: QueryClientOptions): ResolvedQuer
       throw new RangeError("server.port is an integer from 1 to 65535");
     }
   }
+  const keepAliveMs = options.keepAliveMs ?? DEFAULT_KEEP_ALIVE_MS;
+  if (!Number.isInteger(keepAliveMs) || keepAliveMs < 0) {
+    throw new RangeError("keepAliveMs is a non-negative integer, 0 to turn it off");
+  }
   const nickname = options.nickname;
   if (nickname !== undefined) nonEmpty(nickname, "nickname");
   const commandMiddleware = options.commandMiddleware;
@@ -465,6 +496,7 @@ export function normalizeQueryOptions(options: QueryClientOptions): ResolvedQuer
     eventsRequested: options.events !== undefined,
     reconnect: options.reconnect,
     commandMiddleware,
+    keepAliveMs,
     logger: options.logger,
   };
   assertEventsSupported(resolved);

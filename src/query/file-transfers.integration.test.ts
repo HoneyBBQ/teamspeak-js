@@ -156,15 +156,15 @@ describe.skipIf(SKIP)("Integration — one-call file transfers and the recursive
         expect(order.indexOf("/docs/deep")).toBeLessThan(order.indexOf("/docs/deep/streamed.bin"));
         // The directories are listed, and entered only down to maxDepth.
         expect(
-          (await listFilesRecursive(exec, cid, "/", { maxDepth: 0 })).map((e) => e.path).sort(),
+          (await listFilesRecursive(exec, cid, "/", { maxDepth: 1 })).map((e) => e.path).sort(),
         ).toEqual(["/docs", "/empty.bin", "/small.txt"]);
         expect(
-          (await listFilesRecursive(exec, cid, "/", { maxDepth: 1 })).map((e) => e.path).sort(),
+          (await listFilesRecursive(exec, cid, "/", { maxDepth: 2 })).map((e) => e.path).sort(),
         ).toEqual(["/docs", "/docs/big.bin", "/docs/deep", "/empty.bin", "/small.txt"]);
         expect((await listFilesRecursive(exec, cid, "/docs/deep")).map((e) => e.path)).toEqual([
           "/docs/deep/streamed.bin",
         ]);
-        expect(await listFilesRecursive(exec, cid, "/docs/deep", { maxDepth: 0 })).toHaveLength(1);
+        expect(await listFilesRecursive(exec, cid, "/docs/deep", { maxDepth: 1 })).toHaveLength(1);
         // A path the server does not have fails as listFiles does: 2052 on TS3, 2051 on TS6.
         const error = await listFilesRecursive(exec, cid, "/nowhere").catch((e: unknown) => e);
         expect(error).toBeInstanceOf(ServerError);

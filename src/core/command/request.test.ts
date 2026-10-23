@@ -26,6 +26,39 @@ describe("encodeRequest", () => {
     expect(encodeRequest(open, (pw) => `hashed(${pw})`)).toBe("clientmove cpw=");
   });
 
+  it.each([
+    "virtualserver_name x=1",
+    "a\nlogout",
+    "a|b",
+    "a=b",
+    "",
+    "a b",
+    "-",
+    "a\\sb",
+    "näme",
+    "a\rb",
+  ])("refuses the parameter name %j instead of putting it on the line", (key) => {
+    const bad = { command: "serveredit", params: [[key, "v"]] } as const;
+    expect(() => encodeRequest(bad, (pw) => pw)).toThrow(TypeError);
+    const inRow = { command: "x", rows: [[[key, "v"]]] } as const;
+    expect(() => encodeRequest(inRow, (pw) => pw)).toThrow(TypeError);
+  });
+
+  it("sends the keys a server names", () => {
+    expect(
+      encodeRequest(
+        {
+          command: "serveredit",
+          params: [
+            ["virtualserver_hostbanner_gfx_interval", 1],
+            ["-uid", true],
+          ],
+        },
+        (pw) => pw,
+      ),
+    ).toBe("serveredit virtualserver_hostbanner_gfx_interval=1 -uid");
+  });
+
   it("omits unset parameters and sends flags bare", () => {
     expect(
       encodeRequest(

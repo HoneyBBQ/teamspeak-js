@@ -143,3 +143,37 @@ export class GuestAccessError extends TeamspeakError {
     this.code = code;
   }
 }
+
+/**
+ * A line longer than 256 MiB came from the server, which ends
+ * the connection.
+ *
+ * ServerQuery writes an answer's rows on one line, so the limit is the largest
+ * answer: a client database listing is about 240 bytes a client, so 256 MiB
+ * holds about a million of them, and the longest answer measured on TeamSpeak 3
+ * and 6, the permission list, is under 50 KiB. A server that sends more is not
+ * speaking ServerQuery, and reading on would only fill memory.
+ *
+ * @experimental Part of the `@honeybbq/teamspeak/query` entry, which may
+ * change in a minor release.
+ */
+export class LineTooLongError extends TeamspeakError {
+  /** {@inheritDoc @honeybbq/teamspeak!TeamspeakError.kind} */
+  static override readonly kind: string = "LineTooLongError";
+  static {
+    Object.defineProperty(this.prototype, "name", {
+      value: "LineTooLongError",
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
+
+  /** The longest line read, in bytes. */
+  readonly limit: number;
+
+  constructor(limit: number) {
+    super(`the server sent a line longer than the limit of ${limit} bytes`);
+    this.limit = limit;
+  }
+}

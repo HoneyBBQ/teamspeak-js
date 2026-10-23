@@ -47,7 +47,7 @@ import {
   type QueryEventCategory,
 } from "./options.js";
 import type { ResolvedQueryOptions, ResolvedTransport } from "./options.js";
-import { defaultShouldRetry } from "./reconnect.js";
+import { defaultShouldRetry, noteConnectFailure } from "./reconnect.js";
 
 export type {
   QueryClientOptions,
@@ -155,6 +155,9 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
    * rather than taken for the next command's.
    */
   #abandoned = 0;
+  /** When a command was last sent, which is what the server counts idleness from. */
+  #lastSent = 0;
+  #keepAlive: ReturnType<typeof setTimeout> | undefined;
   #queue: Promise<unknown> = Promise.resolve();
   #closed = true;
   /**
@@ -421,9 +424,19 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
 
     const { transport: resolvedTransport, server, nickname, eventCategories } = this.#options;
     const login = resolvedTransport.kind === "tcp" ? resolvedTransport.login : undefined;
-    if (login !== undefined) await this.login(login.name, login.password, { signal });
+    if (login !== undefined) {
+      await this.login(login.name, login.password, { signal }).catch((error: unknown) => {
+        noteConnectFailure("login", error);
+        throw error;
+      });
+    }
     // Not `use()`: this session learns who it is, and who is there, once, below.
-    if (server !== undefined) await this.#select(server, { nickname, signal });
+    if (server !== undefined) {
+      await this.#select(server, { nickname, signal }).catch((error: unknown) => {
+        noteConnectFailure("use", error);
+        throw error;
+      });
+    }
     this.#version = await this.#getVersion(signal);
     this.#serverFamily = serverFamilyForVersion(this.#version);
     // Like the version, a failure here fails the connect: a client that cannot
@@ -439,6 +452,37 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
       // invoker of a message this client would otherwise not know.
       if (eventCategories.length > 0) await this.#learnClients(signal);
     }
+    this.#startKeepAlive(transport);
+  }
+
+  /**
+   * Keep a raw TCP or SSH session from idling out: the server closes one that
+   * has sent no command for 300 seconds (see `QueryClientOptions.keepAliveMs`),
+   * so `version` goes out once none has for that long. Only commands count, as
+   * the server counts them; what the server sends does not.
+   */
+  #startKeepAlive(transport: QueryTransport): void {
+    const every = this.#options.keepAliveMs;
+    const kind = this.#options.transport.kind;
+    if (every === 0 || (kind !== "tcp" && kind !== "ssh")) return;
+    const tick = (): void => {
+      if (this.#transport !== transport || this.#closed) return;
+      const idle = Date.now() - this.#lastSent;
+      if (idle >= every) {
+        this.#logger.debug("keeping the idle session open", { idleMs: idle });
+        // A failure is the connection dropping, which its own close reports.
+        this.exec("version").catch(() => {});
+        this.#keepAlive = setTimeout(tick, every);
+      } else {
+        this.#keepAlive = setTimeout(tick, every - idle);
+      }
+      // The socket keeps the process alive; this timer must not.
+      this.#keepAlive.unref();
+    };
+    clearTimeout(this.#keepAlive);
+    this.#lastSent = Date.now();
+    this.#keepAlive = setTimeout(tick, every);
+    this.#keepAlive.unref();
   }
 
   /**
@@ -475,6 +519,7 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     this.#logger.info("disconnecting from query server");
     const transport = this.#transport;
     this.#transport = null;
+    clearTimeout(this.#keepAlive);
     // Set before the transport is closed, so the close it reports is not read
     // as the connection dropping.
     this.#closed = true;
@@ -919,8 +964,12 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     const sending = { failed: false };
     let abandonedByUs = false;
     const transport = this.#transport;
+    this.#lastSent = Date.now();
     const nudges = this.#options.transport.kind === "ssh";
-    const send = transport.send(line).then(
+    // Ended with the command, so that a request nobody waits for any more is
+    // not left running to answer the next command; see `QueryTransport.send`.
+    const sendAbort = new AbortController();
+    const send = transport.send(line, { signal: sendAbort.signal }).then(
       () => {
         // On TeamSpeak 6 over SSH the server may hold back the last line of a
         // reply, usually `error id=0 msg=ok`, until the client writes again;
@@ -952,6 +1001,7 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
       return await answered;
     } finally {
       clearTimeout(timer);
+      sendAbort.abort();
       nudgerStopped = true;
       clearTimeout(nudger);
       if (onAbort) signal?.removeEventListener("abort", onAbort);
@@ -1168,6 +1218,7 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
   #handleClose(error: Error | undefined): void {
     if (this.#status === ClientStatus.Disconnected) return;
     this.#transport = null;
+    clearTimeout(this.#keepAlive);
     this.#closed = true;
     this.#fail(new NotConnectedError(error ? { cause: error } : undefined));
     const wasConnected = this.#status === ClientStatus.Connected;
@@ -1210,6 +1261,7 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     this.#fail(error);
     const transport = this.#transport;
     this.#transport = null;
+    clearTimeout(this.#keepAlive);
     void transport?.close().catch(() => {});
     if (!this.#reconnecting) return;
     const cause =

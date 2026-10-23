@@ -12,14 +12,32 @@ import { MissingDependencyError, QueryAuthError, SshHostKeyError } from "./error
  * reconnect loop is most likely to meet right after a drop.
  */
 const PERMANENT_SERVER_ERRORS: ReadonlySet<number> = new Set([
-  ErrorCode.ClientInvalidPassword,
-  ErrorCode.ClientNotLoggedIn,
-  ErrorCode.ClientLoginNotPermitted,
-  ErrorCode.ServerInvalidID,
-  ErrorCode.ConnectFailedBanned,
-  ErrorCode.BanFlooding,
-  ErrorCode.PermissionsClientInsufficient,
+  ErrorCode.ClientInvalidPassword, // login: wrong name or password
+  ErrorCode.ClientNotLoggedIn, // use: this session has no login, and none is configured
+  ErrorCode.ClientLoginNotPermitted, // login: this account may not log in
+  ErrorCode.ServerInvalidID, // use: no such server
+  ErrorCode.ServerIsNotRunning, // use: that server is down
+  ErrorCode.ConnectFailedBanned, // retrying while banned extends the ban
+  ErrorCode.BanFlooding, // retrying while flood-banned extends the ban
+  ErrorCode.PermissionsClientInsufficient, // the account lacks the permission it needs
 ]);
+
+/**
+ * Errors of a `login` or `use` that {@link isPermanentCommandError} found
+ * permanent. The error is the same object `shouldRetry` is later given, so
+ * the mark travels with it without changing its type.
+ */
+const connectRefusals = new WeakSet();
+
+/**
+ * Record why a command of `connect()` failed, so that the default
+ * `shouldRetry` can tell a refused `login` or `use` from any other failure.
+ */
+export function noteConnectFailure(command: string, error: unknown): void {
+  if (typeof error === "object" && error !== null && isPermanentCommandError(command, error)) {
+    connectRefusals.add(error);
+  }
+}
 
 /** Commands whose refusal is the credentials or the target, not the network. */
 const CONNECT_COMMANDS: ReadonlySet<string> = new Set(["login", "use"]);
@@ -47,6 +65,8 @@ const TRANSIENT_SERVER_ERRORS: ReadonlySet<number> = new Set([ErrorCode.ClientIs
  * A custom `shouldRetry` replaces this; see `ReconnectOptions`.
  */
 export function defaultShouldRetry(error: Error | undefined): boolean {
+  // A refused `login` or `use`, whatever its code; see `noteConnectFailure`.
+  if (error !== undefined && connectRefusals.has(error)) return false;
   // The client is connected, or connecting, already: nothing is left to retry.
   if (error instanceof AlreadyConnectedError) return false;
   // An account the server refused, or a transport that is on the wrong side
