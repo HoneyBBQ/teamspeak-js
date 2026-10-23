@@ -1,0 +1,4 @@
+# A release must be three days old before pnpm resolves to it, so a
+# compromised version has time to be pulled before it reaches this repo.
+# Minutes. Only resolution is affected; installs from the lockfile are not.
+minimumReleaseAge: 4320
