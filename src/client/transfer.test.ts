@@ -1,6 +1,6 @@
 import { asClientFileTransferID, asServerFileTransferID } from "@honeybbq/teamspeak";
 import { afterEach, describe, it, expect, vi } from "vitest";
-import { createServer, type Server, type Socket } from "node:net";
+import { connect, createServer, type Server, type Socket } from "node:net";
 import { Duplex, PassThrough, Readable, Writable } from "node:stream";
 import type { FileDownloadInfo, FileUploadInfo } from "@honeybbq/teamspeak";
 import { FileTransferError } from "./errors.js";
@@ -78,25 +78,183 @@ describe("upload and download", () => {
     serverFileTransferID: asServerFileTransferID(1),
   };
 
-  it("sends the key, then the data", async () => {
-    let received = "";
-    let ended!: () => void;
-    const done = new Promise<void>((resolve) => (ended = resolve));
+  /** A server that closes the connection once it holds `bytes` bytes, as it does with a whole file. */
+  async function closingAfter(
+    bytes: number,
+    delayMs = 0,
+  ): Promise<{ server: Server; got: string[] }> {
+    const got: string[] = [];
     const server = await listen((socket) => {
-      socket.on("data", (chunk) => (received += chunk.toString()));
-      // As the server does once it has the whole file.
-      socket.on("end", () => {
-        socket.end();
-        ended();
+      let received = 0;
+      socket.on("error", () => {});
+      socket.on("data", (chunk) => {
+        got.push(chunk.toString());
+        received += chunk.length;
+        if (received >= bytes) setTimeout(() => socket.end(), delayMs);
       });
     });
-    const upload: FileUploadInfo = { ...info, port: port(server), seekPosition: 0n };
+    return { server, got };
+  }
+
+  it("sends the key, then the data", async () => {
+    const { server, got } = await closingAfter("keyhello".length);
+    const upload: FileUploadInfo = {
+      ...info,
+      port: port(server),
+      size: 5n,
+      seekPosition: 0n,
+    };
 
     await uploadFileData("127.0.0.1", upload, Readable.from(["hello"]));
-    await done;
     server.close();
 
-    expect(received).toBe("keyhello");
+    expect(got.join("")).toBe("keyhello");
+  });
+
+  it("resolves only once the server has closed the connection", async () => {
+    const { server } = await closingAfter("keyhello".length, 150);
+    const upload: FileUploadInfo = {
+      ...info,
+      port: port(server),
+      size: 5n,
+      seekPosition: 0n,
+    };
+
+    const started = performance.now();
+    await uploadFileData("127.0.0.1", upload, Readable.from(["hello"]));
+    server.close();
+
+    // Without the wait the call would be done as soon as the bytes had left.
+    expect(performance.now() - started).toBeGreaterThanOrEqual(120);
+  });
+
+  it("fails an upload the server never closes, at the idle limit", async () => {
+    const { server } = await closingAfter(Infinity);
+    const upload: FileUploadInfo = {
+      ...info,
+      port: port(server),
+      size: 5n,
+      seekPosition: 0n,
+    };
+
+    const error = await uploadFileData("127.0.0.1", upload, Readable.from(["hello"]), {
+      idleTimeoutMs: 100,
+    }).catch((e: unknown) => e);
+    server.close();
+
+    expect(error).toBeInstanceOf(FileTransferError);
+    expect(((error as Error).cause as Error).name).toBe("TimeoutError");
+  });
+
+  it("fails an upload the server closes before every byte is written", async () => {
+    const server = await listen((socket) => {
+      socket.on("error", () => {});
+      socket.on("data", () => socket.destroy());
+    });
+    const upload: FileUploadInfo = {
+      ...info,
+      port: port(server),
+      size: 5_000_000n,
+      seekPosition: 0n,
+    };
+    const chunk = Buffer.alloc(64 * 1024);
+    const source = new Readable({
+      read() {
+        setTimeout(() => this.push(chunk), 5);
+      },
+    });
+
+    await expect(
+      uploadFileData("127.0.0.1", upload, source, { idleTimeoutMs: 2_000 }),
+    ).rejects.toBeDefined();
+    server.close();
+    source.destroy();
+  });
+
+  it("destroys the socket once the upload is done", async () => {
+    const { server } = await closingAfter("keyhello".length);
+    let socket: Duplex | undefined;
+    const upload: FileUploadInfo = {
+      ...info,
+      port: port(server),
+      size: 5n,
+      seekPosition: 0n,
+    };
+
+    await uploadFileData("127.0.0.1", upload, Readable.from(["hello"]), {
+      socketFactory: (host, p) => (socket = connect({ host, port: p })),
+    });
+    server.close();
+
+    expect(socket?.destroyed).toBe(true);
+  });
+
+  it("fails a stream that gives fewer bytes than the size, and closes the connection", async () => {
+    const { server } = await closingAfter(Infinity);
+    const upload: FileUploadInfo = {
+      ...info,
+      port: port(server),
+      size: 10n,
+      seekPosition: 0n,
+    };
+
+    const error = await uploadFileData("127.0.0.1", upload, Readable.from(["hello"])).catch(
+      (e: unknown) => e,
+    );
+    server.close();
+
+    expect(error).toBeInstanceOf(FileTransferError);
+    expect((error as Error).message).toMatch(/ended after 5 of the declared 10 bytes/);
+  });
+
+  it("fails a stream that gives more bytes than the size, and sends none of the excess", async () => {
+    const { server, got } = await closingAfter(Infinity);
+    const upload: FileUploadInfo = {
+      ...info,
+      port: port(server),
+      size: 5n,
+      seekPosition: 0n,
+    };
+
+    const error = await uploadFileData(
+      "127.0.0.1",
+      upload,
+      Readable.from(["hello-and-more"]),
+    ).catch((e: unknown) => e);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    server.close();
+
+    expect(error).toBeInstanceOf(FileTransferError);
+    expect((error as Error).message).toMatch(/more than the declared 5 bytes/);
+    expect(got.join("")).toBe("keyhello");
+  });
+
+  it("sends only what is left of the file from the seek position", async () => {
+    const { server, got } = await closingAfter("key".length + 3);
+    const upload: FileUploadInfo = {
+      ...info,
+      port: port(server),
+      size: 10n,
+      seekPosition: 7n,
+    };
+
+    await uploadFileData("127.0.0.1", upload, Readable.from(["789"]));
+    server.close();
+
+    expect(got.join("")).toBe("key789");
+  });
+
+  it("refuses a port that is no port, before dialling", async () => {
+    const factory = vi.fn<() => PassThrough>(() => new PassThrough());
+    for (const bad of [0, 65536, -1, 1.5, Number.NaN]) {
+      await expect(
+        dialFileTransfer("h", bad, "k", { socketFactory: factory }),
+      ).rejects.toBeInstanceOf(FileTransferError);
+    }
+    expect(factory).not.toHaveBeenCalled();
+    await expect(
+      dialFileTransfer("h", 65535, "k", { socketFactory: factory }),
+    ).resolves.toBeDefined();
   });
 
   it("stops a download in progress when its signal aborts", async () => {
@@ -104,7 +262,12 @@ describe("upload and download", () => {
       socket.write("partial");
       // …and never finishes.
     });
-    const download: FileDownloadInfo = { ...info, port: port(server), size: 100n };
+    const download: FileDownloadInfo = {
+      ...info,
+      port: port(server),
+      size: 100n,
+      seekPosition: 0n,
+    };
     const controller = new AbortController();
     const chunks: string[] = [];
     const dest = new Writable({
@@ -137,12 +300,13 @@ describe("file transfer limits", () => {
     fileTransferKey: "key",
     port: 0,
     size: 5n,
+    seekPosition: 0n,
   };
 
   async function download(
     send: (socket: Socket) => void,
     size: bigint,
-    options: { idleTimeoutMs?: number } = {},
+    options: { idleTimeoutMs?: number; seekPosition?: bigint } = {},
   ): Promise<{ error: unknown; written: string }> {
     const server = await listen(send);
     const chunks: string[] = [];
@@ -154,7 +318,17 @@ describe("file transfer limits", () => {
     });
     let error: unknown;
     try {
-      await downloadFileData("127.0.0.1", { ...info, port: port(server), size }, dest, options);
+      await downloadFileData(
+        "127.0.0.1",
+        {
+          ...info,
+          port: port(server),
+          size,
+          seekPosition: options.seekPosition ?? 0n,
+        },
+        dest,
+        { idleTimeoutMs: options.idleTimeoutMs },
+      );
     } catch (e) {
       error = e;
     }
@@ -181,6 +355,85 @@ describe("file transfer limits", () => {
     const { error, written } = await download((socket) => socket.end("hello"), 5n);
     expect(error).toBeUndefined();
     expect(written).toBe("hello");
+  });
+
+  it("leaves the destination open, so that it takes a second download", async () => {
+    const chunks: string[] = [];
+    let ended = false;
+    const dest = new Writable({
+      write(chunk: Buffer, _e, callback) {
+        chunks.push(chunk.toString());
+        callback();
+      },
+    });
+    dest.on("finish", () => (ended = true));
+    const server = await listen((socket) => socket.end("hello"));
+
+    await downloadFileData("127.0.0.1", { ...info, port: port(server) }, dest);
+    expect(ended).toBe(false);
+    expect(dest.destroyed).toBe(false);
+    await downloadFileData("127.0.0.1", { ...info, port: port(server) }, dest);
+    server.close();
+
+    expect(chunks.join("")).toBe("hellohello");
+    expect(dest.writable).toBe(true);
+  });
+
+  it("rejects, and does not end the destination, when the transfer fails", async () => {
+    const dest = new Writable({
+      write(_chunk, _e, callback) {
+        callback();
+      },
+    });
+    const server = await listen((socket) => socket.end("hel"));
+
+    await expect(
+      downloadFileData("127.0.0.1", { ...info, port: port(server) }, dest),
+    ).rejects.toBeInstanceOf(FileTransferError);
+    server.close();
+
+    expect(dest.destroyed).toBe(false);
+    expect(dest.writableEnded).toBe(false);
+  });
+
+  it("rejects with the destination's own error", async () => {
+    const boom = new Error("disk full");
+    const dest = new Writable({
+      write(_chunk, _e, callback) {
+        callback(boom);
+      },
+    });
+    const server = await listen((socket) => socket.end("hello"));
+
+    await expect(downloadFileData("127.0.0.1", { ...info, port: port(server) }, dest)).rejects.toBe(
+      boom,
+    );
+    server.close();
+  });
+
+  it("expects the bytes from the seek position to the end, not the whole size", async () => {
+    // As measured: a seekpos of 40 000 on a 100 000-byte file sends 60 000 bytes.
+    const seeking = { ...info, size: 10n, seekPosition: 4n };
+    const exact = await download((socket) => socket.end("456789"), 10n, {
+      seekPosition: 4n,
+    });
+    expect(exact.error).toBeUndefined();
+    expect(exact.written).toBe("456789");
+
+    const short = await download((socket) => socket.end("4567"), 10n, {
+      seekPosition: 4n,
+    });
+    expect((short.error as Error).message).toMatch(/ended after 4 of the announced 6 bytes/);
+    const long = await download((socket) => socket.end("4567890"), 10n, {
+      seekPosition: 4n,
+    });
+    expect((long.error as Error).message).toMatch(/more than the announced 6 bytes/);
+    expect(seeking.size - seeking.seekPosition).toBe(6n);
+  });
+
+  it("refuses a seek position past the end of the file", async () => {
+    const { error } = await download(() => {}, 10n, { seekPosition: 11n });
+    expect(error).toBeInstanceOf(FileTransferError);
   });
 
   it("fails a transfer that goes idle, with a TimeoutError cause, and destroys the socket", async () => {
@@ -229,13 +482,17 @@ describe("file transfer limits", () => {
 describe("a file transfer trace", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  const info: FileUploadInfo = {
+  const KEY = "SECRET-KEY-123";
+  /** The info of an upload of `size` bytes. */
+  const infoOf = (size: number | bigint): FileUploadInfo => ({
     port: 30033,
-    fileTransferKey: "SECRET-KEY-123",
+    fileTransferKey: KEY,
+    size: BigInt(size),
     seekPosition: 0n,
     clientFileTransferID: asClientFileTransferID(1),
     serverFileTransferID: asServerFileTransferID(1),
-  };
+  });
+  const info = infoOf(0);
 
   /** A trace that records every call, in order. */
   function recording(): {
@@ -260,12 +517,15 @@ describe("a file transfer trace", () => {
     };
   }
 
-  /** A connected stream that swallows what is written to it. */
-  function sink(): Duplex {
+  /** A connected stream that swallows what is written to it, and closes after the key and `bytes` more. */
+  function sink(bytes = 0): Duplex {
+    let seen = 0;
     return new Duplex({
       read() {},
-      write(_chunk, _encoding, callback) {
+      write(chunk: Buffer, _encoding, callback) {
+        seen += chunk.length;
         callback();
+        if (seen >= KEY.length + bytes) this.push(null);
       },
     });
   }
@@ -276,8 +536,8 @@ describe("a file transfer trace", () => {
     const chunks = Array.from({ length: 10 }, () => chunk);
     const size = chunk.length * 10;
 
-    await uploadFileData("files.example", info, Readable.from(chunks), {
-      socketFactory: () => sink(),
+    await uploadFileData("files.example", infoOf(size), Readable.from(chunks), {
+      socketFactory: () => sink(size),
       trace,
     });
 
@@ -294,7 +554,7 @@ describe("a file transfer trace", () => {
     expect(progress.length).toBeLessThan(10);
     expect(bytes).toEqual([...bytes].sort((a, b) => a - b));
     expect(bytes.at(-1)).toBe(size);
-    for (const p of progress) expect(p["total"]).toBe(0);
+    for (const p of progress) expect(p["total"]).toBe(size);
     expect(calls.at(-1)![1]).toMatchObject({ bytes: size });
     expect(calls.at(-1)![1]["durationMs"]).toBeGreaterThanOrEqual(0);
   });
@@ -321,6 +581,7 @@ describe("a file transfer trace", () => {
       clientFileTransferID: info.clientFileTransferID,
       serverFileTransferID: info.serverFileTransferID,
       size: 10n,
+      seekPosition: 0n,
     };
     await downloadFileData("h", download, dest, { socketFactory: () => stream, trace });
 
@@ -340,7 +601,10 @@ describe("a file transfer trace", () => {
     const { trace, calls } = recording();
     const { stream } = recordingStream(new Error("broken pipe"));
     await expect(
-      uploadFileData("h", info, Readable.from(["x"]), { socketFactory: () => stream, trace }),
+      uploadFileData("h", infoOf(1), Readable.from(["x"]), {
+        socketFactory: () => stream,
+        trace,
+      }),
     ).rejects.toThrow(/failed to send transfer key/);
     expect(calls.map(([n]) => n)).toEqual(["dialStart", "failed"]);
     expect(calls[1]![1]).toMatchObject({ stage: "dial", bytes: 0 });
@@ -358,8 +622,8 @@ describe("a file transfer trace", () => {
       },
     });
     await expect(
-      uploadFileData("h", info, source, {
-        socketFactory: () => sink(),
+      uploadFileData("h", infoOf(1024 * 1024), source, {
+        socketFactory: () => sink(1024 * 1024),
         signal: controller.signal,
         trace,
       }),
@@ -386,13 +650,13 @@ describe("a file transfer trace", () => {
 
   it("never lets the transfer key appear in any info", async () => {
     const { trace, calls } = recording();
-    await uploadFileData("h", info, Readable.from(["data"]), {
-      socketFactory: () => sink(),
+    await uploadFileData("h", infoOf(4), Readable.from(["data"]), {
+      socketFactory: () => sink(4),
       trace,
     });
     const failing = recording();
     const { stream } = recordingStream(new Error("broken pipe"));
-    await uploadFileData("h", info, Readable.from(["data"]), {
+    await uploadFileData("h", infoOf(4), Readable.from(["data"]), {
       socketFactory: () => stream,
       trace: failing.trace,
     }).catch(() => {});
@@ -411,8 +675,8 @@ describe("a file transfer trace", () => {
     const boom = new Error("hook boom");
     const rejection = new Error("hook rejection");
     try {
-      await uploadFileData("h", info, Readable.from([Buffer.alloc(100 * 1024)]), {
-        socketFactory: () => sink(),
+      await uploadFileData("h", infoOf(100 * 1024), Readable.from([Buffer.alloc(100 * 1024)]), {
+        socketFactory: () => sink(100 * 1024),
         trace: {
           dialStart: () => {
             throw boom;
@@ -444,8 +708,8 @@ describe("a file transfer trace", () => {
 
   it("copies the trace when the call starts", async () => {
     const trace: { done?: () => void } = {};
-    const pending = uploadFileData("h", info, Readable.from(["x"]), {
-      socketFactory: () => sink(),
+    const pending = uploadFileData("h", infoOf(1), Readable.from(["x"]), {
+      socketFactory: () => sink(1),
       trace,
     });
     trace.done = () => {

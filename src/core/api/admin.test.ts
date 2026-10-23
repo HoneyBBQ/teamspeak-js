@@ -361,19 +361,18 @@ describe("clientfind", () => {
 });
 
 describe("file transfer negotiation", () => {
-  it("surfaces an ip the server sends, and omits it otherwise", async () => {
-    const upload = { clientftfid: "1", serverftfid: "6", ftkey: "k", port: "30033", seekpos: "0" };
-    const download = { clientftfid: "1", serverftfid: "7", ftkey: "k", port: "30033", size: "5" };
-    const { client } = recording(
-      [{ ...upload, ip: "203.0.113.5" }],
-      [upload],
-      [{ ...download, ip: "203.0.113.5" }],
-      [download],
-    );
+  it("reads the size and seek position of both negotiations", async () => {
+    const upload = { clientftfid: "1", serverftfid: "6", ftkey: "k", port: "30033", seekpos: "40" };
+    const download = { clientftfid: "1", serverftfid: "7", ftkey: "k", port: "30033", size: "100" };
+    const { client } = recording([upload], [download]);
     const cid = asChannelID(1n);
-    expect((await initFileUpload(client, cid, "/a", 5n)).ip).toBe("203.0.113.5");
-    expect(await initFileUpload(client, cid, "/a", 5n)).not.toHaveProperty("ip");
-    expect((await initFileDownload(client, cid, "/a")).ip).toBe("203.0.113.5");
-    expect(await initFileDownload(client, cid, "/a")).not.toHaveProperty("ip");
+    expect(await initFileUpload(client, cid, "/a", 100n, { resume: true })).toMatchObject({
+      size: 100n,
+      seekPosition: 40n,
+    });
+    expect(await initFileDownload(client, cid, "/a", { seekPosition: 40n })).toMatchObject({
+      size: 100n,
+      seekPosition: 40n,
+    });
   });
 });

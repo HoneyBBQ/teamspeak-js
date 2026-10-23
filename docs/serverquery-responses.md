@@ -418,7 +418,13 @@ unique identifier answers 512 on both servers, and `messagelist` stays empty.
   `ftkey`, `port`, `clientftfid`, `serverftfid`, and `seekpos` or `size`. The
   transfer connection itself, `uploadFileData` and `downloadFileData`, worked
   with a key from a `QueryClient` on both servers, and a file written came back
-  byte for byte.
+  byte for byte. The answers carry no `ip` (nor does the voice protocol's), so
+  the transfer port is dialled on the host the connection uses. A download with
+  `seekpos` answers the whole `size` and sends `size - seekpos` bytes. After an
+  upload's last byte the server closes the transfer connection about 200 ms
+  later, and at once when more than the declared size is sent; an interrupted
+  upload leaves the partial file, which `resume=1` continues from the `seekpos`
+  it answers (`overwrite` with it is 2056, a missing file 2054).
 - **Row completion.** The client must not complete a row from the row before.
 - **File commands on TS6.** WebQuery refuses all of them, so a ServerQuery
   client of TS6 needs SSH for any of them.

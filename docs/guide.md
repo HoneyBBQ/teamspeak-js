@@ -231,7 +231,17 @@ const tree = await listFilesRecursive(client, cid, "/", { maxDepth: 4 });
 They work over a voice `Client`, and over a `QueryClient` on raw TCP or SSH when
 passed the file transfer host as `{ host }`; WebQuery refuses every file command.
 `downloadFile` takes `{ dest }` to stream into a `Writable` instead of holding
-the file, and refuses a file over `maxSize` (256 MiB) in memory.
+the file (the stream is not ended, so it may take several downloads), and
+refuses a download over `maxSize` (256 MiB) in memory, stopping the transfer the
+server had negotiated. `uploadFile` resolves once the server has closed the
+transfer connection, which it does when it has the file, and fails a stream that
+gives fewer or more bytes than `size`.
+
+Both resume. `uploadFile(..., { resume: true })` asks the server how much of an
+interrupted upload it kept and sends the rest of `data`, which is still the whole
+file; `downloadFile(..., { seekPosition })` fetches the file from that offset to
+its end. The file transfer port is dialled on the host the connection uses: the
+servers never name another in the negotiation.
 
 To control the two halves, negotiate with the `files` module, then move the bytes over TCP:
 
@@ -242,6 +252,9 @@ import { initFileUpload } from "@honeybbq/teamspeak";
 const info = await initFileUpload(client, cid, "/notes.txt", BigInt(data.length));
 await client.uploadFileData(host, info, Readable.from([data]));
 ```
+
+`info.size` and `info.seekPosition` fix how many bytes move: `data` is the file
+from `seekPosition` on, and must give exactly `size - seekPosition` bytes.
 
 An upload does not replace a file already at the path unless passed
 `{ overwrite: true }`.

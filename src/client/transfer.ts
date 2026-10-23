@@ -8,7 +8,7 @@
 
 import { connect } from "node:net";
 import { pipeline } from "node:stream/promises";
-import { Transform, type Duplex, type Readable, type Writable } from "node:stream";
+import { Transform, Writable, type Duplex, type Readable } from "node:stream";
 import type { FileUploadInfo, FileDownloadInfo } from "@honeybbq/teamspeak";
 import type { FileTransferSocketFactory } from "./types.js";
 import { FileTransferError } from "./errors.js";
@@ -24,6 +24,9 @@ const DEFAULT_IDLE_TIMEOUT_MS = 30_000;
 
 /** How many bytes move between two calls of the `progress` hook, at least. */
 const PROGRESS_STEP_BYTES = 64 * 1024;
+
+/** The file transfer ports a connection can be made to. */
+const MAX_PORT = 65535;
 
 /** Where a failed transfer failed. */
 export type FileTransferStage = "dial" | "transfer";
@@ -48,7 +51,7 @@ export interface FileTransferDialDoneInfo {
 export interface FileTransferProgressInfo {
   /** The bytes moved so far. */
   readonly bytes: number;
-  /** The size the negotiation gave; 0 when it is not known, as for an upload. */
+  /** The bytes the transfer will move, as the negotiation fixed them. */
   readonly total: number;
 }
 
@@ -218,6 +221,9 @@ async function dial(
   idle: IdleGuard,
 ): Promise<Duplex> {
   const { signal, socketFactory } = options;
+  if (!Number.isInteger(port) || port < 1 || port > MAX_PORT) {
+    throw new FileTransferError(`the file transfer port is ${String(port)}, not 1 to ${MAX_PORT}`);
+  }
   // One budget for the connection and the key write: a peer that accepts the
   // connection and never reads would otherwise hold the write forever.
   const timeout = AbortSignal.timeout(DIAL_TIMEOUT_MS);
@@ -293,9 +299,10 @@ function countingStream(t: TransferTrace, total: number, idle: IdleGuard): Trans
 
 /**
  * Passes exactly `expected` bytes. One more byte fails the transfer, and is
- * not passed on; a stream that ends before `expected` fails it too.
+ * not passed on; a stream that ends before `expected` fails it too. `what`
+ * says who fixed the size, for the message.
  */
-function exactSize(expected: number): Transform {
+function exactSize(expected: number, what: "announced" | "declared"): Transform {
   let received = 0;
   return new Transform({
     transform(chunk: Buffer, _encoding, callback) {
@@ -304,7 +311,7 @@ function exactSize(expected: number): Transform {
         this.push(chunk.subarray(0, room));
         received = expected;
         callback(
-          new FileTransferError(`file transfer sent more than the announced ${expected} bytes`),
+          new FileTransferError(`file transfer sent more than the ${what} ${expected} bytes`),
         );
         return;
       }
@@ -316,7 +323,7 @@ function exactSize(expected: number): Transform {
         received === expected
           ? null
           : new FileTransferError(
-              `file transfer ended after ${received} of the announced ${expected} bytes`,
+              `file transfer ended after ${received} of the ${what} ${expected} bytes`,
             ),
       );
     },
@@ -330,11 +337,7 @@ async function transfer(
   key: string,
   total: number,
   options: FileTransferOptions,
-  move: (
-    socket: Duplex,
-    counter: Transform,
-    pipeOptions: { signal?: AbortSignal },
-  ) => Promise<void>,
+  move: (socket: Duplex, counter: Transform, pipeOptions: { signal: AbortSignal }) => Promise<void>,
 ): Promise<void> {
   const t = newTransferTrace(options);
   const idle = newIdleGuard(options);
@@ -356,6 +359,10 @@ async function transfer(
       const failure = idleOr(idle, error);
       reportFailed(t, failure, "transfer");
       throw failure;
+    } finally {
+      // The server ends a transfer it has finished, and a failed one is
+      // abandoned here; either way nothing is left to keep the socket for.
+      socket.destroy();
     }
   } finally {
     idle.stop();
@@ -398,38 +405,139 @@ function connected(socket: Duplex): Promise<void> {
   });
 }
 
-/** Upload `data` over a negotiated transfer. Resolves once every byte is sent. */
-export function uploadFileData(
+/**
+ * How many bytes a negotiated transfer moves: the file's size less the
+ * position it starts from.
+ */
+function bytesToMove(size: bigint, seekPosition: bigint): number {
+  if (seekPosition < 0n || seekPosition > size) {
+    throw new FileTransferError(
+      `the transfer starts at ${seekPosition}, outside a file of ${size} bytes`,
+    );
+  }
+  return Number(size - seekPosition);
+}
+
+/**
+ * A sink that hands what it is given to `dest`, one write at a time, without
+ * ever ending it: the stream is the caller's, and may take more transfers.
+ * `dest`'s errors fail the sink, so the pipeline sees them.
+ */
+function intoStream(dest: Writable): Writable {
+  const sink = new Writable({
+    write(chunk: Buffer, _encoding, callback) {
+      dest.write(chunk, callback);
+    },
+  });
+  const onError = (error: Error): void => {
+    sink.destroy(error);
+  };
+  dest.on("error", onError);
+  // A failed `dest` reports its error a tick after the write that failed, by
+  // which time this sink is closed: keep listening until that has been said.
+  sink.on("close", () => setImmediate(() => dest.off("error", onError)));
+  return sink;
+}
+
+/**
+ * The same for a socket that is not to be ended: an upload is over when the
+ * server says so, not when the last byte has left.
+ */
+function intoSocket(socket: Duplex): Writable {
+  const sink = new Writable({
+    write(chunk: Buffer, _encoding, callback) {
+      socket.write(chunk, callback);
+    },
+  });
+  socket.on("error", (error: Error) => {
+    sink.destroy(error);
+  });
+  return sink;
+}
+
+/** Resolves once the server has closed the transfer connection. */
+function serverClosed(socket: Duplex, signal: AbortSignal): Promise<void> {
+  if (socket.readableEnded || socket.destroyed) return Promise.resolve();
+  const closed = new Promise<void>((resolve, reject) => {
+    const done = (error?: Error): void => {
+      socket.off("end", onEnd);
+      socket.off("close", onEnd);
+      socket.off("error", done);
+      if (error === undefined) resolve();
+      else reject(error);
+    };
+    const onEnd = (): void => done();
+    socket.once("end", onEnd);
+    socket.once("close", onEnd);
+    socket.once("error", done);
+  });
+  // Nothing is sent back, but the end of the stream is only seen by reading.
+  socket.resume();
+  return abortable(closed, signal);
+}
+
+/**
+ * Upload `data` over a negotiated transfer. `data` is the file from
+ * `info.seekPosition` on, and must give exactly the bytes left of
+ * `info.size`: a stream that gives fewer or more fails the transfer.
+ *
+ * Resolves once the server has closed the transfer connection, which it does
+ * when it has the file. Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 6.0.0:
+ * the server closes about 200 ms after the last byte of a 100 000-byte file,
+ * and at once after the declared size when more is sent. A connection that
+ * closes before every byte is written, or that stays open for the idle limit,
+ * fails the transfer.
+ */
+export async function uploadFileData(
   host: string,
   info: FileUploadInfo,
   data: Readable,
   options: FileTransferOptions = {},
 ): Promise<void> {
-  return transfer(
+  const expected = bytesToMove(info.size, info.seekPosition);
+  await transfer(
     host,
     info.port,
     info.fileTransferKey,
-    0,
+    expected,
     options,
-    (socket, counter, pipeOptions) => pipeline(data, counter, socket, pipeOptions),
+    async (socket, counter, pipeOptions) => {
+      await pipeline(
+        data,
+        exactSize(expected, "declared"),
+        counter,
+        intoSocket(socket),
+        pipeOptions,
+      );
+      await serverClosed(socket, pipeOptions.signal);
+    },
   );
 }
 
-/** Download a negotiated transfer into `dest`. Resolves once the file is written. */
-export function downloadFileData(
+/**
+ * Download a negotiated transfer into `dest`. Resolves once the file is
+ * written; `dest` is not ended, so it may take another download.
+ *
+ * A download from `info.seekPosition` brings the bytes from there to the end
+ * of the file: measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 6.0.0, a
+ * `seekpos` of 40 000 on a 100 000-byte file is answered with the whole size
+ * and then 60 000 bytes.
+ */
+export async function downloadFileData(
   host: string,
   info: FileDownloadInfo,
   dest: Writable,
   options: FileTransferOptions = {},
 ): Promise<void> {
-  return transfer(
+  const expected = bytesToMove(info.size, info.seekPosition);
+  await transfer(
     host,
     info.port,
     info.fileTransferKey,
-    Number(info.size),
+    expected,
     options,
     (socket, counter, pipeOptions) =>
-      pipeline(socket, exactSize(Number(info.size)), counter, dest, pipeOptions),
+      pipeline(socket, exactSize(expected, "announced"), counter, intoStream(dest), pipeOptions),
   );
 }
 

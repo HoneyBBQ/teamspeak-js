@@ -264,6 +264,7 @@ describe("file transfer negotiation", () => {
     expect(info).toEqual({
       fileTransferKey: "key",
       port: 30033,
+      size: 3n,
       seekPosition: 0n,
       clientFileTransferID: 1,
       serverFileTransferID: 2,

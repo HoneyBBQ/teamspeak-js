@@ -10,8 +10,8 @@
  * (error 5120), on both servers.
  */
 
-import { Readable, Writable } from "node:stream";
-import { initFileDownload, initFileUpload } from "@honeybbq/teamspeak";
+import { Readable, Transform, Writable, pipeline } from "node:stream";
+import { initFileDownload, initFileUpload, stopFileTransfer } from "@honeybbq/teamspeak";
 import type {
   ChannelID,
   CommandExecutor,
@@ -26,11 +26,10 @@ import type { FileTransferOptions } from "../transfer.js";
 
 /**
  * How {@link uploadFile} negotiates and moves the file: the options of
- * `initFileUpload`, without `resume` (the whole file is sent), and those of
- * `uploadFileData`. `signal` and `timeoutMs` apply to the negotiation, and the
- * signal to the transfer too.
+ * `initFileUpload` and those of `uploadFileData`. `signal` and `timeoutMs`
+ * apply to the negotiation, and the signal to the transfer too.
  */
-export interface UploadFileOptions extends Omit<FileUploadOptions, "resume">, FileTransferOptions {
+export interface UploadFileOptions extends FileUploadOptions, FileTransferOptions {
   /**
    * The host of the file transfer port. A voice client sends to the host it
    * connected to, so it needs none; any other connection must name it. A host
@@ -40,26 +39,30 @@ export interface UploadFileOptions extends Omit<FileUploadOptions, "resume">, Fi
   /**
    * The size in bytes of a stream passed as the data, which the server needs
    * before it takes the file. Required for a `Readable`; for bytes it is their
-   * length, and a different value here is refused.
+   * length, and a different value here is refused. A stream that gives fewer
+   * or more bytes fails the upload.
    */
   readonly size?: bigint | number | undefined;
 }
 
-/** How {@link downloadFile} negotiates and moves the file. */
-export interface DownloadFileOptions
-  extends Omit<FileDownloadOptions, "seekPosition">, FileTransferOptions {
+/**
+ * How {@link downloadFile} negotiates and moves the file. With a
+ * `seekPosition` the bytes are the file's from there to its end.
+ */
+export interface DownloadFileOptions extends FileDownloadOptions, FileTransferOptions {
   /** The host of the file transfer port, as for {@link UploadFileOptions}. */
   readonly host?: string | undefined;
   /**
    * Write the file into this stream instead of returning its bytes. The stream
-   * is not ended, as for `downloadFileData`.
+   * is neither ended nor destroyed, as for `downloadFileData`, so it may take
+   * several downloads; a failed transfer still rejects the call.
    */
   readonly dest?: Writable | undefined;
   /**
-   * The largest file, in bytes, to hold in memory when no `dest` is given;
-   * 268435456 (256 MiB) by default. A larger file is refused with a
-   * {@link FileTransferError} before any byte is read; the transfer the server
-   * negotiated is left unused.
+   * The most bytes to hold in memory when no `dest` is given; 268435456
+   * (256 MiB) by default. A larger download is refused with a
+   * {@link FileTransferError} before any byte is read, and the transfer the
+   * server negotiated is stopped.
    */
   readonly maxSize?: number | undefined;
 }
@@ -147,12 +150,36 @@ function sizeOf(data: Uint8Array | Readable, declared: bigint | number | undefin
   return size;
 }
 
+/** Drops the first `count` bytes of a stream. */
+function skipBytes(count: number): Transform {
+  let left = count;
+  return new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      if (left >= chunk.length) {
+        left -= chunk.length;
+        callback();
+        return;
+      }
+      const rest = chunk.subarray(left);
+      left = 0;
+      callback(null, rest);
+    },
+  });
+}
+
 /**
  * Upload a file into a channel's file area: negotiate the transfer
  * (`initFileUpload`) and send the bytes (`uploadFileData`), in one call.
  *
  * `data` is the bytes, or a `Readable` with `options.size` the number of bytes
- * it will give. An existing file is not replaced unless `overwrite` is set, and
+ * it will give. It resolves once the server has closed the transfer
+ * connection, which it does when it has the file; a stream that gives fewer or
+ * more bytes than `size` fails the call, and the connection is closed.
+ *
+ * With `resume`, `data` is still the whole file: the server says how much it
+ * already holds from an interrupted upload (a file that is not there is
+ * refused with 2054), and only the rest is sent; `overwrite` cannot go with it
+ * (2056). An existing file is not replaced unless `overwrite` is set, and
  * the directory the file goes in must exist (a missing one is refused with
  * 2054, invalid file path): make it with `createDirectory` first. A refusal of
  * the negotiation is thrown as the ServerError it is, before anything is sent;
@@ -175,10 +202,17 @@ export async function uploadFile(
   const info = await initFileUpload(client, channelID, path, size, {
     password: options.password,
     overwrite: options.overwrite,
+    resume: options.resume,
     signal: options.signal,
     timeoutMs: options.timeoutMs,
   });
-  const source = data instanceof Uint8Array ? Readable.from([data]) : data;
+  // What the server holds is not sent again; a position past the end is for
+  // the transfer to refuse.
+  const skip = Number(info.seekPosition);
+  let source: Readable;
+  if (data instanceof Uint8Array) source = Readable.from([data.subarray(skip)]);
+  else if (skip === 0) source = data;
+  else source = pipeline(data, skipBytes(skip), () => {});
   await route.upload(info, source, transferOptions(options));
 }
 
@@ -188,7 +222,11 @@ export async function uploadFile(
  * call. With `options.dest` the bytes go into that stream instead and nothing
  * is held, which is the way to fetch a large file.
  *
- * A file over `maxSize` (256 MiB unless set) is refused when no `dest` is given.
+ * With `seekPosition` the bytes are the file's from there to its end, which is
+ * how to resume a partial download: append them to what was already fetched.
+ *
+ * More than `maxSize` bytes (256 MiB unless set) is refused when no `dest` is
+ * given, and the transfer the server negotiated is stopped.
  * A file that is not there is the ServerError of the negotiation: 2051 on TS3
  * 3.13.8 and TS6 beta13.1. A path that names a directory is not refused by the
  * server: it announces a size and sends nothing, so the call rejects with a
@@ -223,6 +261,7 @@ export async function downloadFile(
   const route = routeFor(client, options);
   const info = await initFileDownload(client, channelID, path, {
     password: options.password,
+    seekPosition: options.seekPosition,
     signal: options.signal,
     timeoutMs: options.timeoutMs,
   });
@@ -230,9 +269,14 @@ export async function downloadFile(
     await route.download(info, options.dest, transferOptions(options));
     return;
   }
-  if (info.size > BigInt(maxSize)) {
+  const wanted = info.size - info.seekPosition;
+  if (wanted > BigInt(maxSize)) {
+    // The server holds the negotiated transfer, and lists it among the active
+    // ones, until it is used or stopped. It is this connection's own, which is
+    // the only kind `ftstop` is safe to send.
+    await stopFileTransfer(client, info.serverFileTransferID).catch(() => {});
     throw new FileTransferError(
-      `the file is ${info.size} bytes, over the ${maxSize} bytes maxSize allows in memory`,
+      `the download is ${wanted} bytes, over the ${maxSize} bytes maxSize allows in memory`,
     );
   }
   const chunks: Buffer[] = [];
