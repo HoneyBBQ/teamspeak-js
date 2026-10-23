@@ -27,6 +27,7 @@ export {
   StreamJoinDeniedError,
   StreamPayloadTooLargeError,
   StreamsUnsupportedError,
+  StreamTransportUnsupportedError,
 } from "./errors.js";
 export type {
   IceCandidate,
@@ -52,6 +53,7 @@ export type {
   StreamsOptions,
   StreamSource,
   StreamStoppedEvent,
+  StreamTransport,
   StreamView,
   StreamWarning,
   StreamWarningCode,

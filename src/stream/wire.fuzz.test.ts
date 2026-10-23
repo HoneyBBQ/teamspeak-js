@@ -77,6 +77,10 @@ describe("streamInfoFrom", () => {
         if (info !== undefined) {
           expect(info.id).not.toBe("");
           expect(Number.isInteger(info.clientId)).toBe(true);
+          const transport = info.transport;
+          if (transport !== undefined && transport !== "p2p") {
+            expect(Number.isInteger(transport)).toBe(true);
+          }
         }
       }),
       { numRuns: 500 },

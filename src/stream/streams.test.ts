@@ -13,6 +13,7 @@ import {
   StreamJoinDeniedError,
   StreamPayloadTooLargeError,
   StreamsUnsupportedError,
+  StreamTransportUnsupportedError,
 } from "./errors.js";
 import { Streams } from "./streams.js";
 import type {
@@ -230,6 +231,13 @@ describe("known streams", () => {
     expect(updated).toHaveLength(1);
     client.notify("notifystreaminfo", { ...started(), accessibility: "1", viewer: "3" });
     expect(updated).toHaveLength(1);
+    client.notify("notifystreaminfo", {
+      ...started({ mode: "2" }),
+      accessibility: "1",
+      viewer: "3",
+    });
+    expect(updated.at(-1)?.transport).toBe(2);
+    expect(updated).toHaveLength(2);
   });
 
   // A client may run several streams, and stopping one leaves the others.
@@ -2096,6 +2104,29 @@ describe("review fixes", () => {
     expect(error).toBeInstanceOf(StreamEndedError);
     expect((error as StreamEndedError).streamId).toBe("nope");
     expect(client.sent).toEqual([]);
+  });
+
+  it("refuses to watch a stream that is not peer to peer, before sending anything", async () => {
+    const { client, streams } = setup();
+    client.notify("notifystreamstarted", started({ mode: "2" }));
+    expect(streams.get(STREAM)?.transport).toBe(2);
+    const error = await streams.watch(STREAM).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(StreamTransportUnsupportedError);
+    expect((error as StreamTransportUnsupportedError).streamId).toBe(STREAM);
+    expect((error as StreamTransportUnsupportedError).transport).toBe(2);
+    // A StreamInfo the caller holds is refused the same way.
+    const held = { id: "u-9", clientId: asClientID(OTHER), name: "", audio: false, transport: 7 };
+    await expect(streams.watch(held)).rejects.toBeInstanceOf(StreamTransportUnsupportedError);
+    expect(client.sent).toEqual([]);
+  });
+
+  it("watches a stream whose mode the server has not said", async () => {
+    const { client, streams } = setup();
+    const held = { id: "u-9", clientId: asClientID(OTHER), name: "", audio: false };
+    void streams.watch(held).catch(() => {});
+    await settle();
+    expect(client.commands("joinstreamrequest")).toHaveLength(1);
+    streams.dispose();
   });
 
   it("says why a published stream ended, so a reason of 0 is not ambiguous", async () => {
