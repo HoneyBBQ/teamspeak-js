@@ -22,6 +22,7 @@ import type {
 } from "@honeybbq/teamspeak";
 import { FileTransferError } from "../errors.js";
 import { downloadFileData, uploadFileData } from "../transfer.js";
+import { verifyStored, withDialCleanup } from "./upload-checks.js";
 import type { FileTransferOptions } from "../transfer.js";
 
 /**
@@ -173,8 +174,15 @@ function skipBytes(count: number): Transform {
  *
  * `data` is the bytes, or a `Readable` with `options.size` the number of bytes
  * it will give. It resolves once the server has closed the transfer
- * connection, which it does when it has the file; a stream that gives fewer or
- * more bytes than `size` fails the call, and the connection is closed.
+ * connection and, by `ftgetfileinfo` (one more command), holds a file of
+ * exactly that size: the server does not say whether it stored a file, so a
+ * close alone could be a transfer someone stopped. A size that differs, or a
+ * file that is not there, fails the call with a {@link FileTransferError}; a
+ * client with no browse power cannot ask (2568) and resolves on the close. A
+ * stream that gives fewer or more bytes than `size` fails the call, and the
+ * connection is closed. When the connection to the file transfer port is
+ * refused or times out, the negotiated transfer is stopped on the server (else
+ * it lingers in `ftlist` for about 10 seconds), as it is for `downloadFile`.
  *
  * With `resume`, `data` is still the whole file: the server says how much it
  * already holds from an interrupted upload (a file that is not there is
@@ -213,7 +221,10 @@ export async function uploadFile(
   if (data instanceof Uint8Array) source = Readable.from([data.subarray(skip)]);
   else if (skip === 0) source = data;
   else source = pipeline(data, skipBytes(skip), () => {});
-  await route.upload(info, source, transferOptions(options));
+  await withDialCleanup(client, info.serverFileTransferID, () =>
+    route.upload(info, source, transferOptions(options)),
+  );
+  await verifyStored(client, channelID, path, size, options);
 }
 
 /**
@@ -266,7 +277,10 @@ export async function downloadFile(
     timeoutMs: options.timeoutMs,
   });
   if (options.dest !== undefined) {
-    await route.download(info, options.dest, transferOptions(options));
+    const dest = options.dest;
+    await withDialCleanup(client, info.serverFileTransferID, () =>
+      route.download(info, dest, transferOptions(options)),
+    );
     return;
   }
   const wanted = info.size - info.seekPosition;
@@ -286,7 +300,9 @@ export async function downloadFile(
       done();
     },
   });
-  await route.download(info, sink, transferOptions(options));
+  await withDialCleanup(client, info.serverFileTransferID, () =>
+    route.download(info, sink, transferOptions(options)),
+  );
   return Buffer.concat(chunks);
 }
 

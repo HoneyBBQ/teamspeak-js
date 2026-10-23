@@ -28,6 +28,22 @@ const PROGRESS_STEP_BYTES = 64 * 1024;
 /** The file transfer ports a connection can be made to. */
 const MAX_PORT = 65535;
 
+/**
+ * The errors of dials that failed before the connection opened. Nothing has
+ * reached the server then: not the key, and no byte of the file.
+ */
+const failedBeforeConnect = new WeakSet();
+
+/**
+ * Whether `error` is a dial that never got a connection: refused, unreachable,
+ * or timed out while connecting. Not one the caller's signal or the idle limit
+ * ended, nor one after the connection opened, where the key may have been
+ * written and the server may hold or have dropped the transfer.
+ */
+export function failedToConnect(error: unknown): boolean {
+  return typeof error === "object" && error !== null && failedBeforeConnect.has(error);
+}
+
 /** Where a failed transfer failed. */
 export type FileTransferStage = "dial" | "transfer";
 
@@ -239,8 +255,10 @@ async function dial(
   // report: a stream's unhandled `error` event takes the process down.
   const swallow = (): void => {};
   socket.on("error", swallow);
+  let open = false;
   try {
     await abortable(connected(socket), dialSignal);
+    open = true;
     idle.touch();
     await abortable(
       new Promise<void>((resolve, reject) => {
@@ -260,7 +278,11 @@ async function dial(
   } catch (error) {
     socket.destroy();
     if (timeout.aborted && error === timeout.reason) {
-      throw new FileTransferError("file transfer connection timed out", { cause: error });
+      const timedOut = new FileTransferError("file transfer connection timed out", {
+        cause: error,
+      });
+      if (!open) failedBeforeConnect.add(timedOut);
+      throw timedOut;
     }
     throw error;
   } finally {
@@ -393,12 +415,13 @@ function connected(socket: Duplex): Promise<void> {
       else reject(error);
     };
     const onConnect = (): void => done();
-    const onError = (error: Error): void =>
-      done(
-        new FileTransferError(`file transfer connection failed: ${error.message}`, {
-          cause: error,
-        }),
-      );
+    const onError = (error: Error): void => {
+      const failure = new FileTransferError(`file transfer connection failed: ${error.message}`, {
+        cause: error,
+      });
+      failedBeforeConnect.add(failure);
+      done(failure);
+    };
     socket.once("connect", onConnect);
     socket.once("ready", onConnect);
     socket.once("error", onError);
@@ -444,13 +467,19 @@ function intoStream(dest: Writable): Writable {
  * server says so, not when the last byte has left.
  */
 function intoSocket(socket: Duplex): Writable {
+  // A write after the server closed the connection fails with the socket's own
+  // error (EPIPE, or "ended by the other party"): the transfer's failure.
+  const failure = (error: Error): FileTransferError =>
+    new FileTransferError(`file transfer connection failed: ${error.message}`, {
+      cause: error,
+    });
   const sink = new Writable({
     write(chunk: Buffer, _encoding, callback) {
-      socket.write(chunk, callback);
+      socket.write(chunk, (error) => callback(error ? failure(error) : null));
     },
   });
   socket.on("error", (error: Error) => {
-    sink.destroy(error);
+    sink.destroy(failure(error));
   });
   return sink;
 }
@@ -487,6 +516,13 @@ function serverClosed(socket: Duplex, signal: AbortSignal): Promise<void> {
  * and at once after the declared size when more is sent. A connection that
  * closes before every byte is written, or that stays open for the idle limit,
  * fails the transfer.
+ *
+ * A close after the last byte is not proof that the file is stored: the server
+ * sends nothing on the transfer connection, and over the voice protocol its
+ * `notifystatusfiletransfer` comes only for a failure (2066 canceled, 2063
+ * lost connection, 2052 more than declared), after the close, never for
+ * success; over ServerQuery nothing comes. `uploadFile` therefore asks the
+ * server for the file's size with `ftgetfileinfo` before it resolves.
  */
 export async function uploadFileData(
   host: string,
