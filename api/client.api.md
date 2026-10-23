@@ -167,6 +167,13 @@ export interface ConnectDoneInfo extends AttemptInfo {
 }
 
 // @public
+export class ConnectionStalledError extends TeamspeakError {
+    constructor();
+    // (undocumented)
+    static readonly kind: string;
+}
+
+// @public
 export class ConnectionTimeoutError extends TeamspeakError {
     constructor();
     // (undocumented)

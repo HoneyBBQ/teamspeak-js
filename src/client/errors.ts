@@ -196,6 +196,31 @@ export class ConnectionTimeoutError extends TeamspeakError {
 }
 
 /**
+ * The server's command stream broke: a command packet stayed missing for
+ * seconds while later ones arrived, although the server sends one again until
+ * it is acknowledged. The connection is ended rather than carry on without the
+ * missing command, which would drop an answer or a notification and could
+ * leave the view out of step with the server's; a reconnect starts from a
+ * consistent state.
+ */
+export class ConnectionStalledError extends TeamspeakError {
+  /** {@inheritDoc @honeybbq/teamspeak!TeamspeakError.kind} */
+  static override readonly kind: string = "ConnectionStalledError";
+  static {
+    Object.defineProperty(this.prototype, "name", {
+      value: "ConnectionStalledError",
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
+
+  constructor() {
+    super("connection stalled: a command from the server never arrived");
+  }
+}
+
+/**
  * The server ended this client's session: a kick, a ban, or the server
  * stopping. The default reconnect policy retries a server that stopped, but
  * not a kick or a ban.

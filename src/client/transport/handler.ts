@@ -14,7 +14,7 @@ import {
   buildC2SHeader,
   parseS2CHeader,
 } from "./packet.js";
-import { ConnectionTimeoutError } from "../errors.js";
+import { ConnectionStalledError, ConnectionTimeoutError } from "../errors.js";
 import { abortable, abortReason } from "../abort.js";
 import { NotConnectedError, TeamspeakError } from "@honeybbq/teamspeak";
 import { GenerationWindow } from "./generation-window.js";
@@ -40,6 +40,12 @@ const WHISPER_HEADER_SIZE = 5;
 const GROUP_WHISPER_HEADER_SIZE = 13;
 const RESEND_BASE_INTERVAL_MS = 500;
 const RESEND_LOOP_INTERVAL_MS = 100;
+/**
+ * How long a command packet may stay missing while later ones wait for it. The
+ * server sends a command again until it is acknowledged, so a hole that stays
+ * this long is not going to fill.
+ */
+const COMMAND_HOLE_TIMEOUT_MS = 5_000;
 
 /**
  * The largest command reassembled from fragments. The receive window already
@@ -88,6 +94,12 @@ interface ResendPacket {
   lastSend: number;
   retryCount: number;
   nextInterval: number;
+  /**
+   * Whether the packet went out under the dummy key. Fixed at the first send:
+   * clientek is sent under it and crypto init completes right after, so a
+   * resend that chose again would use a key the server cannot decrypt with.
+   */
+  dummy: boolean;
 }
 
 export class PacketHandler {
@@ -542,6 +554,7 @@ export class PacketHandler {
       lastSend: performance.now(),
       retryCount: 0,
       nextInterval: RESEND_BASE_INTERVAL_MS,
+      dummy,
     };
     this.#trackResend(pType, p, rp);
   }
@@ -582,7 +595,6 @@ export class PacketHandler {
     const ciphertext = raw.slice(TAG_SIZE + 3);
 
     const parsed = parseS2CHeader(header);
-    this.#traffic.recordReceived(parsed.typeFlagged & 0x0f, raw.length, performance.now());
     // Init1 belongs to the start of the handshake; once crypto init has
     // completed, another one can only restart a session that is already set up.
     const parsedType: PacketType = parsed.typeFlagged & 0x0f;
@@ -604,6 +616,7 @@ export class PacketHandler {
     // Only a packet that decrypted shows the server is there: anyone can send
     // datagrams that do not, and they must not keep a dead session alive.
     this.#lastMessageReceived = performance.now();
+    this.#traffic.recordReceived(pType, raw.length, p.receivedAt);
 
     if (pType === PacketType.Pong && p.data.length >= 2) {
       const acked = new DataView(p.data.buffer, p.data.byteOffset).getUint16(0, false);
@@ -747,9 +760,12 @@ export class PacketHandler {
     }
     const queue = pType === PacketType.Command ? this.#commandQueue : this.#commandLowQueue;
     const held = queue.get(p.id)?.data.length ?? 0;
-    // The packet the queue waits for is always taken: it is what drains it.
-    const next = pType === PacketType.Command ? this.#nextCommandID : this.#nextCommandLowID;
-    if (p.id !== next && this.#queuedBytes - held + p.data.length > MAX_QUEUED_BYTES) {
+    // The packet the queue needs next, the first id from the next expected one
+    // that it does not hold, is always taken: it is what drains it, and what
+    // lets a command larger than the queue reach its last fragment.
+    let needed = pType === PacketType.Command ? this.#nextCommandID : this.#nextCommandLowID;
+    for (let i = 0; i < queue.size && queue.has(needed); i++) needed = (needed + 1) & 0xffff;
+    if (p.id !== needed && this.#queuedBytes - held + p.data.length > MAX_QUEUED_BYTES) {
       // Not acknowledged: the server sends it again.
       this.#logger.debug("dropped a command packet: the receive queues are full", { id: p.id });
       return false;
@@ -782,12 +798,6 @@ export class PacketHandler {
     const win = isCommand ? this.#recvWindowCommand : this.#recvWindowCommandLow;
 
     this.#hold(queue, p);
-
-    if (isCommand) {
-      this.#fastForwardMissingPackets(queue, win, true);
-    } else {
-      this.#fastForwardMissingPackets(queue, win, false);
-    }
 
     while (true) {
       const current = isCommand ? this.#nextCommandID : this.#nextCommandLowID;
@@ -827,18 +837,17 @@ export class PacketHandler {
   #nextCommandID = 0;
   #nextCommandLowID = 0;
 
-  #fastForwardMissingPackets(
-    queue: Map<number, Packet>,
-    win: GenerationWindow,
-    isCommand: boolean,
-  ): void {
-    let nextID = isCommand ? this.#nextCommandID : this.#nextCommandLowID;
-    while (!queue.has(nextID) && hasOldNewerPacket(queue, nextID)) {
-      nextID = (nextID + 1) & 0xffff;
-      win.advance(1);
+  /**
+   * Whether a command packet is missing from `queue` while a later one has
+   * waited for it for COMMAND_HOLE_TIMEOUT_MS.
+   */
+  #hasStalledHole(queue: Map<number, Packet>, nextID: number, now: number): boolean {
+    if (queue.has(nextID)) return false;
+    for (const [id, pkg] of queue) {
+      const diff = (id - nextID + 0x10000) & 0xffff;
+      if (diff < 0x8000 && now - pkg.receivedAt > COMMAND_HOLE_TIMEOUT_MS) return true;
     }
-    if (isCommand) this.#nextCommandID = nextID;
-    else this.#nextCommandLowID = nextID;
+    return false;
   }
 
   #tryReassemble(
@@ -859,22 +868,14 @@ export class PacketHandler {
     let startSeen = false;
 
     // Ends at the fragment that closes the command, or returns while one is
-    // still missing.
+    // still missing. The size is checked once the whole command is there, so an
+    // oversize one is released to its end marker and never leaves the stream
+    // part-way through a command.
     while (true) {
       const frag = queue.get(currID);
       if (!frag) return null;
       fragments.push(frag);
       totalSize += frag.data.length;
-      if (totalSize > MAX_REASSEMBLED_SIZE) {
-        // Dropped whole, so the window moves past it rather than waiting on
-        // the rest of a command that will never be accepted.
-        for (let i = 0; i < fragments.length; i++) {
-          this.#release(queue, nextID);
-          win.advance(1);
-          nextID = (nextID + 1) & 0xffff;
-        }
-        return [null, nextID];
-      }
 
       const fragmented = (packetFlags(frag) & PacketFlags.Fragmented) !== 0;
       if (!startSeen) {
@@ -884,6 +885,16 @@ export class PacketHandler {
         break;
       }
       currID = (currID + 1) & 0xffff;
+    }
+
+    if (totalSize > MAX_REASSEMBLED_SIZE) {
+      // Dropped whole, so the window moves past it.
+      for (let i = 0; i < fragments.length; i++) {
+        this.#release(queue, nextID);
+        win.advance(1);
+        nextID = (nextID + 1) & 0xffff;
+      }
+      return [null, nextID];
     }
 
     const combined = new Uint8Array(totalSize);
@@ -971,6 +982,15 @@ export class PacketHandler {
       return;
     }
 
+    if (
+      this.#hasStalledHole(this.#commandQueue, this.#nextCommandID, now) ||
+      this.#hasStalledHole(this.#commandLowQueue, this.#nextCommandLowID, now)
+    ) {
+      this.#logger.warn("a command from the server never arrived");
+      this.#triggerClose(new ConnectionStalledError());
+      return;
+    }
+
     if (this.#initPacketCheck) {
       this.#doResend(this.#initPacketCheck, now);
     }
@@ -993,7 +1013,6 @@ export class PacketHandler {
     this.#resends++;
     rp.nextInterval = Math.min(rp.nextInterval * 2, MAX_RETRY_INTERVAL_MS);
 
-    const dummy = !this.#crypt.cryptoInitComplete;
     const unencrypted = (packetFlags(rp.packet) & PacketFlags.Unencrypted) !== 0;
     const header = buildC2SHeader(rp.packet);
     const pType = packetType(rp.packet);
@@ -1004,7 +1023,7 @@ export class PacketHandler {
       rp.packet.generationID,
       header,
       rp.packet.data,
-      dummy,
+      rp.dummy,
       unencrypted,
     );
 
@@ -1038,15 +1057,4 @@ function applyProtocolFlags(pType: PacketType, flags: number): number {
     return flags | PacketFlags.NewProtocol;
   }
   return flags;
-}
-
-function hasOldNewerPacket(queue: Map<number, Packet>, nextID: number): boolean {
-  const now = performance.now();
-  for (const [id, pkg] of queue) {
-    const diff = (id - nextID + 0x10000) & 0xffff;
-    if (diff < 0x8000 && now - pkg.receivedAt > 5_000) {
-      return true;
-    }
-  }
-  return false;
 }

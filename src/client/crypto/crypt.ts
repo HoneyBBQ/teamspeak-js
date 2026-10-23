@@ -140,18 +140,26 @@ export class Crypt {
     this.setSharedSecret(alphaBytes, betaBytes, sharedSecret);
   }
 
+  /**
+   * Build the IV from `alpha` and `beta` XORed into `sharedKey` and complete
+   * crypto init. The values come from the server, so a length that does not fit
+   * is refused rather than padded: alpha must be 10 bytes, beta at least one,
+   * and the key as long as the IV, 10 bytes plus beta.
+   */
   setSharedSecret(alpha: Uint8Array, beta: Uint8Array, sharedKey: Uint8Array): void {
+    if (
+      alpha.length !== IV_ALPHA_SIZE ||
+      beta.length === 0 ||
+      IV_ALPHA_SIZE + beta.length > sharedKey.length
+    ) {
+      throw new HandshakeError("alpha, beta and the shared secret do not fit together");
+    }
     this.#ivStruct = new Uint8Array(IV_ALPHA_SIZE + beta.length);
     for (let i = 0; i < IV_ALPHA_SIZE; i++) {
-      const a = sharedKey[i];
-      const b = alpha[i];
-      this.#ivStruct[i] = ((a !== undefined ? a : 0) ^ (b !== undefined ? b : 0)) & 0xff;
+      this.#ivStruct[i] = (sharedKey[i]! ^ alpha[i]!) & 0xff;
     }
     for (let i = 0; i < beta.length; i++) {
-      const a = sharedKey[IV_ALPHA_SIZE + i];
-      const b = beta[i];
-      this.#ivStruct[IV_ALPHA_SIZE + i] =
-        ((a !== undefined ? a : 0) ^ (b !== undefined ? b : 0)) & 0xff;
+      this.#ivStruct[IV_ALPHA_SIZE + i] = (sharedKey[IV_ALPHA_SIZE + i]! ^ beta[i]!) & 0xff;
     }
 
     // Keys derive from the IV: any cached before it changed belong to another

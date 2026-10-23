@@ -99,7 +99,7 @@ function nextId(socket: FakeSocket): number {
 /** Deliver the server's clientinitiv, which derives the shared secret. */
 function deliverInitIV(client: Client, socket: FakeSocket, omega = identity.publicKey()): void {
   const crypt = clientInternals(client).crypt;
-  const text = `clientinitiv alpha=${randomBytes(10).toString("base64")} beta=${randomBytes(54).toString("base64")} omega=${omega}`;
+  const text = `clientinitiv alpha=${randomBytes(10).toString("base64")} beta=${randomBytes(10).toString("base64")} omega=${omega}`;
   socket.deliver(dummyPacket(crypt, 2, 0x20, nextId(socket), line(text)));
 }
 

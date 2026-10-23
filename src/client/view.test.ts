@@ -94,7 +94,7 @@ async function open(
   connecting.catch(() => {});
   await until(() => sockets[index] !== undefined && clientInternals(client).handler.isOpen);
   const socket = sockets[index]!;
-  const text = `clientinitiv alpha=${randomBytes(10).toString("base64")} beta=${randomBytes(54).toString("base64")} omega=${identity.publicKey()}`;
+  const text = `clientinitiv alpha=${randomBytes(10).toString("base64")} beta=${randomBytes(10).toString("base64")} omega=${identity.publicKey()}`;
   socket.deliver(dummyPacket(clientInternals(client).crypt, 2, 0x20, nextId(socket), line(text)));
   return { connecting };
 }

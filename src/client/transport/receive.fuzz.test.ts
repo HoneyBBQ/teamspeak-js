@@ -508,7 +508,7 @@ describe("garbage before the handshake", () => {
     }
     const alpha = randomBytes(10);
     const beta = randomBytes(54);
-    const secret = randomBytes(20);
+    const secret = randomBytes(64);
     const crypt = clientInternals(client).crypt;
     crypt.setSharedSecret(alpha, beta, secret);
 
@@ -530,7 +530,7 @@ describe("garbage before the handshake", () => {
 /** A client past the handshake, on a session key the test knows. */
 async function connectedClient(): Promise<{ client: Client; socket: FakeSocket }> {
   const { client, socket } = await startedClient();
-  clientInternals(client).crypt.setSharedSecret(randomBytes(10), randomBytes(54), randomBytes(20));
+  clientInternals(client).crypt.setSharedSecret(randomBytes(10), randomBytes(54), randomBytes(64));
   socket.deliver(
     sessionPacket(
       clientInternals(client).crypt,

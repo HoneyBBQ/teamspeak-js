@@ -50,7 +50,7 @@ function reconnectingClient(
 /** Complete the handshake on `socket`, with `extra` lines in the same datagram. */
 function finishHandshake(client: Client, socket: FakeSocket, extra = ""): void {
   const crypt = clientInternals(client).crypt;
-  crypt.setSharedSecret(randomBytes(10), randomBytes(54), randomBytes(20));
+  crypt.setSharedSecret(randomBytes(10), randomBytes(54), randomBytes(64));
   const lines = `initserver aclid=7 virtualserver_version=3.13.7${extra}`;
   socket.deliver(sessionPacket(crypt, 2, 0x20, 0, new TextEncoder().encode(lines)));
 }
