@@ -27,6 +27,7 @@
     "dist/stream",
     "dist/versions",
     "src",
+    "THIRD_PARTY_NOTICES.md",
     "!src/**/*.test.ts",
     "!src/**/*.typetest.ts",
     "!src/client/testing",
