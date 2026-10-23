@@ -27,8 +27,29 @@ describe("icon ids", () => {
     expect(parseIconID("4294967295")).toBe(4294967295);
   });
 
+  // The voice protocol's notifychanneledited sends a negative id sign-extended
+  // to 64 bits: the icon -1285107717 (3009859579) arrives as below.
+  it("reads a negative id sign-extended to 64 bits as the same unsigned value", () => {
+    expect(parseIconID("18446744072424443899")).toBe(3009859579);
+    expect(parseIconID("18446744073709551615")).toBe(4294967295);
+    expect(parseIconID("18446744071562067968")).toBe(2147483648);
+  });
+
   it("reads 0, garbage and out-of-range values as no icon", () => {
-    for (const raw of [undefined, "", "0", "x", "1.5", "4294967296", "-2147483649"]) {
+    for (const raw of [
+      undefined,
+      "",
+      "0",
+      "x",
+      "1.5",
+      "4294967296",
+      "-2147483649",
+      // Above 32 bits but not a sign-extended negative 32-bit number.
+      "18446744071562067967",
+      "9223372036854775808",
+      "18446744073709551616",
+      "-18446744072424443899",
+    ]) {
       expect(parseIconID(raw)).toBeUndefined();
     }
   });

@@ -18,6 +18,7 @@ import {
   listServerGroups,
   GroupType,
   asChannelID,
+  asIconID,
   avatarFileName,
   deleteFile,
   iconIDOf,
@@ -177,6 +178,31 @@ describe.skipIf(!ADDR || !HAS_ADMIN)("Avatars and icons — live", () => {
       await deleteChannel(admin, cid, { force: true }).catch(() => {});
       await deleteFile(owner, asChannelID(0n), `/icons/icon_${id}`).catch(() => {});
       await owner.exec(`ftdeletefile cid=0 cpw= name=\\/icon_${id}`).catch(() => {});
+    }
+  }, 40_000);
+
+  // The server sends one icon id in three forms: unsigned in channelinfo,
+  // signed in servergrouplist, and sign-extended to 64 bits in the voice
+  // protocol's notifychanneledited. An id above 2^31 shows them apart.
+  it("reads an icon above 2^31 the same through an edit, the welcome and a query", async () => {
+    const id = asIconID(3009859579);
+    const cid = await createChannel(admin, { name: `ts-js-iconf-${RUN}` });
+    let late: Client | undefined;
+    try {
+      const edited = nextEvent(
+        bystander,
+        "channelEdited",
+        (e) => e.channelID === cid && "iconID" in e.changes,
+      );
+      await setChannelIcon(admin, cid, id);
+      expect((await edited).changes.iconID).toBe(id);
+      expect(bystander.view.channel(cid)?.iconID).toBe(id);
+      expect((await getChannelInfo(admin, cid)).iconID).toBe(id);
+      late = await connect(`ts-js-avl-${RUN}`);
+      expect(late.view.channel(cid)?.iconID).toBe(id);
+    } finally {
+      await late?.disconnect().catch(() => {});
+      await deleteChannel(admin, cid, { force: true }).catch(() => {});
     }
   }, 40_000);
 
