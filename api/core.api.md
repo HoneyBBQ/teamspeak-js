@@ -1446,8 +1446,8 @@ export { escape_2 as escape }
 export interface FileDownloadInfo {
     readonly clientFileTransferID: ClientFileTransferID;
     readonly fileTransferKey: string;
-    readonly ip?: string | undefined;
     readonly port: number;
+    readonly seekPosition: bigint;
     readonly serverFileTransferID: ServerFileTransferID;
     readonly size: bigint;
 }
@@ -1497,10 +1497,10 @@ export interface FileTreeOptions extends FileOptions {
 export interface FileUploadInfo {
     readonly clientFileTransferID: ClientFileTransferID;
     readonly fileTransferKey: string;
-    readonly ip?: string | undefined;
     readonly port: number;
     readonly seekPosition: bigint;
     readonly serverFileTransferID: ServerFileTransferID;
+    readonly size: bigint;
 }
 
 // @public

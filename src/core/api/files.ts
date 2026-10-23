@@ -37,10 +37,6 @@ import type {
 import { asClientFileTransferID, asClientID, asServerFileTransferID } from "../command/ids.js";
 import type { FileDownloadInfo, FileUploadInfo } from "../types.js";
 
-/** The `ip` of a negotiation answer, when the server sent one. */
-const ipField = (row: Record<string, string>): { readonly ip?: string } =>
-  str(row, "ip") === "" ? {} : { ip: str(row, "ip") };
-
 const asPath = (path: string): string => (path.startsWith("/") ? path : `/${path}`);
 
 /** One entry of a directory listing, or one file's details. */
@@ -395,7 +391,14 @@ export interface FileUploadOptions extends CommandOptions {
    * destroys a file unless asked to (`overwrite`, always sent).
    */
   readonly overwrite?: boolean | undefined;
-  /** Continue a partial upload; false by default (`resume`). */
+  /**
+   * Continue a partial upload; false by default (`resume`). The server keeps
+   * what an interrupted upload had received, and `seekPosition` of the answer
+   * is how much that is: send the file from there. Measured on TeamSpeak 3
+   * 3.13.8 and TeamSpeak 6 6.0.0: resuming a file that is not there is refused
+   * with 2054 (invalid file path), and `overwrite` together with `resume` with
+   * 2056 (overwrite excludes resume).
+   */
   readonly resume?: boolean | undefined;
 }
 
@@ -436,10 +439,10 @@ export async function initFileUpload(
   return {
     fileTransferKey: str(row, "ftkey"),
     port: num(row, "port"),
+    size,
     seekPosition: big(row, "seekpos"),
     clientFileTransferID: asClientFileTransferID(uint(row, "clientftfid", U16)),
     serverFileTransferID: asServerFileTransferID(uint(row, "serverftfid", U16)),
-    ...ipField(row),
   };
 }
 
@@ -447,7 +450,12 @@ export async function initFileUpload(
 export interface FileDownloadOptions extends CommandOptions {
   /** The channel's password, in cleartext; "" by default (`cpw`). */
   readonly password?: string | undefined;
-  /** The byte offset to start from, to resume; 0 by default (`seekpos`). */
+  /**
+   * The byte offset to start from, to resume; 0 by default (`seekpos`). The
+   * answer's `size` stays the whole file's, and the bytes sent are those from
+   * here to the end; an offset past the end is refused with 2057 (invalid file
+   * size), measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 6.0.0.
+   */
   readonly seekPosition?: bigint | undefined;
 }
 
@@ -463,6 +471,7 @@ export async function initFileDownload(
   path: string,
   options: FileDownloadOptions = {},
 ): Promise<FileDownloadInfo> {
+  const seekPosition = options.seekPosition ?? 0n;
   const rows = await query(
     client,
     "ftinitdownload",
@@ -471,7 +480,7 @@ export async function initFileDownload(
       ["name", asPath(path)],
       ["cid", cid],
       ["cpw", options.password ?? ""],
-      ["seekpos", options.seekPosition ?? 0n],
+      ["seekpos", seekPosition],
       ["proto", 0],
     ],
     options,
@@ -482,8 +491,8 @@ export async function initFileDownload(
     fileTransferKey: str(row, "ftkey"),
     port: num(row, "port"),
     size: big(row, "size"),
+    seekPosition,
     clientFileTransferID: asClientFileTransferID(uint(row, "clientftfid", U16)),
     serverFileTransferID: asServerFileTransferID(uint(row, "serverftfid", U16)),
-    ...ipField(row),
   };
 }

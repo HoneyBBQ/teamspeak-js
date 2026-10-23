@@ -77,40 +77,39 @@ export const consoleLogger: Logger = Object.freeze({
 export interface FileUploadInfo {
   /** The key that identifies the transfer on the file transfer connection. */
   readonly fileTransferKey: string;
-  /** Where to resume from, in bytes; 0 for a fresh upload. */
+  /** The file's whole size in bytes, as the negotiation declared it. */
+  readonly size: bigint;
+  /**
+   * Where the upload continues from, in bytes: 0 for a fresh upload, and with
+   * `resume` the size of the partial file the server holds. The data to send
+   * is the file from here on.
+   */
   readonly seekPosition: bigint;
   /** The client's id for the transfer. */
   readonly clientFileTransferID: ClientFileTransferID;
   /** The server's id for the transfer. */
   readonly serverFileTransferID: ServerFileTransferID;
-  /** The file transfer port to dial. */
+  /** The file transfer port to dial, on the host the connection uses. */
   readonly port: number;
-  /**
-   * The address to dial instead of the one the connection uses (`ip`): the
-   * server sends it when it finds the file transfer unreachable at the address
-   * of the command connection, such as behind NAT. Undefined when it sends
-   * none, which is every answer measured on TS3 and TS6.
-   */
-  readonly ip?: string | undefined;
 }
 
 /** A negotiated download, as `initFileDownload` returns it: what to dial and receive. */
 export interface FileDownloadInfo {
   /** The key that identifies the transfer on the file transfer connection. */
   readonly fileTransferKey: string;
-  /** How many bytes the server will send. */
+  /** The file's whole size in bytes, whatever `seekPosition` is. */
   readonly size: bigint;
+  /**
+   * Where the download starts from, in bytes, as it was asked for: the server
+   * sends the file from here to its end, `size` less this many bytes.
+   */
+  readonly seekPosition: bigint;
   /** The client's id for the transfer. */
   readonly clientFileTransferID: ClientFileTransferID;
   /** The server's id for the transfer. */
   readonly serverFileTransferID: ServerFileTransferID;
-  /** The file transfer port to dial. */
+  /** The file transfer port to dial, on the host the connection uses. */
   readonly port: number;
-  /**
-   * The address to dial instead of the one the connection uses (`ip`); see
-   * {@link FileUploadInfo.ip}.
-   */
-  readonly ip?: string | undefined;
 }
 
 /** Removes a listener; calling it again does nothing. Also a `Disposable`, for `using`. */

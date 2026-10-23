@@ -247,7 +247,7 @@ export function downloadFile(client: CommandExecutor, channelID: ChannelID, path
 export function downloadFileData(host: string, info: FileDownloadInfo, dest: Writable, options?: FileTransferOptions): Promise<void>;
 
 // @public
-export interface DownloadFileOptions extends Omit<FileDownloadOptions, "seekPosition">, FileTransferOptions {
+export interface DownloadFileOptions extends FileDownloadOptions, FileTransferOptions {
     readonly dest?: Writable | undefined;
     readonly host?: string | undefined;
     readonly maxSize?: number | undefined;
@@ -669,7 +669,7 @@ export function uploadFile(client: CommandExecutor, channelID: ChannelID, path: 
 export function uploadFileData(host: string, info: FileUploadInfo, data: Readable, options?: FileTransferOptions): Promise<void>;
 
 // @public
-export interface UploadFileOptions extends Omit<FileUploadOptions, "resume">, FileTransferOptions {
+export interface UploadFileOptions extends FileUploadOptions, FileTransferOptions {
     readonly host?: string | undefined;
     readonly size?: bigint | number | undefined;
 }
