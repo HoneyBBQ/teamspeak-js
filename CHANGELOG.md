@@ -4,6 +4,32 @@ Until 1.0.0-beta.4 this package was published as `@honeybbq/teamspeak-core`, and
 `@honeybbq/teamspeak-client` was a second package. The sections below, down to
 the last version heading, are the core's history; the client's is at the bottom.
 
+## 1.0.0-beta.19
+
+### Major Changes
+
+- [#134](https://github.com/HoneyBBQ/teamspeak-js/pull/134) [`57833d3`](https://github.com/HoneyBBQ/teamspeak-js/commit/57833d36ba401f64ecad49c0324646a1d54a25d3) - `client.serverCapabilities` keeps only what lasts the connection, and reports the server's protocol extensions. `extensions` lists the names in `virtualserver_capability_extensions`, in the server's order: `["FILETIME", "STREAM_P2P"]` on TeamSpeak 6, empty on TeamSpeak 3. Test one with `extensions.includes("STREAM_P2P")`. The SDK does not refuse a command because a name is missing.
+
+  `name`, `iconID` and `hostBannerImageURL` are no longer on `ServerCapabilities`. They were read once in the handshake and went stale when the server was edited. Read them from the view, which follows the edits: `client.view.serverName`, `client.view.serverIconID` (the unsigned CRC32 as before, `undefined` for none) and `client.view.serverBannerImageURL`. `welcomeMessage`, `hostMessage` and `hostMessageMode` stay, since they are what the server greeted this connection with.
+
+- [#136](https://github.com/HoneyBBQ/teamspeak-js/pull/136) [`364faa8`](https://github.com/HoneyBBQ/teamspeak-js/commit/364faa86874a0f06a225c0a34ee32fa3382391f0) - `Streams` goes by what the server says it supports, not by its version: `supported`, `publish` and `watch` need the server to name `STREAM_P2P` among its extensions (`client.serverCapabilities.extensions`), as TeamSpeak 6 does. A server that does not name it gets a `StreamsUnsupportedError` before anything is sent, whatever its version, and the error now carries the `extensions` the server named. A client double passed to `new Streams(...)` needs `serverCapabilities.extensions`; a voice `Client` already has it.
+
+### Minor Changes
+
+- [#142](https://github.com/HoneyBBQ/teamspeak-js/pull/142) [`81c88ed`](https://github.com/HoneyBBQ/teamspeak-js/commit/81c88eddef0c6dbd37e2c76c30ebad6a5d4f67d2) - `StreamInfo.transport` says how a stream's media travels, from the `mode` the server announces: `"p2p"` for peer to peer, the one mode this SDK publishes and watches, or the number for a mode it has no name for. `watch` refuses a stream in another mode with the new `StreamTransportUnsupportedError` (`streamId`, `transport`) before sending anything, where it used to ask the publisher and fail later. A stream whose mode the server has not said is watched as before.
+
+- [#140](https://github.com/HoneyBBQ/teamspeak-js/pull/140) [`89dff4b`](https://github.com/HoneyBBQ/teamspeak-js/commit/89dff4bceaf7695038d77652b2cac18b9f51fa4c) - `ServerError.failedPermission` names the permission a refusal lacked, as WebQuery reports it in `status.failed_permission` (for example `b_serverinstance_info_view` for a guest's `hostinfo`). Over WebQuery the permission was dropped, so a refusal never said which one; the voice protocol and raw or SSH ServerQuery still report an id, in `failedPermissionID`. The name is kept as the server sent it, and is `undefined` when the server named none.
+
+### Patch Changes
+
+- [#138](https://github.com/HoneyBBQ/teamspeak-js/pull/138) [`3bff8e8`](https://github.com/HoneyBBQ/teamspeak-js/commit/3bff8e808ae4f8663fec086c7bef64af6a162a97) - A change notification that clears a value is no longer lost. `notifyclientupdated client_icon_id=0` and `notifychanneledited channel_icon_id=0` now leave `client.view` and the channel tree without the icon, where they kept the old one. `ClientChanges` and `ChannelChanges` hold a key for everything the notification carried, so a cleared value is a key holding `undefined`: `"iconID" in changes` is true and `changes.iconID` is `undefined`. The same holds for `emptyForMs` (-1 on the wire) and `talkRequestedAt`. `applyClientChanges` and `applyChannelChanges` remove such a property from the record and keep one the changes lack. If you merge changes into your own records, treat a key holding `undefined` as "cleared", not "unchanged".
+
+- [#141](https://github.com/HoneyBBQ/teamspeak-js/pull/141) [`ab9393a`](https://github.com/HoneyBBQ/teamspeak-js/commit/ab9393a82b6921dde7d279387689377ddf1382b5) - A channel created while a client is connected now holds the server's defaults in `view.channel(id)`, as the next welcome lists it, instead of zeros: codec 4, quality 5, no client limit, and the rest of what the notification does not carry.
+
+- [#137](https://github.com/HoneyBBQ/teamspeak-js/pull/137) [`339323f`](https://github.com/HoneyBBQ/teamspeak-js/commit/339323f9492645471e928b8bcd9790047b5c6511) - Icon ids above 2^31 are read in every form the server sends them. The voice protocol announces a channel's new icon in `notifychanneledited` as the negative 32-bit id sign-extended to 64 bits (`18446744072424443899` for the icon `3009859579`), which was read as no icon, so `channelEdited` and the view reported none. It is now read as the same unsigned id as `channelinfo`'s and `servergrouplist`'s forms, wherever an icon id is parsed.
+
+- [#139](https://github.com/HoneyBBQ/teamspeak-js/pull/139) [`c7fc424`](https://github.com/HoneyBBQ/teamspeak-js/commit/c7fc424804cece314b0a4b765eb376406a717c6f) - A client that reconnects now asks for the nickname it was given, not the one the server called it. When the requested name was taken the server assigns a suffixed one ("bot" becomes "bot1"), and the reconnect used to ask for "bot1" and get "bot12" while the old session still held it, drifting further on every drop; an admin's rename stuck across reconnects in the same way. Every connection attempt now sends the requested name, which a successful `clientupdate` of the client's own nickname changes. The nickname the server reports for the client, in `clientEnter`, `clientUpdated`, the view and the trace, is unchanged.
+
 ## 1.0.0-beta.18
 
 ### Minor Changes
