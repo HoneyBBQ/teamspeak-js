@@ -24,8 +24,15 @@ export interface StreamsClient extends CommandExecutor {
   readonly status: ClientStatus;
   /** This client's id on the server. */
   readonly clientID: ClientID;
-  /** What the connected server is; streams need `family` to be `"ts6"`. */
-  readonly serverCapabilities: { readonly family: ServerFamily; readonly version: string };
+  /**
+   * What the connected server is. Streams need `extensions` to name
+   * `"STREAM_P2P"`; `family` and `version` are reported when it does not.
+   */
+  readonly serverCapabilities: {
+    readonly family: ServerFamily;
+    readonly version: string;
+    readonly extensions: readonly string[];
+  };
   /** The clients the client knows of, which `Streams` reads for those that stream. */
   readonly view: {
     readonly clients: ReadonlyMap<ClientID, ClientEntry>;

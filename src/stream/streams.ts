@@ -48,6 +48,7 @@ import {
   setupRequest,
   signalRequest,
   sourceToWire,
+  STREAM_P2P,
   stopRequest,
   streamInfoFrom,
 } from "./wire.js";
@@ -192,9 +193,12 @@ export class Streams {
     }
   }
 
-  /** Whether the connected server can do streams: a TeamSpeak 6 server. */
+  /**
+   * Whether the connected server says it does peer to peer streams: its
+   * `extensions` name `"STREAM_P2P"`.
+   */
   get supported(): boolean {
-    return this.#client.serverCapabilities.family === "ts6";
+    return this.#client.serverCapabilities.extensions.includes(STREAM_P2P);
   }
 
   /** The streams known now, in the order they became known. */
@@ -251,7 +255,7 @@ export class Streams {
    * stop.
    *
    * Throws a `StreamsUnsupportedError`, without sending anything, on a server
-   * that is not TeamSpeak 6, and a `RangeError` for an option that is out of
+   * that does not name `STREAM_P2P` among its extensions, and a `RangeError` for an option that is out of
    * range.
    */
   async publish(options: PublishOptions): Promise<PublishedStream> {
@@ -436,8 +440,10 @@ export class Streams {
 
   #assertUsable(): void {
     if (this.#disposed) throw new TeamspeakError("these Streams were disposed");
-    const { family, version } = this.#client.serverCapabilities;
-    if (family !== "ts6") throw new StreamsUnsupportedError(family, version);
+    const { family, version, extensions } = this.#client.serverCapabilities;
+    if (!extensions.includes(STREAM_P2P)) {
+      throw new StreamsUnsupportedError(family, version, extensions);
+    }
   }
 
   /** Send a stream command. A stream the server does not know is a StreamEndedError. */

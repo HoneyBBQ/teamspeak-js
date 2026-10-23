@@ -9,9 +9,10 @@ package has no WebRTC dependency.
 
 TeamSpeak does not document this protocol. It was verified against the TeamSpeak 6 server
 6.0.0-beta13.1 and the TeamSpeak 6 client 6.0.0-beta5 (macOS), and a TeamSpeak update may
-break it. A TeamSpeak 3 server does not answer the stream
-commands at all, so `publish` and `watch` throw a `StreamsUnsupportedError` before sending
-anything.
+break it. Streams are used on a server that names `STREAM_P2P` among its extensions
+(`client.serverCapabilities.extensions`), as TeamSpeak 6 does. On any other, `publish` and
+`watch` throw a `StreamsUnsupportedError` before sending anything: a TeamSpeak 3 server names
+no extension and does not answer the stream commands at all.
 
 Every stream this SDK publishes and watches is peer to peer, the one mode a stock server
 allows. `StreamInfo.transport` says how a stream's media travels: `"p2p"`, or the server's

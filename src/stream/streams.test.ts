@@ -104,10 +104,10 @@ async function watchOne(client: FakeClient, streams: Streams): Promise<StreamVie
   return promise;
 }
 
-describe("a server that is not TeamSpeak 6", () => {
+describe("a server that does not name STREAM_P2P", () => {
   it("refuses publish and watch before sending anything", async () => {
     const { client, streams } = setup();
-    client.serverCapabilities = { family: "ts3", version: "3.13.8 [Build: 1]" };
+    client.serverCapabilities = { family: "ts3", version: "3.13.8 [Build: 1]", extensions: [] };
     expect(streams.supported).toBe(false);
     await expect(streams.publish({ name: "x" })).rejects.toBeInstanceOf(StreamsUnsupportedError);
     await expect(streams.watch(STREAM)).rejects.toBeInstanceOf(StreamsUnsupportedError);
@@ -116,21 +116,37 @@ describe("a server that is not TeamSpeak 6", () => {
 
   it("names what the server is", async () => {
     const { client, streams } = setup();
-    client.serverCapabilities = { family: "ts3", version: "3.13.8" };
+    client.serverCapabilities = { family: "ts3", version: "3.13.8", extensions: [] };
     const error = await streams.publish({ name: "x" }).catch((e: unknown) => e);
     expect((error as StreamsUnsupportedError).family).toBe("ts3");
     expect((error as StreamsUnsupportedError).version).toBe("3.13.8");
+    expect((error as StreamsUnsupportedError).extensions).toEqual([]);
+  });
+
+  // The server's own claim decides, not its version: a TeamSpeak 6 server
+  // that does not name the extension is refused, and one that does is used.
+  it("goes by the extension the server names, not its family", async () => {
+    const { client, streams } = setup();
+    client.serverCapabilities = { family: "ts6", version: "6.0.0", extensions: ["FILETIME"] };
+    expect(streams.supported).toBe(false);
+    const error = await streams.publish({ name: "x" }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(StreamsUnsupportedError);
+    expect((error as StreamsUnsupportedError).extensions).toEqual(["FILETIME"]);
+    expect((error as StreamsUnsupportedError).message).toContain("FILETIME");
+    client.serverCapabilities = { family: "unknown", version: "7", extensions: ["STREAM_P2P"] };
+    expect(streams.supported).toBe(true);
+    expect(client.sent).toEqual([]);
   });
 
   it("treats a server not yet known as unsupported", async () => {
     const { client, streams } = setup();
-    client.serverCapabilities = { family: "unknown", version: "" };
+    client.serverCapabilities = { family: "unknown", version: "", extensions: [] };
     await expect(streams.publish({ name: "x" })).rejects.toBeInstanceOf(StreamsUnsupportedError);
   });
 
   it("sends nothing when a client seems to stream", () => {
     const { client } = setup();
-    client.serverCapabilities = { family: "ts3", version: "3.13.8" };
+    client.serverCapabilities = { family: "ts3", version: "3.13.8", extensions: [] };
     client.emit("clientEnter", { id: asClientID(5), isStreaming: true });
     expect(client.sent).toEqual([]);
   });

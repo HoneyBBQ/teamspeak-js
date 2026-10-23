@@ -28,9 +28,10 @@ export function param(request: CommandRequest, key: string): string | number | b
 export class FakeClient implements StreamsClient {
   status: StreamsClient["status"] = "connected";
   clientID: ClientID = asClientID(1);
-  serverCapabilities: { family: ServerFamily; version: string } = {
+  serverCapabilities: { family: ServerFamily; version: string; extensions: readonly string[] } = {
     family: "ts6",
     version: "6.0.0-beta13.1",
+    extensions: ["FILETIME", "STREAM_P2P"],
   };
   readonly clients: Map<ClientID, ClientEntry> = new Map();
   readonly view: StreamsClient["view"] = {

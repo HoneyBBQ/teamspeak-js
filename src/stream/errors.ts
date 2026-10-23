@@ -2,10 +2,12 @@ import { TeamspeakError } from "@honeybbq/teamspeak";
 import type { ServerFamily } from "@honeybbq/teamspeak";
 
 /**
- * The connected server does not do streams: only TeamSpeak 6 does. A
- * TeamSpeak 3 server answers none of the stream commands, not even with an
- * error, so `publish` and `watch` refuse before sending rather than wait out
- * a timeout.
+ * The connected server does not say it does peer to peer streams: its
+ * `extensions` (`virtualserver_capability_extensions`) do not name
+ * `"STREAM_P2P"`. A TeamSpeak 3 server names none, and answers none of the
+ * stream commands, not even with an error, so `publish` and `watch` refuse
+ * before sending rather than wait out a timeout. Before the client has
+ * connected no server has named any, and it is refused the same way.
  */
 export class StreamsUnsupportedError extends TeamspeakError {
   /** {@inheritDoc @honeybbq/teamspeak!TeamspeakError.kind} */
@@ -21,19 +23,24 @@ export class StreamsUnsupportedError extends TeamspeakError {
     });
   }
 
-  /** The server generation the client found: never `"ts6"`. */
+  /** The server generation the client found. */
   readonly family: ServerFamily;
   /** The `virtualserver_version` the server sent; empty before the client has connected. */
   readonly version: string;
+  /** The extensions the server named, `"STREAM_P2P"` not among them. Frozen. */
+  readonly extensions: readonly string[];
 
-  constructor(family: ServerFamily, version: string) {
+  constructor(family: ServerFamily, version: string, extensions: readonly string[]) {
+    const server = family === "unknown" ? "an unknown server" : family;
+    const named = extensions.length === 0 ? "none" : extensions.join(", ");
     super(
-      `streams need a TeamSpeak 6 server; this is ${family === "unknown" ? "an unknown server" : family}${
+      `streams need a server that names STREAM_P2P among its extensions; this is ${server}${
         version === "" ? "" : ` (${version})`
-      }`,
+      }, which names ${named}`,
     );
     this.family = family;
     this.version = version;
+    this.extensions = Object.freeze([...extensions]);
   }
 }
 
