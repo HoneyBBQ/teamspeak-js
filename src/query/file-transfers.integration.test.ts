@@ -12,7 +12,8 @@
  */
 
 import { createHash, randomBytes } from "node:crypto";
-import { Readable, Writable } from "node:stream";
+import { connect, createServer } from "node:net";
+import { Readable, Writable, type Duplex } from "node:stream";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   ServerError,
@@ -22,6 +23,7 @@ import {
   getFileInfo,
   initFileUpload,
   listActiveTransfers,
+  stopFileTransfer,
   listFilesRecursive,
   type ChannelID,
   type CommandExecutor,
@@ -109,7 +111,11 @@ describe.skipIf(SKIP)("Integration — one-call file transfers and the recursive
           },
         });
         expect(
-          await downloadFile(exec, cid, "docs/deep/streamed.bin", { ...route, dest, maxSize: 1 }),
+          await downloadFile(exec, cid, "docs/deep/streamed.bin", {
+            ...route,
+            dest,
+            maxSize: 1,
+          }),
         ).toBeUndefined();
         expect(digest(Buffer.concat(chunks))).toBe(digest(streamed));
 
@@ -209,7 +215,10 @@ describe.skipIf(SKIP)("Integration — one-call file transfers and the recursive
           );
         };
         await cut("/part.bin");
-        await uploadFile(exec, cid, "/part.bin", bytes, { ...route, resume: true });
+        await uploadFile(exec, cid, "/part.bin", bytes, {
+          ...route,
+          resume: true,
+        });
         expect((await getFileInfo(exec, cid, "/part.bin")).size).toBe(100_000n);
         expect(digest(await downloadFile(exec, cid, "/part.bin", route))).toBe(digest(bytes));
         // A stream resumes the same way, its first bytes skipped.
@@ -237,8 +246,16 @@ describe.skipIf(SKIP)("Integration — one-call file transfers and the recursive
             done();
           },
         });
-        await downloadFile(exec, cid, "/whole.bin", { ...route, dest, seekPosition: 99_000n });
-        await downloadFile(exec, cid, "/whole.bin", { ...route, dest, seekPosition: 99_990n });
+        await downloadFile(exec, cid, "/whole.bin", {
+          ...route,
+          dest,
+          seekPosition: 99_000n,
+        });
+        await downloadFile(exec, cid, "/whole.bin", {
+          ...route,
+          dest,
+          seekPosition: 99_990n,
+        });
         expect(dest.writableEnded).toBe(false);
         expect(dest.destroyed).toBe(false);
         expect(
@@ -282,6 +299,85 @@ describe.skipIf(SKIP)("Integration — one-call file transfers and the recursive
     },
   );
 
+  describe.each<Kind | "voice">([...KINDS.filter((k) => k !== "web"), "voice"])(
+    "a transfer that does not complete, over %s",
+    (kind) => {
+      it("stops a negotiated transfer whose dial is refused, and fails an upload the server stopped", async () => {
+        const exec = via(kind);
+        const route = hostFor(kind);
+        const cid = await createChannel(session.first(), {
+          name: stamp("ts-js-ft-d"),
+          isPermanent: true,
+        });
+        channels.push(cid);
+        const admin = session.clients.get(KINDS.find((k) => k !== "web")!)!;
+        const active = async (): Promise<number> =>
+          (await listActiveTransfers(admin)).filter((t) => t.path.endsWith(`channel_${cid}`))
+            .length;
+
+        // A port nothing listens on: the TCP connect is refused, so nothing reaches the server.
+        // Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 6.0.0: left alone, the server drops
+        // such a transfer after 10 s; stopped, it leaves `ftlist` at once.
+        const refused = createServer();
+        await new Promise<void>((resolve) => refused.listen(0, "127.0.0.1", resolve));
+        const closedPort = (refused.address() as { port: number }).port;
+        await new Promise((resolve) => refused.close(resolve));
+        const toClosedPort = (): Duplex => connect({ host: "127.0.0.1", port: closedPort });
+        await expect(
+          uploadFile(exec, cid, "/never.bin", Buffer.from("abc"), {
+            ...route,
+            host: HOST,
+            socketFactory: toClosedPort,
+          }),
+        ).rejects.toBeInstanceOf(FileTransferError);
+        await vi.waitFor(async () => expect(await active()).toBe(0), {
+          timeout: 4_000,
+          interval: 250,
+        });
+        const bytes = randomBytes(100_000);
+        await uploadFile(exec, cid, "/dl.bin", bytes, route);
+        await expect(
+          downloadFile(exec, cid, "/dl.bin", {
+            ...route,
+            host: HOST,
+            socketFactory: toClosedPort,
+          }),
+        ).rejects.toBeInstanceOf(FileTransferError);
+        await vi.waitFor(async () => expect(await active()).toBe(0), {
+          timeout: 4_000,
+          interval: 250,
+        });
+
+        // An upload the connection itself stops half way: the server closes the transfer, which
+        // is not a stored file. (Only the connection's own transfer is stopped: ftstop of
+        // anyone else's crashes TeamSpeak 6.)
+        const slow = new Readable({ read() {} });
+        slow.push(bytes.subarray(0, 40_000));
+        const upload = uploadFile(exec, cid, "/stopped.bin", slow, {
+          ...route,
+          size: bytes.length,
+        });
+        const settled = upload.then(
+          () => undefined,
+          (e: unknown) => e,
+        );
+        await vi.waitFor(async () => expect(await active()).toBe(1), {
+          timeout: 10_000,
+          interval: 250,
+        });
+        const [mine] = (await listActiveTransfers(admin)).filter((t) =>
+          t.path.endsWith(`channel_${cid}`),
+        );
+        await stopFileTransfer(exec, mine!.serverFileTransferID);
+        slow.push(bytes.subarray(40_000));
+        slow.push(null);
+        expect(await settled).toBeInstanceOf(FileTransferError);
+
+        await deleteFile(voice, cid, ["/dl.bin", "/stopped.bin"]).catch(() => {});
+      }, 120_000);
+    },
+  );
+
   it("downloads over one connection what another uploaded", async () => {
     const kinds = KINDS.filter((k) => k !== "web");
     const cid = await createChannel(session.first(), {
@@ -290,7 +386,9 @@ describe.skipIf(SKIP)("Integration — one-call file transfers and the recursive
     });
     channels.push(cid);
     const bytes = randomBytes(50_000);
-    await uploadFile(via(kinds[0]!), cid, "/shared.bin", bytes, { host: HOST });
+    await uploadFile(via(kinds[0]!), cid, "/shared.bin", bytes, {
+      host: HOST,
+    });
     for (const reader of [...kinds, "voice" as const]) {
       const got = await downloadFile(via(reader), cid, "/shared.bin", hostFor(reader));
       expect(digest(got), `read over ${reader}`).toBe(digest(bytes));
@@ -302,7 +400,10 @@ describe.skipIf(SKIP)("Integration — one-call file transfers and the recursive
     "is refused over WebQuery, on every call",
     async () => {
       const web = session.clients.get("web")!;
-      const cid = await createChannel(web, { name: stamp("ts-js-ft-w"), isPermanent: true });
+      const cid = await createChannel(web, {
+        name: stamp("ts-js-ft-w"),
+        isPermanent: true,
+      });
       channels.push(cid);
       await expect(
         uploadFile(web, cid, "/a.bin", Buffer.from("x"), { host: HOST }),
@@ -310,7 +411,9 @@ describe.skipIf(SKIP)("Integration — one-call file transfers and the recursive
       await expect(downloadFile(web, cid, "/a.bin", { host: HOST })).rejects.toMatchObject({
         code: 5120,
       });
-      await expect(listFilesRecursive(web, cid, "/")).rejects.toMatchObject({ code: 5120 });
+      await expect(listFilesRecursive(web, cid, "/")).rejects.toMatchObject({
+        code: 5120,
+      });
     },
     30_000,
   );

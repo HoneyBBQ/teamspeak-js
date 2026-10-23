@@ -11,7 +11,14 @@
  */
 
 import { Readable, Transform, Writable, pipeline } from "node:stream";
-import { initFileDownload, initFileUpload, stopFileTransfer } from "@honeybbq/teamspeak";
+import {
+  ErrorCode,
+  ServerError,
+  getFileInfo,
+  initFileDownload,
+  initFileUpload,
+  stopFileTransfer,
+} from "@honeybbq/teamspeak";
 import type {
   ChannelID,
   CommandExecutor,
@@ -21,7 +28,7 @@ import type {
   FileUploadOptions,
 } from "@honeybbq/teamspeak";
 import { FileTransferError } from "../errors.js";
-import { downloadFileData, uploadFileData } from "../transfer.js";
+import { downloadFileData, failedToConnect, uploadFileData } from "../transfer.js";
 import type { FileTransferOptions } from "../transfer.js";
 
 /**
@@ -173,8 +180,15 @@ function skipBytes(count: number): Transform {
  *
  * `data` is the bytes, or a `Readable` with `options.size` the number of bytes
  * it will give. It resolves once the server has closed the transfer
- * connection, which it does when it has the file; a stream that gives fewer or
- * more bytes than `size` fails the call, and the connection is closed.
+ * connection and, by `ftgetfileinfo` (one more command), holds a file of
+ * exactly that size: the server does not say whether it stored a file, so a
+ * close alone could be a transfer someone stopped. A size that differs, or a
+ * file that is not there, fails the call with a {@link FileTransferError}; a
+ * client with no browse power cannot ask (2568) and resolves on the close. A
+ * stream that gives fewer or more bytes than `size` fails the call, and the
+ * connection is closed. When the connection to the file transfer port is
+ * refused or times out, the negotiated transfer is stopped on the server (else
+ * it lingers in `ftlist` for about 10 seconds), as it is for `downloadFile`.
  *
  * With `resume`, `data` is still the whole file: the server says how much it
  * already holds from an interrupted upload (a file that is not there is
@@ -213,7 +227,91 @@ export async function uploadFile(
   if (data instanceof Uint8Array) source = Readable.from([data.subarray(skip)]);
   else if (skip === 0) source = data;
   else source = pipeline(data, skipBytes(skip), () => {});
-  await route.upload(info, source, transferOptions(options));
+  await withDialCleanup(client, info.serverFileTransferID, () =>
+    route.upload(info, source, transferOptions(options)),
+  );
+  await verifyStored(client, channelID, path, size, options);
+}
+
+/**
+ * The server drops a transfer nobody dialled after about 10 seconds (measured
+ * on TeamSpeak 3 3.13.8 and TeamSpeak 6 6.0.0: it is gone from `ftlist` at
+ * 10.05 s, and the voice client hears 2059). `ftstop` of a transfer the server
+ * no longer has crashes TeamSpeak 6, so a stop is only sent well inside that.
+ */
+const STOP_WITHIN_MS = 5_000;
+
+/**
+ * Runs the data phase of a transfer the server has negotiated. When it fails
+ * because the connection to the file transfer port was refused or timed out,
+ * nothing has reached the server, and the transfer would sit in its list until
+ * it expires: stop it, as a refused `maxSize` download does. The stop is best
+ * effort and never replaces the dial's error. Not sent once the connection
+ * opened (the key may be written and the server may have dropped the transfer),
+ * nor after `STOP_WITHIN_MS`.
+ */
+async function withDialCleanup(
+  client: CommandExecutor,
+  serverFileTransferID: FileUploadInfo["serverFileTransferID"],
+  move: () => Promise<void>,
+): Promise<void> {
+  const negotiatedAt = performance.now();
+  try {
+    await move();
+  } catch (error) {
+    if (failedToConnect(error) && performance.now() - negotiatedAt < STOP_WITHIN_MS) {
+      await stopFileTransfer(client, serverFileTransferID).catch(() => {});
+    }
+    throw error;
+  }
+}
+
+/**
+ * Checks that the server holds the whole file after an upload's connection
+ * closed. Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 6.0.0: a completed
+ * upload gets no status from the server, so a close after the last byte looks
+ * the same whether the file was stored or the transfer was stopped (the voice
+ * protocol reports that, 2066, only after the close), and `ftgetfileinfo`
+ * already answers the final size 6 to 45 ms after the close, in every case.
+ * Permissions are checked at the negotiation only, so no refusal comes later.
+ *
+ * A client without browse power gets 2568 for `ftgetfileinfo`: the file cannot
+ * be checked, and the upload resolves on the close. Any other failure of the
+ * command is thrown as it is.
+ */
+async function verifyStored(
+  client: CommandExecutor,
+  channelID: ChannelID,
+  path: string,
+  size: bigint,
+  options: UploadFileOptions,
+): Promise<void> {
+  let stored: bigint;
+  try {
+    stored = (
+      await getFileInfo(client, channelID, path, {
+        password: options.password,
+        signal: options.signal,
+        timeoutMs: options.timeoutMs,
+      })
+    ).size;
+  } catch (error) {
+    if (error instanceof ServerError) {
+      if (error.code === ErrorCode.PermissionsClientInsufficient) return;
+      // 2051 on TeamSpeak 6, 2052 on TeamSpeak 3 for a file that is not there.
+      if (error.code === ErrorCode.FileNotFound || error.code === ErrorCode.FileIOError) {
+        throw new FileTransferError(`the server closed the upload but has no file ${path}`, {
+          cause: error,
+        });
+      }
+    }
+    throw error;
+  }
+  if (stored !== size) {
+    throw new FileTransferError(
+      `the server closed the upload but holds ${stored} of the ${size} bytes of ${path}`,
+    );
+  }
 }
 
 /**
@@ -266,7 +364,10 @@ export async function downloadFile(
     timeoutMs: options.timeoutMs,
   });
   if (options.dest !== undefined) {
-    await route.download(info, options.dest, transferOptions(options));
+    const dest = options.dest;
+    await withDialCleanup(client, info.serverFileTransferID, () =>
+      route.download(info, dest, transferOptions(options)),
+    );
     return;
   }
   const wanted = info.size - info.seekPosition;
@@ -286,7 +387,9 @@ export async function downloadFile(
       done();
     },
   });
-  await route.download(info, sink, transferOptions(options));
+  await withDialCleanup(client, info.serverFileTransferID, () =>
+    route.download(info, sink, transferOptions(options)),
+  );
   return Buffer.concat(chunks);
 }
 

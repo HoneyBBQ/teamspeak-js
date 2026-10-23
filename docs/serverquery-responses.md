@@ -586,6 +586,33 @@ TS3 and the configured one on TS6. A transfer that was negotiated and never
 dialled shows in `ftlist` until it is stopped; `ftstop` removes it. A second
 upload of the same name while the first is open answers 2058 in the row.
 
+Measured on TS3 3.13.8 and TS6 6.0.0, over the voice protocol and ServerQuery:
+
+- A transfer that was negotiated and never dialled is dropped by the server
+  after about 10 s (gone from `ftlist` at 10.05 s on TS3), and the voice client
+  then hears `notifystatusfiletransfer` with 2059. `ftstop` clears it at once.
+  `uploadFile` and `downloadFile` send it when the TCP connect to the transfer
+  port is refused or times out within 5 s of the negotiation, never once the
+  connection opened, and never later, since `ftstop` of a transfer the server
+  no longer has crashes TS6.
+- A completed upload is never reported: no `notifystatusfiletransfer` for it
+  (2065 does not come), and ServerQuery sends nothing about transfers, with
+  notifications registered or not. Failures are reported to the voice client
+  only, after the connection closed: 2066 canceled (its own `ftstop`, size
+  sent so far), 2063 lost connection (the client dropped it), 2052 for more
+  bytes than declared (the file stays at the declared size, whole), 2059 as
+  above. Refusals come at the negotiation, as 2568 (upload power), 2069
+  (`i_ft_quota_mb_upload_per_client`) and 2068 (`virtualserver_upload_quota`);
+  permissions are not checked again once negotiated, and
+  `virtualserver_storage_quota` does not touch channel files.
+- On TS3 an `ftstop` from another connection does nothing: `error id=0`, and
+  the transfer goes on. On TS6 it crashes the server.
+- `ftgetfileinfo` answers the final size 6 to 45 ms after the close in every
+  case: 100000 for a completed upload, 40000 for one stopped at 40000. A client
+  without browse power gets 2568; a missing file is 2052 on TS3 and 2051 on TS6.
+  `uploadFile` asks for it before it resolves, and fails when the size is not
+  the size sent.
+
 ## Paging
 
 `clientdblist` pages with `start` and `duration`, as the core's walk expects.

@@ -1,6 +1,6 @@
 import { createServer, type Server, type Socket } from "node:net";
 import { Readable, Writable } from "node:stream";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ServerError, asChannelID } from "@honeybbq/teamspeak";
 import type { CommandExecutor, CommandRequest } from "@honeybbq/teamspeak";
 import { FileTransferError } from "../errors.js";
@@ -78,20 +78,26 @@ const negotiated = (port: number, extra: Record<string, string> = {}) => [
   },
 ];
 
+/** What `ftgetfileinfo` answers with for a file of `size` bytes. */
+const held = (size: number) => [{ name: "f", size: String(size), datetime: "0", type: "1" }];
+
 const cid = asChannelID(3n);
 
 describe("uploadFile", () => {
   it("negotiates, then sends the key and the bytes to the named host", async () => {
     const { received, port, ended } = await sink(5);
-    const { client, sent } = executor(negotiated(port, { seekpos: "0" }));
+    const { client, sent } = executor(negotiated(port, { seekpos: "0" }), held(5));
 
     await uploadFile(client, cid, "dir/a.bin", Buffer.from("hello"), {
       host: "127.0.0.1",
       overwrite: true,
     });
 
-    expect(sent).toHaveLength(1);
-    expect(sent[0]?.command).toBe("ftinitupload");
+    expect(sent.map((r) => r.command)).toEqual(["ftinitupload", "ftgetfileinfo"]);
+    expect(Object.fromEntries(sent[1]!.params ?? [])).toMatchObject({
+      cid: 3n,
+      name: "/dir/a.bin",
+    });
     const params = Object.fromEntries(sent[0]!.params ?? []);
     expect(params).toMatchObject({
       name: "/dir/a.bin",
@@ -106,16 +112,22 @@ describe("uploadFile", () => {
 
   it("sends an empty file, and a stream of the size it was told", async () => {
     const { received, port, ended } = await sink(0, 4);
-    const { client, sent } = executor(negotiated(port), negotiated(port));
+    const { client, sent } = executor(negotiated(port), held(0), negotiated(port), held(4));
 
-    await uploadFile(client, cid, "/empty", new Uint8Array(0), { host: "127.0.0.1" });
+    await uploadFile(client, cid, "/empty", new Uint8Array(0), {
+      host: "127.0.0.1",
+    });
     await uploadFile(client, cid, "/s", Readable.from([Buffer.from("ab"), Buffer.from("cd")]), {
       host: "127.0.0.1",
       size: 4,
     });
 
-    expect(Object.fromEntries(sent[0]!.params ?? [])).toMatchObject({ size: 0n });
-    expect(Object.fromEntries(sent[1]!.params ?? [])).toMatchObject({ size: 4n });
+    expect(Object.fromEntries(sent[0]!.params ?? [])).toMatchObject({
+      size: 0n,
+    });
+    expect(Object.fromEntries(sent[2]!.params ?? [])).toMatchObject({
+      size: 4n,
+    });
     await ended;
     expect(Buffer.concat(received).toString()).toBe(`${KEY}${KEY}abcd`);
   });
@@ -124,7 +136,9 @@ describe("uploadFile", () => {
     const { received, port, ended } = await sink(2, 2);
     const { client, sent } = executor(
       negotiated(port, { seekpos: "3" }),
+      held(5),
       negotiated(port, { seekpos: "3" }),
+      held(5),
     );
 
     await uploadFile(client, cid, "/a", Buffer.from("hello"), {
@@ -170,7 +184,10 @@ describe("uploadFile", () => {
       uploadFile(client, cid, "/a", Readable.from([]), { host: "127.0.0.1" }),
     ).rejects.toThrow(TypeError);
     await expect(
-      uploadFile(client, cid, "/a", Buffer.from("abc"), { host: "127.0.0.1", size: 4 }),
+      uploadFile(client, cid, "/a", Buffer.from("abc"), {
+        host: "127.0.0.1",
+        size: 4,
+      }),
     ).rejects.toThrow(TypeError);
     await expect(uploadFile(client, cid, "/a", Buffer.from("abc"), { size: -1 })).rejects.toThrow(
       RangeError,
@@ -193,7 +210,7 @@ describe("uploadFile", () => {
       size: bigint;
       idle: number | undefined;
     }> = [];
-    const { client: bare } = executor(negotiated(1234));
+    const { client: bare } = executor(negotiated(1234), held(3));
     const voice = Object.assign(bare, {
       host: "voice.example",
       async uploadFileData(
@@ -221,6 +238,110 @@ describe("uploadFile", () => {
   });
 });
 
+describe("uploadFile, once the connection closed", () => {
+  it("fails when the server holds fewer bytes than were sent", async () => {
+    const { port } = await sink(5);
+    const { client } = executor(negotiated(port), held(2));
+    await expect(
+      uploadFile(client, cid, "/a", Buffer.from("hello"), {
+        host: "127.0.0.1",
+      }),
+    ).rejects.toThrow(/holds 2 of the 5 bytes/);
+  });
+
+  it("fails when the server has no such file", async () => {
+    const { port } = await sink(5, 5);
+    for (const code of [2051, 2052]) {
+      const { client } = executor(negotiated(port), new ServerError(code, "x"));
+      await expect(
+        uploadFile(client, cid, "/a", Buffer.from("hello"), {
+          host: "127.0.0.1",
+        }),
+      ).rejects.toBeInstanceOf(FileTransferError);
+    }
+  });
+
+  it("resolves when the client may not look at the file (2568), and throws any other failure", async () => {
+    const { port } = await sink(5, 5);
+    const denied = executor(negotiated(port), new ServerError(2568, "insufficient"));
+    await uploadFile(denied.client, cid, "/a", Buffer.from("hello"), {
+      host: "127.0.0.1",
+    });
+    const broken = executor(negotiated(port), new ServerError(524, "flooding"));
+    await expect(
+      uploadFile(broken.client, cid, "/a", Buffer.from("hello"), {
+        host: "127.0.0.1",
+      }),
+    ).rejects.toMatchObject({ code: 524 });
+  });
+});
+
+describe("a transfer whose dial fails", () => {
+  /** A port nothing listens on. */
+  const closedPort = async (): Promise<number> => {
+    const port = await transferPort(() => {});
+    for (const server of servers.splice(0)) await new Promise((r) => server.close(r));
+    return port;
+  };
+
+  it("stops the negotiated transfer after a refused connection, and keeps the dial's error", async () => {
+    const port = await closedPort();
+    for (const run of [
+      (c: CommandExecutor) => uploadFile(c, cid, "/a", Buffer.from("x"), { host: "127.0.0.1" }),
+      (c: CommandExecutor) => downloadFile(c, cid, "/a", { host: "127.0.0.1" }),
+      (c: CommandExecutor) =>
+        downloadFile(c, cid, "/a", {
+          host: "127.0.0.1",
+          dest: new Writable({ write: (_c, _e, d) => d() }),
+        }),
+    ]) {
+      const { client, sent } = executor(negotiated(port, { size: "1" }), new Error("stop failed"));
+      const error = await run(client).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(FileTransferError);
+      expect((error as Error).message).toMatch(/connection failed/);
+      expect(sent.map((r) => r.command).slice(0, 2)).toEqual([sent[0]!.command, "ftstop"]);
+      expect(Object.fromEntries(sent[1]!.params ?? [])).toMatchObject({
+        serverftfid: 9,
+      });
+    }
+  });
+
+  it("does not stop it once the connection opened, nor when the caller ended it", async () => {
+    // Opens, takes the key, and drops the connection: the server may hold the transfer.
+    const open = await transferPort((socket) => socket.once("data", () => socket.destroy()));
+    const dropped = executor(negotiated(open, { size: "1" }));
+    await expect(
+      downloadFile(dropped.client, cid, "/a", { host: "127.0.0.1" }),
+    ).rejects.toBeInstanceOf(FileTransferError);
+    expect(dropped.sent.map((r) => r.command)).toEqual(["ftinitdownload"]);
+
+    const port = await closedPort();
+    const aborted = executor(negotiated(port));
+    await expect(
+      uploadFile(aborted.client, cid, "/a", Buffer.from("x"), {
+        host: "127.0.0.1",
+        signal: AbortSignal.abort(new Error("caller")),
+      }),
+    ).rejects.toThrow();
+    expect(aborted.sent.map((r) => r.command)).toEqual(["ftinitupload"]);
+  });
+
+  it("does not stop a transfer the server has probably dropped by itself", async () => {
+    const port = await closedPort();
+    const { client, sent } = executor(negotiated(port));
+    const now = vi.spyOn(performance, "now");
+    now.mockReturnValueOnce(0).mockReturnValue(6_000);
+    try {
+      await expect(
+        uploadFile(client, cid, "/a", Buffer.from("x"), { host: "127.0.0.1" }),
+      ).rejects.toBeInstanceOf(FileTransferError);
+    } finally {
+      now.mockRestore();
+    }
+    expect(sent.map((r) => r.command)).toEqual(["ftinitupload"]);
+  });
+});
+
 describe("downloadFile", () => {
   const serve = (body: Buffer) =>
     transferPort((socket) => {
@@ -232,7 +353,9 @@ describe("downloadFile", () => {
   it("returns the bytes of the file", async () => {
     const port = await serve(Buffer.from("hello world"));
     const { client, sent } = executor(negotiated(port, { size: "11" }));
-    const bytes = await downloadFile(client, cid, "dir/a.bin", { host: "127.0.0.1" });
+    const bytes = await downloadFile(client, cid, "dir/a.bin", {
+      host: "127.0.0.1",
+    });
     expect(Buffer.from(bytes).toString()).toBe("hello world");
     expect(sent[0]?.command).toBe("ftinitdownload");
     expect(Object.fromEntries(sent[0]!.params ?? [])).toMatchObject({
@@ -258,7 +381,11 @@ describe("downloadFile", () => {
         done();
       },
     });
-    const result = await downloadFile(client, cid, "/a", { host: "127.0.0.1", dest, maxSize: 1 });
+    const result = await downloadFile(client, cid, "/a", {
+      host: "127.0.0.1",
+      dest,
+      maxSize: 1,
+    });
     expect(result).toBeUndefined();
     expect(Buffer.concat(chunks).toString()).toBe("0123456789");
   });
