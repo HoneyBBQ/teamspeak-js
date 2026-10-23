@@ -370,7 +370,10 @@ describe("QueryClient lifecycle", () => {
   it("asks for the categories it was given, and for none when told so", async () => {
     const transport = new FakeTransport();
     autoOk(transport);
-    const client = clientOn(transport, { events: { categories: ["textprivate", "bans"] } });
+    const client = clientOn(transport, {
+      server: { id: 1 },
+      events: { categories: ["textprivate", "bans"] },
+    });
     await client.connect();
     expect(transport.sent.filter((l) => l.startsWith("servernotifyregister"))).toEqual([
       "servernotifyregister event=textprivate",
@@ -386,6 +389,56 @@ describe("QueryClient lifecycle", () => {
     await silent.connect();
     expect(quiet.sent.filter((l) => l.startsWith("servernotifyregister"))).toEqual([]);
     expect(quiet.sent).not.toContain("clientlist -uid -groups -away -voice");
+  });
+
+  // Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 6.0.0 (raw TCP and SSH):
+  // with no server selected `servernotifyregister` and `clientlist` are refused
+  // with 1024, while `version` and `whoami` answer.
+  it("connects with no server and registers the events on the first use", async () => {
+    const transport = new FakeTransport();
+    autoOk(transport);
+    const client = clientOn(transport, { events: { categories: ["textprivate"] } });
+    await client.connect();
+    expect(client.status).toBe("connected");
+    expect(transport.sent).toEqual(["version", "whoami"]);
+
+    await client.use({ id: 1 });
+    expect(transport.sent.slice(2)).toEqual([
+      "use sid=1",
+      "whoami",
+      "servernotifyregister event=textprivate",
+      "clientlist -uid -groups -away -voice",
+    ]);
+
+    // Registered once: a later use only reads the roster again.
+    transport.sent.length = 0;
+    await client.use({ id: 2 });
+    expect(transport.sent).toEqual(["use sid=2", "whoami", "clientlist -uid -groups -away -voice"]);
+  });
+
+  it("waits out a flood refusal while connecting", async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = new FakeTransport();
+      autoOk(transport);
+      let refused = false;
+      const answer = transport.auto!;
+      transport.auto = (line) => {
+        if (line === "whoami" && !refused) {
+          refused = true;
+          return [FLOODED];
+        }
+        return answer(line);
+      };
+      const client = clientOn(transport, { events: false });
+      const connecting = client.connect();
+      await vi.advanceTimersByTimeAsync(4_100);
+      await connecting;
+      expect(client.status).toBe("connected");
+      expect(transport.sent).toEqual(["version", "whoami", "whoami"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("reads the family from the server's version", async () => {

@@ -62,7 +62,7 @@ function clientOn(
   options: Partial<QueryClientOptions> = {},
 ): QueryClient {
   const custom: QueryTransportOptions = { kind: "custom", open: async () => transport };
-  return new QueryClient({ ...options, transport: custom });
+  return new QueryClient({ server: { id: 1 }, ...options, transport: custom });
 }
 
 /** Poll until `done`, for the delivery that happens a microtask later. */

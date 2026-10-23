@@ -70,7 +70,10 @@ its own admin password. The session is the query account already, so there is
 no `login`, only `use`. It greets with the same two-line banner as raw TCP.
 Over SSH, TS6 answers everything TS3 does over raw TCP, with one exception:
 `ftstop` for a transfer that is not the query connection's own, one that does
-not exist or another client's, crashes the server. The log says
+not exist or another client's, crashes the server. A transfer of the
+connection's own that has finished, or that nobody connected to for about 10
+seconds after it was negotiated, no longer exists either (measured on TS3
+3.13.8 and TS6 6.0.0), so stopping it then crashes TS6 too. The log says
 `TeamSpeak server has crashed`, and the server answers nothing until the
 container restarts. It did so every time, three of three. TS3 answers the same
 command with a status row.
@@ -583,7 +586,8 @@ Over raw TCP on TS3 and over SSH on TS6, `ftinitupload` and `ftinitdownload`
 answer inline, as above; no correlated notification follows, so a client
 waiting for one would wait for nothing. The server picks the port: 30033 on
 TS3 and the configured one on TS6. A transfer that was negotiated and never
-dialled shows in `ftlist` until it is stopped; `ftstop` removes it. A second
+dialled shows in `ftlist` for about 10 seconds and is then gone, as one that
+has finished is; `ftstop` removes it before that. A second
 upload of the same name while the first is open answers 2058 in the row.
 
 Measured on TS3 3.13.8 and TS6 6.0.0, over the voice protocol and ServerQuery:
