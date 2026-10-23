@@ -212,6 +212,46 @@ describe("WebQueryTransport", () => {
     });
   });
 
+  it("names the permission an answer says it lacked, and no id", async () => {
+    const { calls, fetchFn } = fakeFetch([
+      {
+        status: 200,
+        json: {
+          status: {
+            code: 2568,
+            failed_permission: "b_serverinstance_info_view",
+            message: "insufficient client permissions",
+          },
+        },
+      },
+    ]);
+    const client = await webClient(
+      new WebQueryTransport({ url: "http://h", guest: true, fetch: fetchFn }),
+      calls,
+    );
+    const refused = await client.exec("hostinfo").catch((failure: unknown) => failure);
+    expect(refused).toBeInstanceOf(ServerError);
+    expect(refused).toMatchObject({
+      code: 2568,
+      failedPermission: "b_serverinstance_info_view",
+      failedPermissionID: undefined,
+    });
+  });
+
+  it("leaves failedPermission unset when the answer names none", async () => {
+    const { calls, fetchFn } = fakeFetch([
+      { status: 400, json: { status: { code: 1538, message: "invalid parameter" } } },
+    ]);
+    const client = await webClient(
+      new WebQueryTransport({ url: "http://h", guest: true, fetch: fetchFn }),
+      calls,
+    );
+    await expect(client.exec("nosuch")).rejects.toMatchObject({
+      code: 1538,
+      failedPermission: undefined,
+    });
+  });
+
   it("treats an HTTP failure with no TeamSpeak code as a transport error", async () => {
     const { calls, fetchFn } = fakeFetch([{ status: 401, text: "unauthorized" }]);
     const client = await webClient(

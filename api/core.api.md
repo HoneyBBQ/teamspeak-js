@@ -3016,9 +3016,11 @@ export class ServerError extends TeamspeakError {
     constructor(code: number, serverMessage: string, details?: {
         extraMessage?: string | undefined;
         failedPermissionID?: PermissionID | undefined;
+        failedPermission?: string | undefined;
     });
     readonly code: number;
     readonly extraMessage: string | undefined;
+    readonly failedPermission: string | undefined;
     readonly failedPermissionID: PermissionID | undefined;
     static readonly kind: string;
     readonly serverMessage: string;

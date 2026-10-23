@@ -3,6 +3,24 @@ import { ErrorCode } from "./errorcode.js";
 import { ServerError, parseServerError } from "./errors.js";
 
 describe("parseServerError", () => {
+  it("reads a permission named by WebQuery apart from an id", () => {
+    const { err } = parseServerError({
+      id: "2568",
+      msg: "insufficient client permissions",
+      failed_permission: "b_serverinstance_info_view",
+    });
+    expect(err?.failedPermission).toBe("b_serverinstance_info_view");
+    expect(err?.failedPermissionID).toBeUndefined();
+  });
+
+  it("leaves failedPermission unset when the server named an id or none", () => {
+    expect(parseServerError({ id: "2568", msg: "x", failed_permid: "236" }).err).toMatchObject({
+      failedPermission: undefined,
+      failedPermissionID: 236,
+    });
+    expect(parseServerError({ id: "1", msg: "x" }).err?.failedPermission).toBeUndefined();
+  });
+
   it("reads the code and the refusal's details", () => {
     const { err, rc } = parseServerError({
       id: "2568",

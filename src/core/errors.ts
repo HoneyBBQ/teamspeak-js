@@ -91,6 +91,12 @@ export class ServerError extends TeamspeakError {
   readonly extraMessage: string | undefined;
   /** The permission a refused permission check failed on, when the server names one (`failed_permid`). */
   readonly failedPermissionID: PermissionID | undefined;
+  /**
+   * The missing permission's name, as WebQuery reports it (`failed_permission`);
+   * undefined when the server named none. The voice protocol and raw or SSH
+   * ServerQuery report an id instead, in {@link ServerError.failedPermissionID}.
+   */
+  readonly failedPermission: string | undefined;
 
   constructor(
     code: number,
@@ -98,6 +104,7 @@ export class ServerError extends TeamspeakError {
     details: {
       extraMessage?: string | undefined;
       failedPermissionID?: PermissionID | undefined;
+      failedPermission?: string | undefined;
     } = {},
   ) {
     const extra = details.extraMessage ? ` (${details.extraMessage})` : "";
@@ -106,6 +113,7 @@ export class ServerError extends TeamspeakError {
     this.serverMessage = serverMessage;
     this.extraMessage = details.extraMessage;
     this.failedPermissionID = details.failedPermissionID;
+    this.failedPermission = details.failedPermission;
   }
 }
 
@@ -254,6 +262,7 @@ export function parseServerError(params: Record<string, string>): {
         Number(failedPermid) <= 0xffff_ffff
           ? asPermissionID(Number(failedPermid))
           : undefined,
+      failedPermission: params["failed_permission"] || undefined,
     });
   }
 

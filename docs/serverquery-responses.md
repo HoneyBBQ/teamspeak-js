@@ -303,7 +303,8 @@ Guest Server Query group's permissions. Measured on 6.0.0-beta13.1.
 - **WebQuery.** A request with no `x-api-key` header, with an empty one, or with
   an empty `api-key` parameter runs in the guest scope: `version`, `whoami`,
   `channellist` and `clientlist` answer, a permission-gated command such as
-  `hostinfo` answers 2568 with `failed_permission` (HTTP 200), and a command
+  `hostinfo` answers 2568 with `failed_permission` (HTTP 200; the client
+  keeps it as `ServerError.failedPermission`, a name, never mapped to an id), and a command
   outside the scope (`serverinfo`, `apikeylist`, `servergrouplist`,
   `channelfind`, `clientfind`) answers HTTP 401 with code 5120 and
   `extra_message` "command not allowed for guest access". A wrong key is not a

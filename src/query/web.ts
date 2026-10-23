@@ -98,6 +98,7 @@ interface WebAnswer {
     readonly code?: unknown;
     readonly message?: unknown;
     readonly extra_message?: unknown;
+    readonly failed_permission?: unknown;
   };
 }
 
@@ -195,7 +196,12 @@ export class WebQueryTransport implements QueryTransport {
     }
     const message = answer?.status?.message;
     const extra = answer?.status?.extra_message;
-    const tail = typeof extra === "string" && extra !== "" ? { extra_msg: extra } : {};
+    const failed = answer?.status?.failed_permission;
+    const tail = {
+      ...(typeof extra === "string" && extra !== "" ? { extra_msg: extra } : {}),
+      // WebQuery names the permission; a raw ServerQuery line carries an id.
+      ...(typeof failed === "string" && failed !== "" ? { failed_permission: failed } : {}),
+    };
     this.onLine?.(
       buildCommandOrdered("error", [
         ["id", String(code)],

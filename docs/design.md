@@ -7,8 +7,8 @@ The conventions below hold across the whole package. Each is stated once here.
 An error is one of two kinds:
 
 - **A refusal the server reports.** It is a `ServerError` carrying the server's
-  numeric `code`, its text as `serverMessage`, and `extraMessage` and
-  `failedPermissionID` when the server names them.
+  numeric `code`, its text as `serverMessage`, and `extraMessage`,
+  `failedPermissionID` and `failedPermission` (WebQuery's name for it) when the server names them.
 - **A condition the SDK detects itself**: not connected, no data, a timeout, a
   failed handshake, a failed file transfer. Each has its own class.
 
