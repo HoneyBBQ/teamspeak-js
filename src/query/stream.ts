@@ -10,6 +10,8 @@ export interface QueryStream {
   write(data: string, callback: (error?: Error | null) => void): unknown;
   /** Close the stream. */
   end(): unknown;
+  /** Drop the stream without waiting for the peer; used for a peer that must not be read on. */
+  destroy?(): unknown;
   /** Listen for each chunk received. */
   on(event: "data", listener: (chunk: Uint8Array) => void): unknown;
   /** Listen for a failure, which ends the connection. */
@@ -129,8 +131,22 @@ export class StreamTransport implements QueryTransport {
   }
 
   #handleData(chunk: Uint8Array): void {
+    if (this.#ended) return;
     this.#bytesReceived += chunk.byteLength;
-    for (const line of this.#reader.push(chunk)) {
+    let lines: string[];
+    try {
+      lines = this.#reader.push(chunk);
+    } catch (error) {
+      // A server that is not speaking ServerQuery: nothing more is read, and
+      // the connection ends with the reason.
+      this.#error = error as Error;
+      this.onLine = null;
+      if (this.#stream.destroy === undefined) this.#stream.end();
+      else this.#stream.destroy();
+      this.#handleClose();
+      return;
+    }
+    for (const line of lines) {
       if (this.#banner > 0) {
         this.#banner--;
         continue;

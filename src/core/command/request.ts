@@ -96,6 +96,13 @@ export function encodeRequest(
   return [line, ...rest.map((row) => buildCommandOrdered("", encode(row)).slice(1))].join("|");
 }
 
+/**
+ * A parameter name: letters, digits and underscores, with one leading `-` for a
+ * flag such as `-uid`. Every key measured on TeamSpeak 3 and 6, in a command or
+ * an answer, is of this form.
+ */
+const VALID_KEY = /^-?[A-Za-z0-9_]+$/;
+
 function encodeParams(
   params: ReadonlyArray<readonly [string, ParamValue]>,
   passwords: readonly string[],
@@ -103,6 +110,11 @@ function encodeParams(
 ): Array<readonly [string, string]> {
   const out: Array<readonly [string, string]> = [];
   for (const [key, value] of params) {
+    // A key is a protocol identifier, written to the line as it is: one with a
+    // space, a newline or a pipe in it would add parameters, rows or a whole
+    // command to what the caller meant. Only a key a server could have named
+    // is sent.
+    if (!VALID_KEY.test(key)) throw new TypeError(`${JSON.stringify(key)} is not a parameter name`);
     // Flags (`-uid`) are switches: present when true, absent otherwise.
     if (key.startsWith("-")) {
       if (value === true) out.push([key, ""]);

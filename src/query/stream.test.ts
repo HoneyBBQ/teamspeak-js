@@ -2,7 +2,8 @@ import { createServer } from "node:net";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { describe, expect, it, vi } from "vitest";
-import { LineReader } from "./lines.js";
+import { LineTooLongError } from "./errors.js";
+import { LineReader, MAX_LINE_BYTES } from "./lines.js";
 import { StreamTransport, type QueryStream } from "./stream.js";
 import { connectTcp } from "./tcp.js";
 import { QueryClient } from "./client.js";
@@ -41,8 +42,8 @@ class FakeStream implements QueryStream {
     (this.#listeners[event] as unknown[]).push(listener);
     return this;
   }
-  emitData(text: string): void {
-    for (const l of this.#listeners.data) l(Buffer.from(text));
+  emitData(text: string | Uint8Array): void {
+    for (const l of this.#listeners.data) l(typeof text === "string" ? Buffer.from(text) : text);
   }
   emitError(error: Error): void {
     for (const l of this.#listeners.error) l(error);
@@ -72,9 +73,73 @@ describe("LineReader", () => {
   it("accepts \\r\\n as well", () => {
     expect(new LineReader().push(Buffer.from("a\r\nb\r\n"))).toEqual(["a", "b"]);
   });
+
+  it("refuses a line past the limit, whole or in pieces, and keeps one exactly at it", () => {
+    expect(new LineReader(5).push(Buffer.from("abcd\n"))).toEqual(["abcd"]);
+    expect(() => new LineReader(5).push(Buffer.from("abcdef\n"))).toThrow(LineTooLongError);
+    const reader = new LineReader(5);
+    expect(reader.push(Buffer.from("abc"))).toEqual([]);
+    expect(() => reader.push(Buffer.from("def"))).toThrow(LineTooLongError);
+    expect(MAX_LINE_BYTES).toBe(256 * 1024 * 1024);
+  });
+
+  it("splits like a plain split however the bytes are cut into chunks", () => {
+    let seed = 12345;
+    const random = (n: number): number => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed % n;
+    };
+    for (let round = 0; round < 200; round++) {
+      const text = Array.from({ length: random(8) }, () => "é=" + "x".repeat(random(40))).join(
+        "\n\r",
+      );
+      const bytes = Buffer.from(text + "\n");
+      const reader = new LineReader();
+      const got: string[] = [];
+      for (let at = 0; at < bytes.length;) {
+        const size = 1 + random(17);
+        got.push(...reader.push(bytes.subarray(at, at + size)));
+        at += size;
+      }
+      const want = (text + "\n")
+        .split("\n")
+        .slice(0, -1)
+        .map((l) => l.replace(/^\r+|\r+$/g, ""));
+      expect(got).toEqual(want);
+    }
+  });
+
+  it("reads a line of many chunks in linear time", () => {
+    // 64 MiB in 4 KiB chunks: a reader that rescans the line from its start on
+    // every chunk takes minutes over this, one that looks at each byte once, well under a second.
+    const reader = new LineReader();
+    const chunk = Buffer.alloc(4096, 0x78);
+    const started = Date.now();
+    for (let i = 0; i < 16384; i++) reader.push(chunk);
+    expect(reader.push(Buffer.from("\n"))[0]).toHaveLength(16384 * 4096);
+    expect(Date.now() - started).toBeLessThan(10_000);
+  });
 });
 
 describe("StreamTransport", () => {
+  it("ends the connection with LineTooLongError for a line past the limit", () => {
+    const stream = new FakeStream();
+    const transport = new StreamTransport(stream);
+    const lines: string[] = [];
+    const closed: Array<Error | undefined> = [];
+    transport.onLine = (l) => lines.push(l);
+    transport.onClose = (e) => closed.push(e);
+    // The reader's limit is the default one; a line of that length is fed in
+    // pieces without being held as a single string until it is refused.
+    const piece = Buffer.alloc(32 * 1024 * 1024, 0x78);
+    for (let i = 0; i < 9; i++) stream.emitData(piece);
+    expect(closed).toHaveLength(1);
+    expect(closed[0]).toBeInstanceOf(LineTooLongError);
+    expect(stream.ended).toBe(true);
+    stream.emitData("later\n");
+    expect(lines).toEqual([]);
+  });
+
   it("drops the two banner lines and delivers the rest", () => {
     const stream = new FakeStream();
     const transport = new StreamTransport(stream);

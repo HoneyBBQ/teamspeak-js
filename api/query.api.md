@@ -38,6 +38,14 @@ export class GuestAccessError extends TeamspeakError {
 }
 
 // @public
+export class LineTooLongError extends TeamspeakError {
+    constructor(limit: number);
+    // (undocumented)
+    static readonly kind: string;
+    readonly limit: number;
+}
+
+// @public
 export class MissingDependencyError extends TeamspeakError {
     constructor();
     // (undocumented)
@@ -91,6 +99,7 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
 export interface QueryClientOptions {
     readonly commandMiddleware?: readonly CommandMiddleware[] | undefined;
     readonly events?: QueryEventsOption | undefined;
+    readonly keepAliveMs?: number | undefined;
     readonly logger?: Logger | undefined;
     readonly nickname?: string | undefined;
     readonly reconnect?: ReconnectOptions | undefined;
@@ -116,6 +125,7 @@ export type QueryEventsOption = boolean | {
 
 // @public
 export interface QueryStream {
+    destroy?(): unknown;
     end(): unknown;
     on(event: "data", listener: (chunk: Uint8Array) => void): unknown;
     on(event: "error", listener: (error: Error) => void): unknown;
@@ -128,7 +138,9 @@ export interface QueryTransport {
     close(): Promise<void>;
     onClose: ((error: Error | undefined) => void) | null;
     onLine: ((line: string) => void) | null;
-    send(line: string): Promise<void>;
+    send(line: string, options?: {
+        readonly signal?: AbortSignal;
+    }): Promise<void>;
     stats?(): QueryTransportStats;
     readonly supportsNotifications: boolean;
 }
@@ -342,7 +354,9 @@ export class WebQueryTransport implements QueryTransport {
     // (undocumented)
     onLine: ((line: string) => void) | null;
     // (undocumented)
-    send(line: string): Promise<void>;
+    send(line: string, options?: {
+        readonly signal?: AbortSignal;
+    }): Promise<void>;
     // (undocumented)
     stats(): QueryTransportStats;
     readonly supportsNotifications = false;

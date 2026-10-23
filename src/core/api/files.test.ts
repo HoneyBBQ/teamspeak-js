@@ -68,12 +68,12 @@ describe("listFilesRecursive", () => {
   it("goes down no further than maxDepth: a directory at the bound is listed, not entered", async () => {
     const { client, asked } = area(tree);
     expect(
-      (await listFilesRecursive(client, cid, "/", { maxDepth: 0 })).map((e) => e.path),
+      (await listFilesRecursive(client, cid, "/", { maxDepth: 1 })).map((e) => e.path),
     ).toEqual(["/docs", "/root.txt", "/empty"]);
     expect(asked.map((a) => a.path)).toEqual(["/"]);
 
-    const one = await listFilesRecursive(client, cid, "/", { maxDepth: 1 });
-    expect(one.map((e) => e.path)).toEqual([
+    const two = await listFilesRecursive(client, cid, "/", { maxDepth: 2 });
+    expect(two.map((e) => e.path)).toEqual([
       "/docs",
       "/docs/a.txt",
       "/docs/deep",
@@ -89,7 +89,7 @@ describe("listFilesRecursive", () => {
       password: "pw",
       signal,
       timeoutMs: 9,
-      maxDepth: 5,
+      maxDepth: 6,
     });
     expect(asked).toHaveLength(4);
     for (const call of asked) {
@@ -98,9 +98,9 @@ describe("listFilesRecursive", () => {
     }
   });
 
-  it("refuses a depth that is not a non-negative integer, and ends at the first error", async () => {
+  it("refuses a depth that is not a positive integer, and ends at the first error", async () => {
     const { client } = area(tree);
-    for (const maxDepth of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    for (const maxDepth of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
       await expect(listFilesRecursive(client, cid, "/", { maxDepth })).rejects.toThrow(RangeError);
     }
     await expect(listFilesRecursive(client, cid, "/missing")).rejects.toMatchObject({ code: 2051 });

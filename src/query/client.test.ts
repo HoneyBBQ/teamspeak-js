@@ -975,6 +975,42 @@ describe("QueryClient reconnection", () => {
     expect(client.status).toBe("disconnected");
   });
 
+  it.each([
+    ["use", "error id=1033 msg=server\\sis\\snot\\srunning", false],
+    ["use", "error id=1538 msg=invalid\\sparameter", false],
+    ["use", "error id=524 msg=client\\sis\\sflooding", true],
+    ["whoami", "error id=1538 msg=invalid\\sparameter", true],
+  ])("after a drop, a refused %s (%s) retries: %s", async (command, refusal, retries) => {
+    const transport = new FakeTransport();
+    let sessions = 0;
+    transport.auto = (line) => {
+      if (line.startsWith("version")) {
+        return ["version=3.13.8 build=1 platform=Linux", "error id=0 msg=ok"];
+      }
+      if (line.startsWith("login")) sessions++;
+      if (line.startsWith(command) && sessions > 1) return [refusal];
+      return ["error id=0 msg=ok"];
+    };
+    const client = tcpClientOn(
+      transport,
+      { name: "u", password: "pw" },
+      {
+        events: false,
+        server: { id: 1 },
+        reconnect: { backoff: { initialDelayMs: 1, maxDelayMs: 1, jitter: 0, maxAttempts: 4 } },
+      },
+    );
+    await client.connect();
+    transport.dropStream?.(new Error("reset"));
+    await waitFor(() => sessions >= 2);
+    await new Promise((r) => setTimeout(r, 100));
+
+    // A `use` the server refuses ends the loop at the first attempt, unless it
+    // is the flood limit, which clears by itself; another command is not one
+    // of the two that say the target or the account is wrong.
+    expect(sessions > 2).toBe(retries);
+  });
+
   it("reconnects a dropped session, and says so when it has", async () => {
     const transport = new FakeTransport();
     autoOk(transport);
@@ -1011,5 +1047,90 @@ describe("QueryClient reconnection", () => {
 
     expect(client.status).toBe("disconnected");
     expect(transport.sent.length).toBe(dropped);
+  });
+});
+
+describe("QueryClient keepalive", () => {
+  // Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 6.0.0-beta13.1: the server
+  // closes a raw TCP or SSH session that sent no command for 300 seconds.
+  function versionsSent(fake: FakeTransport): number {
+    return fake.sent.filter((line) => line === "version").length;
+  }
+  function autoAnswering(fake: FakeTransport): void {
+    fake.auto = (line) =>
+      line.startsWith("version")
+        ? ["version=3.13.8 build=1 platform=Linux", "error id=0 msg=ok"]
+        : ["error id=0 msg=ok"];
+  }
+
+  it("sends `version` once the session has been idle for the interval", async () => {
+    const fake = new FakeTransport();
+    autoAnswering(fake);
+    const client = tcpClientOn(
+      fake,
+      { name: "u", password: "p" },
+      { events: false, keepAliveMs: 40 },
+    );
+    await client.connect();
+    expect(versionsSent(fake)).toBe(1);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(versionsSent(fake)).toBeGreaterThanOrEqual(3);
+    await client.disconnect();
+    const after = versionsSent(fake);
+    await new Promise((r) => setTimeout(r, 120));
+    expect(versionsSent(fake)).toBe(after);
+  });
+
+  it("sends nothing extra while the client is busy", async () => {
+    const fake = new FakeTransport();
+    autoAnswering(fake);
+    const client = tcpClientOn(
+      fake,
+      { name: "u", password: "p" },
+      { events: false, keepAliveMs: 80 },
+    );
+    await client.connect();
+    for (let i = 0; i < 12; i++) {
+      await client.exec("whoami");
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(versionsSent(fake)).toBe(1);
+    await client.disconnect();
+  });
+
+  it("is off with 0, and for a custom transport", async () => {
+    const off = new FakeTransport();
+    autoAnswering(off);
+    const stopped = tcpClientOn(
+      off,
+      { name: "u", password: "p" },
+      { events: false, keepAliveMs: 0 },
+    );
+    await stopped.connect();
+    const ownTransport = new FakeTransport();
+    autoAnswering(ownTransport);
+    const own = new QueryClient({
+      transport: { kind: "custom", open: async () => ownTransport },
+      events: false,
+      keepAliveMs: 20,
+    });
+    await own.connect();
+    await new Promise((r) => setTimeout(r, 150));
+    expect(versionsSent(off)).toBe(1);
+    expect(versionsSent(ownTransport)).toBe(1);
+    await stopped.disconnect();
+    await own.disconnect();
+  });
+
+  it("refuses an interval that is not a non-negative integer", () => {
+    for (const keepAliveMs of [-1, 1.5, Number.NaN]) {
+      expect(
+        () =>
+          new QueryClient({
+            transport: { kind: "custom", open: async () => new FakeTransport() },
+            keepAliveMs,
+          }),
+      ).toThrow(RangeError);
+    }
   });
 });

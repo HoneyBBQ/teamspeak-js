@@ -591,10 +591,17 @@ function loginOf(options: SshChoice): { username: string; password: string | und
     return { username: "guest", password: undefined };
   }
   const hint = "; to connect without a login, as a guest, set guest to true";
-  return {
-    username: nonEmptyString(options.username, "username", hint),
-    password: nonEmptyString(options.password, "password", hint),
-  };
+  const username = nonEmptyString(options.username, "username", hint);
+  // Measured on TeamSpeak 6 6.0.0-beta13.1: the user `guest` logs in as a guest
+  // whatever password it is given, the administrator's included, so a password
+  // sent with it is silently ignored and the access is not the account's. The
+  // server matches the name exactly: `GUEST` is refused.
+  if (username === "guest") {
+    throw new TypeError(
+      '"guest" is the server\'s guest user, which takes no password; to connect as a guest, set guest to true',
+    );
+  }
+  return { username, password: nonEmptyString(options.password, "password", hint) };
 }
 
 function nonEmptyString(value: unknown, name: string, hint = ""): string {

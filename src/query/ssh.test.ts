@@ -218,6 +218,10 @@ describe("connectSsh as a guest", () => {
     await expect(
       connectSsh(unchecked({ host: "h", guest: false, hostKey: () => {} })),
     ).rejects.toThrow(TypeError);
+    // The server logs `guest` in as a guest whatever password comes with it.
+    await expect(
+      connectSsh(unchecked({ host: "h", username: "guest", password: "p", hostKey: () => {} })),
+    ).rejects.toThrow(/guest user.*guest: true|guest to true/);
     expect(fake.FakeClient.instances).toHaveLength(0);
   });
 });

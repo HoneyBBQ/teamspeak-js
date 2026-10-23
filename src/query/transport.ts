@@ -53,8 +53,16 @@ export interface QueryTransport {
    * run.
    */
   readonly supportsNotifications: boolean;
-  /** Send one command line; the transport adds the line terminator. */
-  send(line: string): Promise<void>;
+  /**
+   * Send one command line; the transport adds the line terminator.
+   *
+   * `signal` aborts when the command has stopped waiting for its answer, by
+   * timeout, cancel or close. A transport whose `send` carries the whole round
+   * trip, as WebQuery's does, ends the request and rejects; a stream has
+   * nothing to take back once the line is written, and ignores it. A transport
+   * that ignores it must not deliver the answer to the next command either.
+   */
+  send(line: string, options?: { readonly signal?: AbortSignal }): Promise<void>;
   /**
    * Called with each line the server sends, without its terminator, in the
    * order received.
