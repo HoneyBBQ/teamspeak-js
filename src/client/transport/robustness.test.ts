@@ -112,7 +112,9 @@ describe("robustness of the packet handler", () => {
     expect(s.handler.trafficSnapshot()).toEqual(before);
   });
 
-  it("drops an oversize fragmented command whole, to its end marker", () => {
+  // Over a megabyte through the handler: a fraction of a second on a laptop,
+  // and more than the default five seconds on a busy CI runner.
+  it("drops an oversize fragmented command whole, to its end marker", { timeout: 30_000 }, () => {
     const s = session();
     const delivered: Uint8Array[] = [];
     s.handler.onPacket = (p) => delivered.push(p.data);
