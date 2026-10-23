@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ErrorCode } from "./errorcode.js";
-import { ServerError, parseServerError } from "./errors.js";
+import fc from "fast-check";
+import { ServerError, floodRetryDelayMs, parseErrorCode, parseServerError } from "./errors.js";
 
 describe("parseServerError", () => {
   it("reads a permission named by WebQuery apart from an id", () => {
@@ -142,5 +143,86 @@ describe("error names", () => {
     }
     const server = new ServerError(1, "bad");
     expect(String(server)).toBe("ServerError: TeamSpeak server error: bad (code 1)");
+  });
+});
+
+describe("reading an error line's numbers", () => {
+  // The server sends unsigned 32-bit decimals. Anything else is not read as a
+  // prefix or a wrapped value: "12abc" was error 12, and a 20-digit id some
+  // code no one defined.
+  it.each([
+    "12abc",
+    "",
+    " 7",
+    "7 ",
+    "-1",
+    "+5",
+    "1.5",
+    "0x10",
+    "4294967296",
+    "99999999999999999999",
+  ])("reports the id %j as Undefined", (id) => {
+    expect(parseErrorCode(id)).toBe(ErrorCode.Undefined);
+    expect(parseServerError({ id, msg: "x" }).err?.code).toBe(ErrorCode.Undefined);
+  });
+
+  it("reads the edges, leading zeros included", () => {
+    expect(parseErrorCode("2568")).toBe(2568);
+    expect(parseErrorCode("4294967295")).toBe(4294967295);
+    expect(parseErrorCode("0000000000000000000012")).toBe(12);
+    expect(parseErrorCode(undefined)).toBe(ErrorCode.Undefined);
+  });
+
+  it("takes a return code only when it is an unsigned 32-bit number", () => {
+    for (const rc of ["12abc", "", "-3", "1e3", "4294967296", " 4", "0x1"]) {
+      expect(parseServerError({ id: "0", return_code: rc }).rc).toBeNull();
+    }
+    expect(parseServerError({ id: "0" }).rc).toBeNull();
+    expect(parseServerError({ id: "0", return_code: "0" }).rc).toBe(0);
+    expect(parseServerError({ id: "0", return_code: "4294967295" }).rc).toBe(4294967295);
+  });
+
+  it("takes a failed permission id the same way", () => {
+    const failed = (id: string) =>
+      parseServerError({ id: "2568", failed_permid: id }).err?.failedPermissionID;
+    expect(failed("12abc")).toBeUndefined();
+    expect(failed("4294967296")).toBeUndefined();
+    expect(failed("00000000236")).toBe(236);
+  });
+
+  it("agrees with a strict reading for any text", () => {
+    fc.assert(
+      fc.property(fc.string({ maxLength: 24 }), (raw) => {
+        const strict = /^[0-9]+$/.test(raw) && Number(raw) <= 0xffff_ffff;
+        expect(parseErrorCode(raw)).toBe(strict ? Number(raw) : ErrorCode.Undefined);
+        expect(parseServerError({ id: "0", return_code: raw }).rc).toBe(
+          strict ? Number(raw) : null,
+        );
+      }),
+    );
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 0xffff_ffff }), (id) => {
+        expect(parseErrorCode(String(id))).toBe(id);
+      }),
+    );
+  });
+});
+
+describe("floodRetryDelayMs", () => {
+  const refusal = (id: string, extra?: string) =>
+    parseServerError({ id, msg: "client is flooding", ...(extra ? { extra_msg: extra } : {}) })
+      .err!;
+
+  it("reads the wait of error 524", () => {
+    expect(floodRetryDelayMs(refusal("524", "retry in 1985ms"))).toBe(1985);
+    expect(floodRetryDelayMs(refusal("524", "retry in 0ms"))).toBe(0);
+  });
+
+  it("is undefined for anything else", () => {
+    expect(floodRetryDelayMs(refusal("524"))).toBeUndefined();
+    expect(floodRetryDelayMs(refusal("524", "retry in 5 seconds"))).toBeUndefined();
+    expect(floodRetryDelayMs(refusal("524", "retry in 99999999999ms"))).toBeUndefined();
+    expect(floodRetryDelayMs(refusal("1024", "retry in 10ms"))).toBeUndefined();
+    expect(floodRetryDelayMs(new Error("retry in 10ms"))).toBeUndefined();
   });
 });

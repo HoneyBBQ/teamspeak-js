@@ -1,7 +1,7 @@
 import { clientInternals } from "./client.js";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { getEventListeners } from "node:events";
-import { Client } from "./client.js";
+import { Client, onSentLine } from "./client.js";
 import { generateIdentitySync } from "./crypto/identity.js";
 import { ConnectionTimeoutError } from "./errors.js";
 import {
@@ -273,6 +273,127 @@ describe("the command throttle", () => {
     await expect(
       client.execNoWait("clientupdate", { signal: AbortSignal.abort(reason) }),
     ).rejects.toBe(reason);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+});
+
+describe("disconnect() and the flood throttle", () => {
+  afterEach(() => onSentLine(undefined));
+
+  // Queued behind the commands waiting for a token, the goodbye used to miss
+  // its second and the server kept the session.
+  it("sends the goodbye at once and rejects what waited for its turn", async () => {
+    const { client } = await connected();
+    const sent: string[] = [];
+    onSentLine((_c, line) => void sent.push(line));
+    for (let i = 0; i < 8; i++) await client.execNoWait("clientupdate");
+    sent.length = 0;
+
+    const waiting = [
+      client.exec("whoami"),
+      client.exec("whoami"),
+      client.execNoWait("clientupdate client_away=1"),
+      client.execNoWait("clientupdate client_away=1"),
+    ].map((p) => expect(p).rejects.toBeInstanceOf(NotConnectedError));
+    await settle();
+
+    await client.disconnect({ signal: AbortSignal.timeout(20) });
+    await Promise.all(waiting);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatch(/^clientdisconnect /);
+  });
+
+  it("says goodbye from a connecting client only once clientinit is out", async () => {
+    for (const [cryptoInit, expected] of [
+      [true, 1],
+      [false, 0],
+    ] as const) {
+      let socket: FakeSocket | undefined;
+      const client = clientOn(() => (socket = new FakeSocket()));
+      const sent: string[] = [];
+      onSentLine((_c, line) => void sent.push(line));
+      const connecting = client.connect();
+      connecting.catch(() => {});
+      await until(() => clientInternals(client).handler.isOpen);
+      if (cryptoInit) completeCryptoInit(clientInternals(client).crypt);
+      expect(socket).toBeDefined();
+      await client.disconnect({ signal: AbortSignal.timeout(20) });
+      expect(sent.filter((l) => l.startsWith("clientdisconnect "))).toHaveLength(expected);
+    }
+  });
+});
+
+describe("a command refused as flooding", () => {
+  afterEach(() => onSentLine(undefined));
+
+  const sendError = (client: Client, line: string, id: number, extra = ""): void => {
+    const rc = /return_code=(\d+)/.exec(line)![1];
+    const text = `error id=${id} msg=x${extra} return_code=${rc}`;
+    clientInternals(client).handlePacket(
+      packet(PacketType.Command, new TextEncoder().encode(text)),
+    );
+  };
+
+  // Measured on TeamSpeak 3 and 6: error 524 says how long to wait and did not
+  // run the command, so after the wait it goes out again, under a new return
+  // code, and everything else waits with it.
+  it("waits as long as the server says, then sends it again", async () => {
+    const { client } = await connected();
+    const sent: Array<{ line: string; at: number }> = [];
+    onSentLine((_c, line) => void sent.push({ line, at: performance.now() }));
+
+    const answer = client.exec("whoami");
+    await settle();
+    expect(sent).toHaveLength(1);
+    sendError(client, sent[0]!.line, 524, " extra_msg=retry\\sin\\s200ms");
+    await settle();
+    // Another command meanwhile waits out the pause too.
+    const other = client.exec("whoami");
+    await new Promise((r) => setTimeout(r, 100));
+    expect(sent).toHaveLength(1);
+
+    // One a quarter second after the pause, the next a quarter second later.
+    await new Promise((r) => setTimeout(r, 700));
+    expect(sent).toHaveLength(3);
+    expect(sent[1]!.at - sent[0]!.at).toBeGreaterThanOrEqual(190);
+    const codes = sent.map((s) => /return_code=(\d+)/.exec(s.line)![1]);
+    expect(new Set(codes).size).toBe(codes.length);
+    for (const entry of sent.slice(1)) sendError(client, entry.line, 0);
+    await expect(answer).resolves.toEqual([]);
+    await expect(other).resolves.toEqual([]);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("gives up with the server's error when the wait is more than the command can afford", async () => {
+    const { client } = await connected();
+    const sent: string[] = [];
+    onSentLine((_c, line) => void sent.push(line));
+    const answer = client.exec("whoami", { timeoutMs: 500 });
+    const failed = expect(answer).rejects.toMatchObject({ code: 524 });
+    await settle();
+    sendError(client, sent[0]!, 524, " extra_msg=retry\\sin\\s5000ms");
+    await failed;
+    expect(sent).toHaveLength(1);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("does not resend after another error, or a flood refusal without a wait", async () => {
+    const { client } = await connected();
+    const sent: string[] = [];
+    onSentLine((_c, line) => void sent.push(line));
+    for (const [id, extra] of [
+      [1024, " extra_msg=retry\\sin\\s10ms"],
+      [524, ""],
+      [524, " extra_msg=later"],
+    ] as const) {
+      sent.length = 0;
+      const answer = client.exec("whoami");
+      const failed = expect(answer).rejects.toMatchObject({ code: id });
+      await settle();
+      sendError(client, sent[0]!, id, extra);
+      await failed;
+      expect(sent).toHaveLength(1);
+    }
     await client.disconnect({ signal: AbortSignal.timeout(1) });
   });
 });

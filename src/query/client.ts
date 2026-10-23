@@ -217,6 +217,8 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     this.#options = normalizeQueryOptions(options);
     this.#logger = this.#options.logger ?? noopLogger;
     this.#notifications = this.#options.notificationsSupported;
+    // Refused here, not when the loop first runs: a bad policy would flood.
+    if (this.#options.reconnect !== undefined) resolveBackoffPolicy(this.#options.reconnect);
     this.#reconnectOptions = this.#options.reconnect;
     const middlewares: readonly CommandMiddleware[] = this.#options.commandMiddleware ?? [];
     // Built once: the chain is read on every command, and changing it while

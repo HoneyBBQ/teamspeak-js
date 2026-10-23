@@ -73,3 +73,42 @@ describe("resolveBackoffPolicy", () => {
     expect(p.maxDelayMs).toBe(defaultBackoffPolicy.maxDelayMs);
   });
 });
+
+describe("resolveBackoffPolicy validation", () => {
+  const refused: Array<[string, Record<string, number>]> = [
+    ["a zero initial delay", { initialDelayMs: 0 }],
+    ["a negative initial delay", { initialDelayMs: -1 }],
+    ["a NaN initial delay", { initialDelayMs: NaN }],
+    ["an infinite initial delay", { initialDelayMs: Infinity }],
+    ["a zero maximum delay", { maxDelayMs: 0 }],
+    ["a maximum below the initial delay", { initialDelayMs: 500, maxDelayMs: 100 }],
+    ["a NaN factor", { factor: NaN }],
+    ["a factor that shrinks the delay", { factor: 0.5 }],
+    ["a zero factor", { factor: 0 }],
+    ["a NaN jitter", { jitter: NaN }],
+    ["a jitter above 1", { jitter: 1.5 }],
+    ["a negative attempt limit", { maxAttempts: -1 }],
+    ["a fractional attempt limit", { maxAttempts: 1.5 }],
+    ["a NaN attempt limit", { maxAttempts: NaN }],
+  ];
+  it.each(refused)("refuses %s", (_name, backoff) => {
+    expect(() => resolveBackoffPolicy({ backoff })).toThrow(RangeError);
+  });
+
+  it("accepts the edges, and an unset field keeps its default", () => {
+    expect(
+      resolveBackoffPolicy({
+        backoff: { initialDelayMs: 1, maxDelayMs: 1, factor: 1, jitter: 0, maxAttempts: 0 },
+      }),
+    ).toEqual({ initialDelayMs: 1, maxDelayMs: 1, factor: 1, jitter: 0, maxAttempts: 0 });
+    expect(resolveBackoffPolicy({ backoff: { jitter: -1, maxDelayMs: undefined } }).jitter).toBe(
+      -1,
+    );
+    expect(resolveBackoffPolicy({}).initialDelayMs).toBe(defaultBackoffPolicy.initialDelayMs);
+  });
+
+  it("raises an unset ceiling to a larger initial delay", () => {
+    const p = resolveBackoffPolicy({ backoff: { initialDelayMs: 120_000 } });
+    expect(p.maxDelayMs).toBe(120_000);
+  });
+});

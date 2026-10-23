@@ -231,13 +231,42 @@ export class NoDataError extends TeamspeakError {
 }
 
 /**
- * Read an error id. One that is missing or unreadable is reported as
- * {@link ErrorCode.Undefined}: an error line that does not say what went wrong
- * has still not said that nothing did.
+ * `raw` as an unsigned 32-bit number, or undefined unless it is nothing but
+ * digits and fits: "12abc", " 7", "-1" and "4294967296" are not numbers the
+ * server sends, and are not read as 12, 7, 1 or a code no one defined.
+ */
+function parseUint32(raw: string | undefined): number | undefined {
+  if (raw === undefined || !/^\d+$/.test(raw)) return undefined;
+  const value = Number(raw);
+  return value <= 0xffff_ffff ? value : undefined;
+}
+
+/**
+ * Read an error id. One that is missing or unreadable (not an unsigned 32-bit
+ * number) is reported as {@link ErrorCode.Undefined}: an error line that does
+ * not say what went wrong has still not said that nothing did.
  */
 export function parseErrorCode(raw: string | undefined): number {
-  if (raw === undefined || !/^\d+$/.test(raw)) return ErrorCode.Undefined;
-  return Number(raw);
+  return parseUint32(raw) ?? ErrorCode.Undefined;
+}
+
+/**
+ * How long the server asks a client it refused as flooding to wait: the
+ * `retry in 1985ms` of the extra message of error 524, in milliseconds. Undefined
+ * for any other error, or one that names no wait.
+ *
+ * Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 6.0.0: a voice client whose
+ * antiflood points pass `virtualserver_antiflood_points_needed_command_block`
+ * gets `error id=524 msg=client\sis\sflooding extra_msg=retry\sin\s1985ms`
+ * for each command, and the command is not run. The wait is a floor, not a
+ * promise: a command sent as the wait ends is refused again with a shorter one,
+ * and the second try went through in every measurement.
+ */
+export function floodRetryDelayMs(error: Error): number | undefined {
+  if (!(error instanceof ServerError) || error.code !== ErrorCode.ClientIsFlooding)
+    return undefined;
+  const match = /^retry in (\d{1,9})ms$/.exec(error.extraMessage ?? "");
+  return match === null ? undefined : Number(match[1]);
 }
 
 /**
@@ -249,28 +278,17 @@ export function parseServerError(params: Record<string, string>): {
   rc: number | null;
 } {
   const code = parseErrorCode(params["id"]);
-  const rcStr = params["return_code"];
 
   let err: ServerError | null = null;
   if (code !== ErrorCode.OK) {
-    const failedPermid = params["failed_permid"];
+    const failedPermid = parseUint32(params["failed_permid"]);
     err = new ServerError(code, params["msg"] ?? "", {
       extraMessage: params["extra_msg"] || undefined,
-      failedPermissionID:
-        failedPermid !== undefined &&
-        /^\d{1,10}$/.test(failedPermid) &&
-        Number(failedPermid) <= 0xffff_ffff
-          ? asPermissionID(Number(failedPermid))
-          : undefined,
+      failedPermissionID: failedPermid === undefined ? undefined : asPermissionID(failedPermid),
       failedPermission: params["failed_permission"] || undefined,
     });
   }
 
-  let rc: number | null = null;
-  if (rcStr !== undefined && rcStr !== "") {
-    const parsed = parseInt(rcStr, 10);
-    if (!isNaN(parsed)) rc = parsed;
-  }
-
-  return { err, rc };
+  // A return code that is not an unsigned 32-bit number names no command.
+  return { err, rc: parseUint32(params["return_code"]) ?? null };
 }

@@ -14,7 +14,8 @@ import type { ChannelID, ClientID, CommandOptions } from "@honeybbq/teamspeak";
 /**
  * The channel's description, which `listChannels` omits for bandwidth. The
  * server answers with a `notifychanneledited` that the client does not report as
- * a `channelEdited` event, since it is no edit.
+ * a `channelEdited` event, since it is no edit. Rejects with a NoDataError if
+ * the server sends no such answer.
  */
 export async function getChannelDescription(
   client: Client,
@@ -29,7 +30,9 @@ export async function getChannelDescription(
   // can arrive while the command waits, a real edit with other properties,
   // and the first row is then not the answer.
   const answer = rows.find((row) => row["cid"] === String(cid) && "channel_description" in row);
-  return answer?.["channel_description"] ?? "";
+  // A missing answer is not an empty description.
+  if (answer === undefined) throw new NoDataError("channelgetdescription");
+  return answer["channel_description"] ?? "";
 }
 
 /**
