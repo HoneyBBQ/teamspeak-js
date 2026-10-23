@@ -58,6 +58,14 @@ export type StreamSource = "none" | "camera" | "screen" | "window" | "session";
 export type StreamAccessibility = "none" | "public" | "contacts" | "private";
 
 /**
+ * How a stream's media travels: `"p2p"`, from the publisher to each viewer
+ * directly, is the one mode this SDK publishes and watches. A server may
+ * announce a stream in another mode; it is reported as the number, and
+ * `watch` refuses it.
+ */
+export type StreamTransport = "p2p";
+
+/**
  * A stream, as the server describes it.
  */
 export interface StreamInfo {
@@ -79,6 +87,11 @@ export interface StreamInfo {
   readonly bitrate?: number | undefined;
   /** Who it says may watch; a number the SDK has no name for is passed through. */
   readonly accessibility?: StreamAccessibility | number | undefined;
+  /**
+   * How its media travels (`mode`); a number the SDK has no name for is
+   * passed through. `undefined` when the server has not said.
+   */
+  readonly transport?: StreamTransport | number | undefined;
   /** The viewer limit the publisher set; 0 is none. The server does not enforce it. */
   readonly viewerLimit?: number | undefined;
   /**

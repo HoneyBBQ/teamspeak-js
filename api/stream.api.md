@@ -145,6 +145,7 @@ export interface StreamInfo {
     readonly id: string;
     readonly name: string;
     readonly source?: StreamSource | number | undefined;
+    readonly transport?: StreamTransport | number | undefined;
     readonly viewerLimit?: number | undefined;
     readonly viewers?: number | undefined;
 }
@@ -232,6 +233,18 @@ export class StreamsUnsupportedError extends TeamspeakError {
     // (undocumented)
     static readonly kind: string;
     readonly version: string;
+}
+
+// @public
+export type StreamTransport = "p2p";
+
+// @public
+export class StreamTransportUnsupportedError extends TeamspeakError {
+    constructor(streamId: string, transport: number);
+    // (undocumented)
+    static readonly kind: string;
+    readonly streamId: string;
+    readonly transport: number;
 }
 
 // @public

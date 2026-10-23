@@ -13,6 +13,7 @@ import type {
   StreamAccessibility,
   StreamInfo,
   StreamSource,
+  StreamTransport,
 } from "./types.js";
 
 /**
@@ -37,6 +38,9 @@ const SOURCES: readonly StreamSource[] = ["none", "camera", "screen", "window", 
 /** The names of `accessibility`, by wire number. */
 const ACCESSIBILITIES: readonly StreamAccessibility[] = ["none", "public", "contacts", "private"];
 
+/** The names of `mode`, by wire number; 0 has none. */
+const TRANSPORTS: ReadonlyArray<StreamTransport | undefined> = [undefined, "p2p"];
+
 /** The wire number of a source name; undefined for a name that is none. */
 export function sourceToWire(source: string): number | undefined {
   const index = SOURCES.indexOf(source as StreamSource);
@@ -55,6 +59,10 @@ function sourceFromWire(n: number): StreamSource | number {
 
 function accessibilityFromWire(n: number): StreamAccessibility | number {
   return ACCESSIBILITIES[n] ?? n;
+}
+
+function transportFromWire(n: number): StreamTransport | number {
+  return TRANSPORTS[n] ?? n;
 }
 
 // ---- Commands ---------------------------------------------------------------
@@ -271,6 +279,7 @@ export function streamInfoFrom(
 
   const type = int(params["type"]);
   const access = int(params["accessibility"] ?? params["access"]);
+  const mode = int(params["mode"]);
   const bitrate = int(params["bitrate"]);
   const limit = int(params["viewer_limit"]);
   const viewers = int(params["viewer"]);
@@ -285,6 +294,7 @@ export function streamInfoFrom(
     audio: params["audio"] === undefined ? (known?.audio ?? false) : params["audio"] === "1",
     bitrate: bitrate ?? known?.bitrate,
     accessibility: access === undefined ? known?.accessibility : accessibilityFromWire(access),
+    transport: mode === undefined ? known?.transport : transportFromWire(mode),
     viewerLimit: limit ?? known?.viewerLimit,
     viewers: viewers ?? known?.viewers,
   };
@@ -299,6 +309,7 @@ export function sameInfo(a: StreamInfo, b: StreamInfo): boolean {
     a.audio === b.audio &&
     a.bitrate === b.bitrate &&
     a.accessibility === b.accessibility &&
+    a.transport === b.transport &&
     a.viewerLimit === b.viewerLimit &&
     a.viewers === b.viewers
   );

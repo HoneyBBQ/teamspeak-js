@@ -15,7 +15,12 @@ import type {
 import { Emitter, MAX_KEPT } from "./emitter.js";
 import { defer, within } from "./wait.js";
 import type { Deferred } from "./wait.js";
-import { StreamEndedError, StreamJoinDeniedError, StreamsUnsupportedError } from "./errors.js";
+import {
+  StreamEndedError,
+  StreamJoinDeniedError,
+  StreamsUnsupportedError,
+  StreamTransportUnsupportedError,
+} from "./errors.js";
 import { StreamViewImpl } from "./peer.js";
 import type { PeerImpl } from "./peer.js";
 import { PublishedImpl } from "./published.js";
@@ -371,8 +376,10 @@ export class Streams {
    * Rejects with a `StreamJoinDeniedError` when the publisher refuses, a
    * `StreamEndedError` when the id is not one this client has heard of, or the
    * stream ends first (or is gone: error 5635), a
-   * `StreamsUnsupportedError` on a server without streams, and the server's
-   * own error otherwise, among them 5638 (`ErrorCode.StreamAlreadyJoined`)
+   * `StreamsUnsupportedError` on a server without streams, a
+   * `StreamTransportUnsupportedError` without sending anything for a stream
+   * whose media does not travel peer to peer, and the server's own error
+   * otherwise, among them 5638 (`ErrorCode.StreamAlreadyJoined`)
    * when this client already asked. When the wait runs out or `signal` aborts,
    * the request is withdrawn.
    */
@@ -382,6 +389,9 @@ export class Streams {
     const known = typeof target === "string" ? this.#infos.get(target) : target;
     if (known === undefined) {
       throw new StreamEndedError(id);
+    }
+    if (typeof known.transport === "number") {
+      throw new StreamTransportUnsupportedError(id, known.transport);
     }
     if (this.#watching.has(id)) throw new TeamspeakError(`already watching stream ${id}`);
     options.signal?.throwIfAborted();
