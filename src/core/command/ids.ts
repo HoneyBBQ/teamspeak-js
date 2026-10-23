@@ -119,17 +119,26 @@ export const asIconID = (v: number): IconID => {
   return (v >>> 0) as IconID;
 };
 
+/** The smallest negative 32-bit number, sign-extended to 64 bits and read unsigned. */
+const SIGN_EXTENDED_MIN = 2n ** 64n - 2n ** 31n;
+
 /**
- * Read an icon id as the server sends it: the CRC32, sometimes as a negative
- * 32-bit number, sometimes unsigned. Both name the same icon, so both come back
- * as the unsigned value; 0, garbage and out-of-range values mean no icon.
+ * Read an icon id as the server sends it: the CRC32 in one of three forms, all
+ * naming the same icon. Measured on TeamSpeak 3 and 6 for one icon:
+ * `channelinfo` sends it unsigned (3009859579), `servergrouplist` as a signed
+ * 32-bit number (-1285107717), and the voice protocol's `notifychanneledited`
+ * as that negative number sign-extended to 64 bits, unsigned
+ * (18446744072424443899). Each comes back as the unsigned 32-bit value, which
+ * names the icon file; 0, garbage and any other value mean no icon.
  */
 export function parseIconID(raw: string | undefined): IconID | undefined {
   const text = raw?.trim() ?? "";
-  if (!/^-?\d{1,10}$/.test(text)) return undefined;
-  const value = Number(text);
-  if (value < -(2 ** 31) || value >= 2 ** 32 || value === 0) return undefined;
-  return asIconID(value);
+  if (!/^-?\d{1,20}$/.test(text)) return undefined;
+  let value = BigInt(text);
+  // A negative 32-bit number sign-extended to 64 bits and sent unsigned.
+  if (value >= SIGN_EXTENDED_MIN && value < 2n ** 64n) value -= 2n ** 64n;
+  if (value < -(2n ** 31n) || value >= 2n ** 32n || value === 0n) return undefined;
+  return asIconID(Number(value));
 }
 
 /**
