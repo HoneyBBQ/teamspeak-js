@@ -22,9 +22,9 @@
 
 <p align="center">
   <a href="https://honeybbq.github.io/teamspeak-js/">Docs</a> ·
-  <a href="https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/guide.md">Guide</a> ·
+  <a href="https://honeybbq.github.io/teamspeak-js/documents/guide.html">Guide</a> ·
   <a href="https://github.com/HoneyBBQ/teamspeak-js/blob/main/CHANGELOG.md">Changelog</a> ·
-  <a href="https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/migrating-to-1.0.md">Migrating to 1.0</a>
+  <a href="https://honeybbq.github.io/teamspeak-js/documents/migrating-to-1.0.html">Migrating to 1.0</a>
 </p>
 
 ## Why this library
@@ -44,7 +44,7 @@
 npm install @honeybbq/teamspeak
 ```
 
-1.0 is in beta and published under the `latest` and `beta` tags; Node.js 22.12 or newer is required. Upgrading from 0.x? See [Migrating to 1.0](https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/migrating-to-1.0.md).
+1.0 is in beta and published under the `latest` and `beta` tags; Node.js 22.12 or newer is required. Upgrading from 0.x? See [Migrating to 1.0](https://honeybbq.github.io/teamspeak-js/documents/migrating-to-1.0.html).
 
 ## Quick start
 
@@ -71,26 +71,26 @@ process.on("SIGINT", () => void client.disconnect());
 
 ## Entry points
 
-| Import                         | What it is                                                                                   | Docs                                                                                      |
-| ------------------------------ | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `@honeybbq/teamspeak`          | What every connection shares: the command language, ids, errors, typed commands, event types | [Design](https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/design.md)               |
-| `@honeybbq/teamspeak/client`   | The voice client, identities, file transfers, diagnostics and the retry policy               | [Guide](https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/guide.md)                 |
-| `@honeybbq/teamspeak/stream`   | TeamSpeak 6 screen-share signalling; no WebRTC code                                          | [Streams](https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/streams.md)             |
-| `@honeybbq/teamspeak/query`    | The ServerQuery client over raw TCP, SSH or WebQuery; `@experimental`                        | [ServerQuery](https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/serverquery.md)     |
-| `@honeybbq/teamspeak/versions` | Client versions a server accepts, for the `version` option                                   | [Configuration](https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/configuration.md) |
+| Import                         | What it is                                                                                   | Docs                                                                                  |
+| ------------------------------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `@honeybbq/teamspeak`          | What every connection shares: the command language, ids, errors, typed commands, event types | [Design](https://honeybbq.github.io/teamspeak-js/documents/design.html)               |
+| `@honeybbq/teamspeak/client`   | The voice client, identities, file transfers, diagnostics and the retry policy               | [Guide](https://honeybbq.github.io/teamspeak-js/documents/guide.html)                 |
+| `@honeybbq/teamspeak/stream`   | TeamSpeak 6 screen-share signalling; no WebRTC code                                          | [Streams](https://honeybbq.github.io/teamspeak-js/documents/streams.html)             |
+| `@honeybbq/teamspeak/query`    | The ServerQuery client over raw TCP, SSH or WebQuery; `@experimental`                        | [ServerQuery](https://honeybbq.github.io/teamspeak-js/documents/serverquery.html)     |
+| `@honeybbq/teamspeak/versions` | Client versions a server accepts, for the `version` option                                   | [Configuration](https://honeybbq.github.io/teamspeak-js/documents/configuration.html) |
 
 ## Documentation
 
 The full API reference is at [honeybbq.github.io/teamspeak-js](https://honeybbq.github.io/teamspeak-js/). The pages below are the long-form guides.
 
-- [Guide](https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/guide.md): connecting, events, commands, file transfers and identities.
-- [Configuration](https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/configuration.md): options, client version, tracing, diagnostics, reconnection, custom transports and server capabilities.
-- [Streams](https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/streams.md): TeamSpeak 6 screen-share signalling, and interop with the TeamSpeak 6 client.
-- [ServerQuery](https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/serverquery.md): the query client and its SSH host-key policy.
-- [Design](https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/design.md): errors, ids, absent values, events, stability, and the server behaviour the SDK works around.
-- [Compatibility](https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/compatibility.md): supported environments and the differences from the Go SDK.
-- [Architecture](https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/architecture.md): source layout and entry points.
-- [Migrating to 1.0](https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/migrating-to-1.0.md), [voice protocol responses](https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/voice-protocol-responses.md) and [ServerQuery responses](https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/serverquery-responses.md): reference material.
+- [Guide](https://honeybbq.github.io/teamspeak-js/documents/guide.html): connecting, events, commands, file transfers and identities.
+- [Configuration](https://honeybbq.github.io/teamspeak-js/documents/configuration.html): options, client version, tracing, diagnostics, reconnection, custom transports and server capabilities.
+- [Streams](https://honeybbq.github.io/teamspeak-js/documents/streams.html): TeamSpeak 6 screen-share signalling, and interop with the TeamSpeak 6 client.
+- [ServerQuery](https://honeybbq.github.io/teamspeak-js/documents/serverquery.html): the query client and its SSH host-key policy.
+- [Design](https://honeybbq.github.io/teamspeak-js/documents/design.html): errors, ids, absent values, events, stability, and the server behaviour the SDK works around.
+- [Compatibility](https://honeybbq.github.io/teamspeak-js/documents/compatibility.html): supported environments and the differences from the Go SDK.
+- [Architecture](https://honeybbq.github.io/teamspeak-js/documents/architecture.html): source layout and entry points.
+- [Migrating to 1.0](https://honeybbq.github.io/teamspeak-js/documents/migrating-to-1.0.html), [voice protocol responses](https://honeybbq.github.io/teamspeak-js/documents/voice-protocol-responses.html) and [ServerQuery responses](https://honeybbq.github.io/teamspeak-js/documents/serverquery-responses.html): reference material.
 
 ## Compatibility
 
@@ -100,7 +100,7 @@ The full API reference is at [honeybbq.github.io/teamspeak-js](https://honeybbq.
 | TeamSpeak 6 | Voice protocol, ServerQuery and screen-share signalling               |
 | Node.js     | 22.12 and newer; CI tests 22.12, 24 and 26. ESM only; TypeScript 5.2+ |
 
-Details in [docs/compatibility.md](https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/compatibility.md).
+Details in [the compatibility page](https://honeybbq.github.io/teamspeak-js/documents/compatibility.html).
 
 ## Related
 

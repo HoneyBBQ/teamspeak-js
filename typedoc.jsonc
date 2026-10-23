@@ -34,6 +34,7 @@
   "excludeNotDocumented": false,
   "githubPages": true,
   "favicon": "docs/assets/favicon.svg",
+  "customCss": "docs/assets/typedoc.css",
   // Each enumeration is `typeof xValues`, a helper const that is private to its
   // file; its members are documented on the exported const of the same
   // shape (Codec, ErrorCode, ClientStatus, ConnectPhase, ...). The
