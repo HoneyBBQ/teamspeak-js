@@ -1,4 +1,0 @@
-[[IgnoredVulns]]
-id = "GHSA-hp3w-g68c-fv3c"
-ignoreUntil = 2027-04-15
-reason = "sprintf-js is only reached through @microsoft/api-extractor, a devDependency that runs when API reports are generated; nothing that ships depends on it. No patched version exists upstream."

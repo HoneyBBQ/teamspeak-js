@@ -4,7 +4,28 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Matches minimumReleaseAge in pnpm-workspace.yaml: a version younger than
+    # that cannot be resolved by pnpm, so it is not proposed either. Security
+    # updates ignore the cooldown.
+    cooldown:
+      default-days: 3
     open-pull-requests-limit: 10
+    groups:
+      npm-dependencies:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # The consumer project the type-check job installs with npm has its own
+  # lockfile, which the root entry does not look at.
+  - package-ecosystem: "npm"
+    directory: "/test/types"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 3
     groups:
       npm-dependencies:
         patterns:
