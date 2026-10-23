@@ -150,7 +150,8 @@ describe.skipIf(SKIP)("Integration — permission round trip", () => {
           add: (v) => addChannelPermission(admin, cid, permission, v),
           remove: () => deleteChannelPermission(admin, cid, permission),
           list: () => listChannelPermissions(admin, cid),
-          here: (l) => l.target === PermissionTarget.Channel && l.channelID === cid,
+          here: (l) =>
+            l.target === PermissionTarget.Channel && "channelID" in l && l.channelID === cid,
         },
         {
           name: "channel group",
@@ -159,7 +160,10 @@ describe.skipIf(SKIP)("Integration — permission round trip", () => {
           add: (v) => addChannelGroupPermission(admin, cgid, permission, v),
           remove: () => deleteChannelGroupPermission(admin, cgid, permission),
           list: () => listChannelGroupPermissions(admin, cgid),
-          here: (l) => l.target === PermissionTarget.ChannelGroup && l.channelGroupID === cgid,
+          here: (l) =>
+            l.target === PermissionTarget.ChannelGroup &&
+            "channelGroupID" in l &&
+            l.channelGroupID === cgid,
         },
         {
           name: "channel client",
@@ -170,6 +174,8 @@ describe.skipIf(SKIP)("Integration — permission round trip", () => {
           list: () => listChannelClientPermissions(admin, cid, databaseID),
           here: (l) =>
             l.target === PermissionTarget.ChannelClient &&
+            "channelID" in l &&
+            "databaseID" in l &&
             l.channelID === cid &&
             l.databaseID === databaseID,
         },
@@ -180,7 +186,10 @@ describe.skipIf(SKIP)("Integration — permission round trip", () => {
           add: (v) => addClientPermission(admin, databaseID, permission, v),
           remove: () => deleteClientPermission(admin, databaseID, permission),
           list: () => listClientPermissions(admin, databaseID),
-          here: (l) => l.target === PermissionTarget.Client && l.databaseID === databaseID,
+          here: (l) =>
+            l.target === PermissionTarget.Client &&
+            "databaseID" in l &&
+            l.databaseID === databaseID,
         },
         {
           name: "server group",
@@ -189,7 +198,10 @@ describe.skipIf(SKIP)("Integration — permission round trip", () => {
           add: (v) => addServerGroupPermission(admin, sgid, permission, v),
           remove: () => deleteServerGroupPermission(admin, sgid, permission),
           list: () => listServerGroupPermissions(admin, sgid),
-          here: (l) => l.target === PermissionTarget.ServerGroup && l.serverGroupID === sgid,
+          here: (l) =>
+            l.target === PermissionTarget.ServerGroup &&
+            "serverGroupID" in l &&
+            l.serverGroupID === sgid,
         },
       ];
 

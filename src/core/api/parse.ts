@@ -45,39 +45,40 @@ const flag = (key: string): FieldSpec<boolean> => ({ keys: [key], read: bool });
 /**
  * The wire key of every client field but `id`, and how each is read: the one
  * table `parseClient` and `parseClientChanges` share, so a row, a listing and
- * a change cannot disagree about a name. `always` marks the fields a full
- * record has had from the start, which read as a default from a row without
- * them; every other field is left out when the row lacks it.
+ * a change cannot disagree about a name. `always` marks the fields every
+ * source carries, which read as a default from a row without them; every
+ * other field is left out when the row lacks it.
  */
 export const clientFields: {
   readonly [K in Exclude<keyof ClientEntry, "id">]-?: FieldSpec<ClientEntry[K]>;
 } = {
   nickname: { keys: ["client_nickname"], read: str, always: true },
-  uid: { keys: ["client_unique_identifier"], read: (r, k) => asUID(str(r, k)), always: true },
   // A listing names the channel `cid`, an enter notification `ctid`.
   channelID: { keys: ["cid", "ctid"], read: (r, k) => asChannelID(big(r, k)), always: true },
   type: { keys: ["client_type"], read: num, always: true },
+  uid: { keys: ["client_unique_identifier"], read: (r, k) => asUID(str(r, k)) },
   serverGroups: {
     keys: ["client_servergroups"],
     read: (r, k) => parseServerGroups(r[k] ?? ""),
-    always: true,
   },
-  isAway: { keys: ["client_away"], read: bool, always: true },
-  isRecording: { keys: ["client_is_recording"], read: bool, always: true },
-  isTalker: { keys: ["client_is_talker"], read: bool, always: true },
+  isAway: flag("client_away"),
+  isRecording: flag("client_is_recording"),
+  isTalker: flag("client_is_talker"),
   channelGroupID: {
     keys: ["client_channel_group_id"],
     read: (r, k) => asChannelGroupID(big(r, k)),
-    always: true,
   },
-  createdAt: { keys: ["client_created"], read: date, always: true },
-  lastConnectedAt: { keys: ["client_lastconnected"], read: date, always: true },
+  createdAt: { keys: ["client_created"], read: date },
+  lastConnectedAt: { keys: ["client_lastconnected"], read: date },
   idleTimeMs: {
     keys: ["client_idle_time"],
-    read: (r, k) => (r[k] === undefined ? undefined : durationMs(r, k, MILLISECOND)),
+    read: (r, k) => durationMs(r, k, MILLISECOND),
+  },
+  databaseID: {
+    keys: ["client_database_id"],
+    read: (r, k) => asClientDBID(big(r, k)),
     always: true,
   },
-  databaseID: { keys: ["client_database_id"], read: (r, k) => asClientDBID(big(r, k)) },
   awayMessage: text("client_away_message"),
   isInputMuted: flag("client_input_muted"),
   isOutputMuted: flag("client_output_muted"),
@@ -120,8 +121,8 @@ export const clientFields: {
  * which names its channel `ctid` where the list says `cid`. Reached by the
  * client module through `./internal`.
  *
- * The fields a client record has always had read as a default from a row
- * without them; the later ones are `undefined` instead.
+ * The fields every source carries read as a default from a row without
+ * them; the others are `undefined` instead.
  */
 export function parseClient(row: Record<string, string>): ClientEntry {
   return {

@@ -408,7 +408,10 @@ export async function getPermissionIDByName(
  * What a permission is set on, as `permfind` and `permoverview` report it:
  * discriminated on `target`, so each kind carries its own typed ids. The wire
  * sends them as `t`, `id1` and `id2`, whose meaning depends on `t`; a row with
- * a target this table does not name is left out of the results.
+ * a target this table does not name is passed through as the last kind, with
+ * the number and the raw ids. Narrowing on `target` therefore leaves that
+ * kind in the union: compare `target` with {@link PermissionTarget} and
+ * handle the rest in a default case.
  */
 export type PermissionLocation =
   | {
@@ -454,10 +457,20 @@ export type PermissionLocation =
       readonly databaseID: ClientDBID;
       /** The permission (`p`). */
       readonly permission: PermissionID;
+    }
+  | {
+      /** Set on something this table does not name: the number the server sent (`t`). */
+      readonly target: number;
+      /** The first id as sent (`id1`); what it names depends on `target`. */
+      readonly id1: bigint;
+      /** The second id as sent (`id2`). */
+      readonly id2: bigint;
+      /** The permission (`p`). */
+      readonly permission: PermissionID;
     };
 
-/** Read a location from a `permfind` or `permoverview` row; undefined for an unknown target. */
-function parseLocation(row: Record<string, string>): PermissionLocation | undefined {
+/** Read a location from a `permfind` or `permoverview` row. */
+function parseLocation(row: Record<string, string>): PermissionLocation {
   const permission = asPermissionID(uint(row, "p", U32));
   const id1 = big(row, "id1");
   const id2 = big(row, "id2");
@@ -487,7 +500,7 @@ function parseLocation(row: Record<string, string>): PermissionLocation | undefi
         permission,
       };
     default:
-      return undefined;
+      return { target: num(row, "t"), id1, id2, permission };
   }
 }
 
@@ -498,7 +511,7 @@ export async function findPermission(
   options?: CommandOptions,
 ): Promise<PermissionLocation[]> {
   const rows = await list(client, "permfind", [permissionParam(permission)], options);
-  return rows.flatMap((row) => parseLocation(row) ?? []);
+  return rows.map(parseLocation);
 }
 
 /** One of this connection's own permissions, as `permget` reports it. */
@@ -573,11 +586,12 @@ export async function getPermissionOverview(
     ],
     options,
   );
-  return rows.flatMap((row) => {
-    const location = parseLocation(row);
-    if (location === undefined) return [];
-    return [{ ...location, value: num(row, "v"), negated: bool(row, "n"), skip: bool(row, "s") }];
-  });
+  return rows.map((row) => ({
+    ...parseLocation(row),
+    value: num(row, "v"),
+    negated: bool(row, "n"),
+    skip: bool(row, "s"),
+  }));
 }
 
 /**
@@ -605,7 +619,10 @@ export interface PrivilegeKey {
   readonly token: string;
   /** Which kind of group the key grants, one of {@link PrivilegeKeyType}. */
   readonly type: number;
-  /** The server group a `PrivilegeKeyType.ServerGroup` key grants; undefined otherwise. */
+  /**
+   * The server group a `PrivilegeKeyType.ServerGroup` key grants; undefined
+   * for any other type, including one this SDK does not name.
+   */
   readonly serverGroupID: ServerGroupID | undefined;
   /** The channel group a `PrivilegeKeyType.ChannelGroup` key grants; undefined otherwise. */
   readonly channelGroupID: ChannelGroupID | undefined;
@@ -625,15 +642,17 @@ export interface PrivilegeKey {
 /**
  * Read a key. The wire carries the group as `token_id1` and the channel as
  * `token_id2`, whichever kind of group it is; which typed field each belongs in
- * depends on the token type.
+ * depends on the token type. A type this SDK does not name gets neither group
+ * nor channel: what its ids mean is not known.
  */
 const parseKey = (row: Record<string, string>): PrivilegeKey => {
   const type = num(row, "token_type");
   const channelGroup = type === PrivilegeKeyType.ChannelGroup;
+  const serverGroup = type === PrivilegeKeyType.ServerGroup;
   return {
     token: str(row, "token"),
     type,
-    serverGroupID: channelGroup ? undefined : asServerGroupID(big(row, "token_id1")),
+    serverGroupID: serverGroup ? asServerGroupID(big(row, "token_id1")) : undefined,
     channelGroupID: channelGroup ? asChannelGroupID(big(row, "token_id1")) : undefined,
     channelID: channelGroup ? asChannelID(big(row, "token_id2")) : undefined,
     description: str(row, "token_description"),

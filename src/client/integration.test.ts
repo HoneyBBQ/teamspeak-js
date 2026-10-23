@@ -1047,7 +1047,7 @@ describe.skipIf(SKIP)("Integration — events about other clients", () => {
       const listed = await listClients(a);
       const row = listed.find((c) => c.id === subjectID);
       expect(row).toBeDefined();
-      const dbid = await getClientDBIDByUID(a, row!.uid);
+      const dbid = await getClientDBIDByUID(a, row!.uid!);
       const messageGroups = async (text: string): Promise<readonly ServerGroupID[] | undefined> => {
         const got = nextEvent(bystander(), "textMessage", (e) => e.message === text);
         await sendPrivateMessage(subject, asClientID(bystander().clientID), text);
@@ -1113,8 +1113,8 @@ describe.skipIf(SKIP)("Integration — events about other clients", () => {
       const a = admin!;
       const known = clientInternals(bystander()).clients.get(subjectID)!;
       const row = (await listClients(a)).find((c) => c.id === subjectID)!;
-      const dbid = await getClientDBIDByUID(a, row.uid);
-      const original = known.channelGroupID;
+      const dbid = await getClientDBIDByUID(a, row.uid!);
+      const original = known.channelGroupID!;
       const groups = await listChannelGroups(a);
       const other = groups.find((g) => g.type === GroupType.Regular && g.id !== original);
       expect(other).toBeDefined();

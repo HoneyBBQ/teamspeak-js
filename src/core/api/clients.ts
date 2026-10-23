@@ -58,43 +58,46 @@ export interface ClientEntry {
   readonly id: ClientID;
   /** The client's nickname. */
   readonly nickname: string;
-  /** The client's unique identifier, stable across connections. Empty if `uid` was turned off. */
-  readonly uid: UID;
-  /** The channel the client is in. */
-  readonly channelID: ChannelID;
-  /** What kind of connection this is, one of {@link ClientType}. */
+  /** What kind of connection this is, one of {@link ClientType}; every source carries it. */
   readonly type: number;
+  /** The channel the client is in; every source carries it. */
+  readonly channelID: ChannelID;
+  /** The client's database id (`client_database_id`); every list and every enter notification carries it. */
+  readonly databaseID: ClientDBID;
+
+  // Everything below is `undefined` when the row did not carry its key, never
+  // a default: a client that is not away and one whose away state was not asked
+  // for are different, and `false` would claim the first. `clientlist` carries
+  // only what its flags bring, and a client coming into view carries all but
+  // the fields said to be missing there. Which list flag brings a field is said
+  // on it; "no flag" means only a client coming into view (or a notification)
+  // has it, so a client learned from `listClients` never does.
+
+  /** The client's unique identifier, stable across connections, with `uid`. Empty is a client that has none. */
+  readonly uid?: UID | undefined;
   /**
    * The server groups the client holds, with `groups`. Ids rather than names:
    * the server sends ids, and resolving them costs a separate call.
    */
-  readonly serverGroups: readonly ServerGroupID[];
+  readonly serverGroups?: readonly ServerGroupID[] | undefined;
   /** Whether the client is away, with `away`. */
-  readonly isAway: boolean;
+  readonly isAway?: boolean | undefined;
   /** Whether the client is recording, with `voice`. */
-  readonly isRecording: boolean;
+  readonly isRecording?: boolean | undefined;
   /** Whether the client may talk despite the channel's needed talk power, with `voice`. */
-  readonly isTalker: boolean;
+  readonly isTalker?: boolean | undefined;
   /** The channel group the client holds in its channel, with `groups`. */
-  readonly channelGroupID: ChannelGroupID;
+  readonly channelGroupID?: ChannelGroupID | undefined;
   /** When the client first connected to this server, with `times`. */
-  readonly createdAt: Date | undefined;
+  readonly createdAt?: Date | undefined;
   /** When the client last connected before this session, with `times`. */
-  readonly lastConnectedAt: Date | undefined;
+  readonly lastConnectedAt?: Date | undefined;
   /**
    * How long since the client last did anything, in milliseconds
    * (`client_idle_time`), with `times`; undefined without it.
    */
-  readonly idleTimeMs: number | undefined;
+  readonly idleTimeMs?: number | undefined;
 
-  // Everything below is `undefined` when the row did not carry its key, never
-  // a default: a muted client and one whose mute state is unknown are
-  // different, and `false` would claim the first. Which list flag brings a
-  // field is said on it; "no flag" means only a client coming into view (or a
-  // notification) has it, so a client learned from `listClients` never does.
-
-  /** The client's database id (`client_database_id`); every list brings it. */
-  readonly databaseID?: ClientDBID | undefined;
   /** The away message (`client_away_message`), with `away`. */
   readonly awayMessage?: string | undefined;
   /** Whether the microphone is muted (`client_input_muted`), with `voice`. */

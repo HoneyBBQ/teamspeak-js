@@ -178,9 +178,9 @@ export class LiveSession {
     return this.#knownHosts;
   }
 
-  /** Probe the SSH host key once, then connect one client per transport. */
-  async open(): Promise<void> {
-    if (KINDS.includes("ssh")) {
+  /** Probe the SSH host key once, then connect one client per transport, or per `kinds` when given. */
+  async open(kinds: readonly Kind[] = KINDS): Promise<void> {
+    if (kinds.includes("ssh")) {
       if (SSH_KNOWN_HOSTS !== "") {
         this.#knownHosts = SSH_KNOWN_HOSTS;
       } else {
@@ -192,7 +192,7 @@ export class LiveSession {
         );
       }
     }
-    for (const kind of KINDS) {
+    for (const kind of kinds) {
       const client = new QueryClient(optionsFor(kind, this.#knownHosts));
       await connectWithRetries(client);
       this.clients.set(kind, client);

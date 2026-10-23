@@ -917,8 +917,8 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
   }
 
   /**
-   * List the clients once, so that `invokerGroups` and the invoker fields of a
-   * self-move can be filled: an enter notification is only seen for clients
+   * List the clients once, so that `invokerGroups` and the `fromChannelID` of
+   * a move can be filled: an enter notification is only seen for clients
    * that arrive after registering, and the ones already there arrive as none.
    * `-away` and `-voice` make the records carry away and mute state as well,
    * in the same one command. The groups are as of this listing: a ServerQuery
