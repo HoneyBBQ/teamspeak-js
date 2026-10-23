@@ -258,8 +258,18 @@ export function parseErrorCode(raw: string | undefined): number {
  * longer wait, which the caller's timeout then decides whether to sit out.
  */
 export const FLOOD_RETRIES = 3;
-/** Added to the server's wait, which counts down to the millisecond. */
-export const FLOOD_HOLD_MARGIN_MS = 10;
+/**
+ * How long to pause for a refusal that asked for `waitMs`. The wait is a floor:
+ * on the voice protocol a resend after exactly the wait is refused again, and
+ * one after half as long again goes through; on ServerQuery a resend after
+ * exactly 1 second was refused 2 times in 5, and one after 2.2 seconds went
+ * through 5 times in 5 (TeamSpeak 3 3.13.8 and TeamSpeak 6 6.0.0). Every
+ * refusal costs a retry and lengthens the server's pause, so the pause is
+ * twice the wait.
+ */
+export function floodHoldMs(waitMs: number): number {
+  return waitMs * 2;
+}
 
 /**
  * How long the server asks a client it refused as flooding to wait, in

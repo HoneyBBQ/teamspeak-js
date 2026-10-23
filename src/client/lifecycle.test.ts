@@ -352,10 +352,13 @@ describe("a command refused as flooding", () => {
     await new Promise((r) => setTimeout(r, 100));
     expect(sent).toHaveLength(1);
 
-    // One a quarter second after the pause, the next a quarter second later.
+    // Still held at the wait the server named: the pause is twice that.
+    await new Promise((r) => setTimeout(r, 200));
+    expect(sent).toHaveLength(1);
+    // One as the pause ends, the next a quarter second later.
     await new Promise((r) => setTimeout(r, 700));
     expect(sent).toHaveLength(3);
-    expect(sent[1]!.at - sent[0]!.at).toBeGreaterThanOrEqual(190);
+    expect(sent[1]!.at - sent[0]!.at).toBeGreaterThanOrEqual(390);
     const codes = sent.map((s) => /return_code=(\d+)/.exec(s.line)![1]);
     expect(new Set(codes).size).toBe(codes.length);
     for (const entry of sent.slice(1)) sendError(client, entry.line, 0);

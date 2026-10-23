@@ -776,9 +776,10 @@ describe("QueryClient flood refusals", () => {
     const answered = client.exec("whoami");
     await transport.sentCount(baseline + 1);
     transport.receive(FLOODED);
-    await vi.advanceTimersByTimeAsync(2_000);
+    // Twice the 2 seconds the server named: still held at 3.9 seconds.
+    await vi.advanceTimersByTimeAsync(3_900);
     expect(transport.sent).toHaveLength(baseline + 1);
-    await vi.advanceTimersByTimeAsync(20);
+    await vi.advanceTimersByTimeAsync(120);
     await transport.sentCount(baseline + 2);
     transport.receive("client_id=1", "error id=0 msg=ok");
 
@@ -794,9 +795,9 @@ describe("QueryClient flood refusals", () => {
     const second = client.exec("second");
     await transport.sentCount(baseline + 1);
     transport.receive(FLOODED);
-    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.advanceTimersByTimeAsync(3_900);
     expect(transport.sent.slice(baseline)).toEqual(["first"]);
-    await vi.advanceTimersByTimeAsync(20);
+    await vi.advanceTimersByTimeAsync(120);
     await transport.sentCount(baseline + 2);
     transport.receive("a=1", "error id=0 msg=ok");
     await first;
@@ -811,12 +812,12 @@ describe("QueryClient flood refusals", () => {
     const { client, transport, baseline } = await connected();
     vi.useFakeTimers();
 
-    const answered = client.exec("whoami");
+    const answered = client.exec("whoami", { timeoutMs: 60_000 });
     const failure = answered.catch((error: unknown) => error);
     for (let sent = 1; sent <= 4; sent++) {
       await transport.sentCount(baseline + sent);
       transport.receive(FLOODED);
-      await vi.advanceTimersByTimeAsync(2_020);
+      await vi.advanceTimersByTimeAsync(4_020);
     }
 
     const error = await failure;

@@ -29,7 +29,7 @@ import {
   buildCommandChain,
   buildCommandOrdered,
   encodeRequest,
-  FLOOD_HOLD_MARGIN_MS,
+  floodHoldMs,
   FLOOD_RETRIES,
   floodRetryDelayMs,
   handleNotification,
@@ -964,10 +964,12 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
         });
       } catch (error) {
         const wait = error instanceof Error ? floodRetryDelayMs(error) : undefined;
+        const hold = wait === undefined ? undefined : floodHoldMs(wait);
         if (
           wait === undefined ||
+          hold === undefined ||
           refused >= FLOOD_RETRIES ||
-          wait >= deadline - performance.now() ||
+          hold >= deadline - performance.now() ||
           this.#closed
         ) {
           throw error;
@@ -976,7 +978,7 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
           command: parseCommand(line)?.name,
           waitMs: wait,
         });
-        await sleep(wait + FLOOD_HOLD_MARGIN_MS, signal);
+        await sleep(hold, signal);
         signal?.throwIfAborted();
       }
     }

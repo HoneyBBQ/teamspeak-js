@@ -50,7 +50,7 @@ import {
   buildCommand,
   buildCommandChain,
   encodeRequest,
-  FLOOD_HOLD_MARGIN_MS,
+  floodHoldMs,
   FLOOD_RETRIES,
   floodRetryDelayMs,
   parseServerError,
@@ -958,17 +958,18 @@ export class Client implements CommandExecutor, AsyncDisposable {
         // afford: nothing is sent until then, and the command, which the
         // server did not run, goes out again.
         const wait = result.err ? floodRetryDelayMs(result.err) : undefined;
+        const hold = wait === undefined ? undefined : floodHoldMs(wait);
         if (
-          wait !== undefined &&
+          hold !== undefined &&
           !goodbye &&
           refused < FLOOD_RETRIES &&
-          wait < deadline - performance.now()
+          hold < deadline - performance.now()
         ) {
           this.#logger.debug("the server asked for a pause", {
             command: parsed?.name,
             waitMs: wait,
           });
-          this.#throttle.hold(wait + FLOOD_HOLD_MARGIN_MS);
+          this.#throttle.hold(hold);
           this.#cmdTrack.unregister(rc);
           [rc, answered] = this.#cmdTrack.register(spec, correlation, echo);
           continue;
