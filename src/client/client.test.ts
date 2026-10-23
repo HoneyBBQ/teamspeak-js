@@ -12,6 +12,8 @@ import {
   commandChannel,
 } from "./index.js";
 import { PacketType, type Packet } from "./transport/packet.js";
+import { sendClientInit } from "./handshake.js";
+import { parseCommand } from "../core/internal.js";
 import { FakeSocket, completeCryptoInit, dummyPacket } from "./testing/fake-server.js";
 import {
   ClientStatus,
@@ -834,5 +836,86 @@ describe("before crypto init", () => {
     await expect(attempt).rejects.toMatchObject({ code: 3329 });
     expect(client.status).toBe(ClientStatus.Disconnected);
     expect(warnings).not.toContain("banned by the server, closing the connection");
+  });
+});
+
+describe("the nickname a reconnect asks for", () => {
+  /** The nickname the client's next clientinit carries. */
+  function clientInitNickname(client: Client): string | undefined {
+    let sent: string | undefined;
+    clientInternals(client).handler.sendPacket = (_type, data) => {
+      sent = Buffer.from(data).toString("utf8");
+    };
+    sendClientInit(clientInternals(client));
+    return parseCommand(sent ?? "")?.params["client_nickname"];
+  }
+
+  const feed = (client: Client, ...lines: string[]): Promise<void> => {
+    for (const line of lines) clientInternals(client).handler.onPacket?.(commandPacket(line));
+    return settle();
+  };
+
+  it("keeps asking for the requested name when the server assigned another", async () => {
+    const client = connectedClient("bot", 5);
+    await feed(client, "notifycliententerview clid=5 ctid=1 client_nickname=bot1");
+
+    expect(clientInternals(client).nickname).toBe("bot1");
+    expect(clientInitNickname(client)).toBe("bot");
+  });
+
+  it("recognises itself by the requested name, not the one it was given", async () => {
+    const client = new Client(generateIdentitySync(0), "127.0.0.1:9987", "bot");
+    completeCryptoInit(clientInternals(client).crypt);
+    await feed(client, "notifycliententerview clid=7 ctid=1 client_nickname=bot1");
+    expect(clientInternals(client).clid).toBe(7);
+    expect(clientInitNickname(client)).toBe("bot");
+  });
+
+  it("does not make an admin's rename stick", async () => {
+    const client = connectedClient("bot", 5);
+    await feed(
+      client,
+      "notifyclientupdated clid=5 client_nickname=renamed invokerid=9 invokername=admin invokeruid=x",
+    );
+
+    expect(clientInternals(client).nickname).toBe("renamed");
+    expect(clientInitNickname(client)).toBe("bot");
+  });
+
+  it("asks for the name the client itself renamed to, once the server accepted it", async () => {
+    const client = await silentServerClient();
+    const connecting = client.connect();
+    await until(() => clientInternals(client).handler.isOpen);
+    completeCryptoInit(clientInternals(client).crypt);
+    clientInternals(client).clid = 5;
+    clientInternals(client).markConnected();
+    await connecting;
+    const sent: string[] = [];
+    onSentLine((_, line) => sent.push(line));
+    try {
+      const rc = (line: string | undefined): string => /return_code=(\d+)/.exec(line ?? "")![1]!;
+
+      const refused = client.exec("clientupdate client_nickname=nope", { timeoutMs: 1_000 });
+      await until(() => sent.length === 1);
+      const rejection = expect(refused).rejects.toThrow();
+      await feed(client, `error id=513 msg=nickname\\sis\\sinuse return_code=${rc(sent[0])}`);
+      await rejection;
+      expect(clientInitNickname(client)).toBe("Bot");
+
+      const accepted = client.exec("clientupdate client_nickname=bob", { timeoutMs: 1_000 });
+      await until(() => sent.length === 2);
+      await feed(
+        client,
+        "notifyclientupdated clid=5 client_nickname=bob",
+        `error id=0 msg=ok return_code=${rc(sent[1])}`,
+      );
+      await accepted;
+
+      expect(clientInternals(client).nickname).toBe("bob");
+      expect(clientInitNickname(client)).toBe("bob");
+    } finally {
+      onSentLine(undefined);
+      await client.disconnect({ signal: AbortSignal.timeout(50) });
+    }
   });
 });
