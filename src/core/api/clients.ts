@@ -176,8 +176,9 @@ export interface ClientEntry {
  * A change to a client: only the properties a notification named, by the names
  * of {@link ClientEntry}. A key is present exactly when the notification
  * carried it, so `"isAway" in changes` says it changed, and an `isAway` of
- * `false` says the client is no longer away. A list, such as `serverGroups`,
- * is the whole new list.
+ * `false` says the client is no longer away. A key holding `undefined` says
+ * the value was cleared: `iconID` is `undefined` when the icon was removed.
+ * A list, such as `serverGroups`, is the whole new list.
  */
 export type ClientChanges = {
   readonly [K in Exclude<keyof ClientEntry, "id">]?: ClientEntry[K];
@@ -185,18 +186,15 @@ export type ClientChanges = {
 
 /**
  * The client with `changes` applied, as a new object; `entry` is not touched.
- * Keys `changes` lacks keep their value, and a key holding `undefined` is
- * skipped, so no property is erased by a change that did not carry it.
+ * Keys `changes` lacks keep their value, and a key holding `undefined` clears
+ * the property: the notification carried it and it is now none, as for an
+ * icon of 0 or a withdrawn talk request.
  */
 export function applyClientChanges(entry: ClientEntry, changes: ClientChanges): ClientEntry {
   const next: Record<string, unknown> = { ...entry };
   for (const [key, value] of Object.entries(changes)) {
-    if (value !== undefined) next[key] = value;
-  }
-  // A withdrawn request is a 0 on the wire, which reads as no time and so is
-  // never in `changes`; the flag going false is what says so.
-  if (changes.isRequestingTalk === false && !("talkRequestedAt" in changes)) {
-    delete next["talkRequestedAt"];
+    if (value === undefined) delete next[key];
+    else next[key] = value;
   }
   return next as unknown as ClientEntry;
 }

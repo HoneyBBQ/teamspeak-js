@@ -163,7 +163,8 @@ export interface ClientUpdatedEvent extends Invoked {
   /**
    * Only the properties the notification carried. It may be empty, when the
    * notification carried only properties this SDK does not model. Merge it
-   * into a record with `applyClientChanges`.
+   * into a record with `applyClientChanges`. A property the notification
+   * cleared, such as an icon of 0, is there with the value `undefined`.
    */
   readonly changes: ClientChanges;
 }
@@ -230,7 +231,8 @@ export interface ChannelEditedEvent extends Invoked {
   readonly reason: number;
   /**
    * Only the properties the notification carried; a property that is absent
-   * did not change. It is empty for a change of the description, which
+   * did not change, and one the notification cleared, such as an icon of 0, is
+   * there with the value `undefined`. It is empty for a change of the description, which
    * `channelDescriptionChanged` reports instead, and a password change carries
    * `hasPassword` only when the password was set or removed.
    */

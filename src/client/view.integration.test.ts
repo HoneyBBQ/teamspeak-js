@@ -16,6 +16,7 @@ import {
   GroupType,
   addServerGroupPermission,
   asChannelID,
+  asIconID,
   asServerGroupID,
   copyChannelGroup,
   copyServerGroup,
@@ -36,6 +37,7 @@ import {
   permissionByName,
   renameChannelGroup,
   renameServerGroup,
+  setChannelIcon,
 } from "@honeybbq/teamspeak";
 import type {
   Channel,
@@ -284,6 +286,24 @@ describe.skipIf(SKIP)("Server view — live", () => {
         await editChannel(admin, ids.get("p2")!, { name: name("p2-renamed") });
       },
     );
+    await step(
+      "set an icon",
+      "channelEdited",
+      (e) => e.channelID === ids.get("p2") && e.changes.iconID !== undefined,
+      async () => {
+        await setChannelIcon(admin, ids.get("p2")!, asIconID(3009859579));
+      },
+    );
+    expect(view.channel(ids.get("p2")!)?.iconID).toBe(asIconID(3009859579));
+    await step(
+      "clear the icon",
+      "channelEdited",
+      (e) => e.channelID === ids.get("p2") && "iconID" in e.changes,
+      async () => {
+        await setChannelIcon(admin, ids.get("p2")!, undefined);
+      },
+    );
+    expect(view.channel(ids.get("p2")!)?.iconID).toBeUndefined();
     await step("delete a middle sibling", "channelDeleted", lastOf("c1"), async () => {
       await deleteChannel(admin, ids.get("c1")!, { force: true });
     });
