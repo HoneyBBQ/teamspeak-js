@@ -1,0 +1,10 @@
+/* The landing page opens with the banner, which carries the project name; keep
+   the generated heading for screen readers only. */
+html[data-base="./"] .tsd-page-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

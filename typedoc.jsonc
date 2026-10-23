@@ -16,12 +16,25 @@
   ],
   "tsconfig": "tsconfig.typedoc.json",
   "readme": "README.md",
-  "projectDocuments": ["docs/migrating-to-1.0.md", "docs/voice-protocol-responses.md"],
+  "projectDocuments": [
+    "docs/guide.md",
+    "docs/configuration.md",
+    "docs/streams.md",
+    "docs/serverquery.md",
+    "docs/design.md",
+    "docs/compatibility.md",
+    "docs/architecture.md",
+    "docs/migrating-to-1.0.md",
+    "docs/voice-protocol-responses.md",
+    "docs/serverquery-responses.md",
+  ],
   "out": "dist/docs",
   "excludePrivate": true,
   "excludeInternal": true,
   "excludeNotDocumented": false,
   "githubPages": true,
+  "favicon": "docs/assets/favicon.svg",
+  "customCss": "docs/assets/typedoc.css",
   // Each enumeration is `typeof xValues`, a helper const that is private to its
   // file; its members are documented on the exported const of the same
   // shape (Codec, ErrorCode, ClientStatus, ConnectPhase, ...). The

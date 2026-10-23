@@ -66,8 +66,8 @@ jobs:
 
   # The published declarations use `using` and `Disposable`, so the oldest
   # TypeScript that reads them is part of the supported environments (see
-  # "Compatibility" in the README). Raising it is a minor release with a
-  # changelog note; change the version here and in the README together.
+  # "Supported environments" in docs/compatibility.md). Raising it is a minor release with a
+  # changelog note; change the version here and in that page together.
   types:
     name: Types (TypeScript 5.2)
     runs-on: ubuntu-latest
