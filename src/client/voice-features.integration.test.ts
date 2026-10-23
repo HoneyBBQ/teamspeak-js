@@ -520,6 +520,21 @@ describe.skipIf(SKIP)("Voice features — live", () => {
     }
   }, 60_000);
 
+  it("sendVoice with an empty frame — a listener gets the end of speech as a voiceData event with empty data", async () => {
+    const lengths: number[] = [];
+    const stop = c.on("voiceData", (e) => {
+      if (e.clientID === idOf(b)) lengths.push(e.data.length);
+    });
+    try {
+      await sendFrames(() => b.sendVoice(FRAME, Codec.OpusVoice), 5);
+      b.sendVoice(new Uint8Array(0), Codec.OpusVoice);
+      await sleep(1_200);
+      expect(lengths).toEqual([8, 8, 8, 8, 8, 0]);
+    } finally {
+      stop();
+    }
+  }, 30_000);
+
   it.skipIf(SERVER_PASSWORD === "")(
     "verifyServerPassword — true for the password, false for another",
     async () => {

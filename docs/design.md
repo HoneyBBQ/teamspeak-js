@@ -54,12 +54,12 @@ installed copies of the package.
 Errors live with the code that produces them, so each entry point exports only
 the errors its own code throws:
 
-| Entry point                                        | Errors                                                                                                                                                                                 |
-| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@honeybbq/teamspeak` (shared by every connection) | `TeamspeakError`, `ServerError`, `CommandTimeoutError`, `NotConnectedError`, `AlreadyConnectedError`, `NoDataError`                                                                    |
-| `@honeybbq/teamspeak/client` (voice only)          | `ConnectionTimeoutError`, `HandshakeError` and its `PuzzleTooHardError`, `InvalidAddressError`, `InvalidIdentityError`, `FileTransferError`, `RemovedError` (kick, ban or server stop) |
-| `@honeybbq/teamspeak/stream` (streams only)        | `StreamsUnsupportedError`, `StreamJoinDeniedError`, `StreamEndedError`, `StreamPayloadTooLargeError`, `StreamTransportUnsupportedError`                                                |
-| `@honeybbq/teamspeak/query` (query only)           | `QueryAuthError`, `GuestAccessError`, `SshHostKeyError`, `MissingDependencyError`, `WebQueryHttpError`                                                                                 |
+| Entry point                                        | Errors                                                                                                                                                                                                           |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@honeybbq/teamspeak` (shared by every connection) | `TeamspeakError`, `ServerError`, `CommandTimeoutError`, `NotConnectedError`, `AlreadyConnectedError`, `NoDataError`                                                                                              |
+| `@honeybbq/teamspeak/client` (voice only)          | `ConnectionTimeoutError`, `ConnectionStalledError`, `HandshakeError` and its `PuzzleTooHardError`, `InvalidAddressError`, `InvalidIdentityError`, `FileTransferError`, `RemovedError` (kick, ban or server stop) |
+| `@honeybbq/teamspeak/stream` (streams only)        | `StreamsUnsupportedError`, `StreamJoinDeniedError`, `StreamEndedError`, `StreamPayloadTooLargeError`, `StreamTransportUnsupportedError`                                                                          |
+| `@honeybbq/teamspeak/query` (query only)           | `QueryAuthError`, `GuestAccessError`, `SshHostKeyError`, `MissingDependencyError`, `WebQueryHttpError`                                                                                                           |
 
 A call that is given a value it cannot use, such as an out-of-range id or an
 option that contradicts another, throws the language's own `TypeError` or

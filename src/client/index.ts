@@ -38,6 +38,7 @@ export {
   InvalidIdentityError,
   RemovedError,
   ConnectionTimeoutError,
+  ConnectionStalledError,
 } from "./errors.js";
 
 // Commands only the voice protocol has.

@@ -133,6 +133,6 @@ export function completeCryptoInit(crypt: Crypt): void {
   crypt.setSharedSecret(
     new Uint8Array(10).fill(7),
     new Uint8Array(54).fill(9),
-    new Uint8Array(20).fill(3),
+    new Uint8Array(64).fill(3),
   );
 }

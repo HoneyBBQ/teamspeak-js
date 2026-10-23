@@ -87,6 +87,7 @@ describe("client error names", () => {
       new client.PuzzleTooHardError(5, 4),
       new client.InvalidIdentityError(),
       new client.ConnectionTimeoutError(),
+      new client.ConnectionStalledError(),
       new client.RemovedError(1, "", ""),
     ];
     for (const err of errors) {

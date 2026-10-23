@@ -365,7 +365,11 @@ export interface VoiceDataEvent {
    * server may relay a codec that table does not name.
    */
   readonly codec: number;
-  /** One encoded frame, copied: it stays valid after the listener returns. */
+  /**
+   * One encoded frame, copied: it stays valid after the listener returns. Empty
+   * when the speaker stopped talking: it is the end of that speech, not a
+   * frame to decode.
+   */
   readonly data: Uint8Array;
 }
 

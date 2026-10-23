@@ -338,6 +338,22 @@ describe("voice delivery", () => {
     await client.disconnect({ signal: AbortSignal.timeout(1) });
   });
 
+  it("delivers a speaker's end of speech, a packet with no data, as an event with empty data", async () => {
+    const { client } = await connected();
+    const heard: number[] = [];
+    client.on("voiceData", (e) => heard.push(e.data.length));
+
+    const handler = clientInternals(client).handler;
+    handler.onPacket?.(packet(PacketType.Voice, Uint8Array.of(0, 1, 0, 9, Codec.OpusVoice, 1, 2)));
+    handler.onPacket?.(packet(PacketType.Voice, Uint8Array.of(0, 2, 0, 9, Codec.OpusVoice)));
+    // Shorter than the header: not a voice packet.
+    handler.onPacket?.(packet(PacketType.Voice, Uint8Array.of(0, 3, 0, 9)));
+    await settle();
+
+    expect(heard).toEqual([2, 0]);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
   it("reports the drops since the last warning, not since the start", async () => {
     vi.useFakeTimers({ toFake: ["Date", "performance"] });
     try {

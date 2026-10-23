@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { buildCommandOrdered } from "../../core/internal.js";
 import { MAX_RSA_CHALLENGE_LEVEL, type Crypt } from "../crypto/crypt.js";
-import { HandshakeError, PuzzleTooHardError } from "../errors.js";
+import { PuzzleTooHardError } from "../errors.js";
 
 export const INIT_VERSION = 1566914096; // 3.5.0 [Stable]
 
@@ -35,7 +35,8 @@ export function puzzleOf(crypt: Crypt): { readonly level: number; readonly durat
 /**
  * Handle the TS3INIT1 handshake steps.
  * Returns the response bytes to send, or null if nothing should be sent.
- * Throws a HandshakeError for a step that cannot be answered.
+ * A step that cannot be answered is ignored (null); a puzzle out of range
+ * throws a PuzzleTooHardError.
  *
  * The puzzle step is the only one that takes time, so a challenge not answered
  * before returns a promise of the response, which gives the event loop back
@@ -56,7 +57,9 @@ export function processInit1(
   if (data === null || (data.length >= 1 && data[0] === 0x7f)) {
     return buildInit1StartPacket();
   }
-  if (data.length === 0) throw new HandshakeError("empty Init1 packet");
+  // Init1 is not authenticated: a step that cannot be answered, an empty one
+  // included, is ignored, and the attempt goes on with the real server's.
+  if (data.length === 0) return null;
 
   switch (data[0]) {
     case 0:

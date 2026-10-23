@@ -1159,8 +1159,10 @@ export class Client implements CommandExecutor, AsyncDisposable {
   }
 
   /**
-   * Send one encoded audio frame to the channel this client is in. Throws a
-   * NotConnectedError unless the client is connected.
+   * Send one encoded audio frame to the channel this client is in. An empty
+   * frame marks the end of speech: the server relays it, and listeners get a
+   * `voiceData` event with empty `data`. Throws a NotConnectedError unless the
+   * client is connected.
    */
   sendVoice(data: Uint8Array, codec: Codec, options?: VoiceOptions): void {
     // Reserved: VoiceOptions has no fields to read yet.
@@ -1456,7 +1458,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
       return;
     }
 
-    if ((pType === 0 /* Voice */ || pType === 1) /* VoiceWhisper */ && p.data.length > 5) {
+    if ((pType === 0 /* Voice */ || pType === 1) /* VoiceWhisper */ && p.data.length >= 5) {
       this.#handleVoicePacket(p.data);
       return;
     }
@@ -1469,6 +1471,12 @@ export class Client implements CommandExecutor, AsyncDisposable {
   /**
    * Parse an incoming S2C voice packet.
    * Format: [VId: u16] [CId: u16] [Codec: u8] [Data: var]
+   *
+   * A packet with no data is how a speaker's last frame is followed: the
+   * server relays the empty frame a client sends when it stops talking, and it
+   * is delivered as an event with empty `data`. Measured on TeamSpeak 3 3.13.8
+   * and TeamSpeak 6 6.0.0: the frames of `sendVoice` arrive as 45-byte packets
+   * and an empty one as a 5-byte packet.
    */
   #handleVoicePacket(payload: Uint8Array): void {
     // Audio arrives fifty times a second per speaker; build no event nobody
