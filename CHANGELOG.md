@@ -4,6 +4,22 @@ Until 1.0.0-beta.4 this package was published as `@honeybbq/teamspeak-core`, and
 `@honeybbq/teamspeak-client` was a second package. The sections below, down to
 the last version heading, are the core's history; the client's is at the bottom.
 
+## 1.0.0-beta.21
+
+### Patch Changes
+
+- [#153](https://github.com/HoneyBBQ/teamspeak-js/pull/153) [`c1a47e2`](https://github.com/HoneyBBQ/teamspeak-js/commit/c1a47e2d79aa8ee899c4f426ff5e73f2dd4fbdbe) - A `QueryClient` over raw TCP or SSH no longer fails a command the server refused as flooding (`error id=524`, `please wait 1 seconds`) when the pause fits in the command's timeout: it holds the queue for twice the pause the server names and sends the command again, up to three times. The server does not run a refused command, and asking again before the pause is over only prolongs it (and then the address is banned for the instance's `serverquery_ban_time`). A pause longer than the command has left, such as a ban, still fails the command with the server's error at once. WebQuery is unchanged: the server closes the connection of a flooding client without an answer. The voice client, which already waited out a refusal, now also pauses for twice the wait the server names rather than the wait itself: a resend as the wait ends was often refused again, and every refusal lengthens the server's pause.
+
+- [#155](https://github.com/HoneyBBQ/teamspeak-js/pull/155) [`d46f1ad`](https://github.com/HoneyBBQ/teamspeak-js/commit/d46f1adc98a0987c7ea4c7fce378819209429426) - A `QueryClient` made with no `server` now connects, as its documentation says, instead of failing `connect()` with `ServerError 1024 invalid serverID`. With no server selected the server refuses `servernotifyregister` and `clientlist`, so the client skips them and serves the instance-level commands (`instanceinfo`, `serverlist`, `use`); the first successful `use()` registers the `events` and reads the client list, as `connect()` does with a `server`. `stopFileTransfer` and the ServerQuery notes now say that a transfer of your own that has finished, or that nobody connected to for about 10 seconds after it was negotiated, no longer exists either, so stopping it crashes TeamSpeak 6 too (measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 6.0.0).
+
+- [#154](https://github.com/HoneyBBQ/teamspeak-js/pull/154) [`a6aa4f0`](https://github.com/HoneyBBQ/teamspeak-js/commit/a6aa4f0244e76e241943b2213cde579ccd74cf78) - `uploadFile` no longer mistakes a transfer that was cut short for a stored file, and a transfer whose dial fails no longer lingers on the server.
+
+  - After the server closes the transfer connection, `uploadFile` asks for the file's size with `ftgetfileinfo` (one extra command) and fails with a `FileTransferError` when the server holds a different size, or no such file. The servers never report a completed upload (the voice protocol's `notifystatusfiletransfer` comes only for failures, after the close, and ServerQuery sends nothing), so this is the only way to tell a stored file from a transfer someone stopped. A client without browse power gets 2568 for the command and resolves on the close as before.
+  - When the TCP connection to the file transfer port is refused or times out within 5 seconds of the negotiation, `uploadFile` and `downloadFile` stop the negotiated transfer on the server; left alone, the server keeps it for about 10 seconds. The dial's error is still the one thrown. Not done once the connection opened.
+  - An upload whose connection the server closed while bytes were still being written now fails with a `FileTransferError`, not the socket's own error.
+
+  `uploadAvatar` and `uploadIcon` do the same: a refused connection stops the negotiated transfer, and the stored file is checked once the server closes the connection. The avatar is checked under the name the server stores it as, which it derives from the uploader's uid.
+
 ## 1.0.0-beta.20
 
 ### Major Changes
