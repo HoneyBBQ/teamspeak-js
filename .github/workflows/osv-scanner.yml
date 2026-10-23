@@ -1,0 +1,36 @@
+name: OSV-Scanner
+
+# Checks the lockfiles against the OSV database, which has advisories that
+# the audit step and govulncheck do not see. It fails on any finding, so the
+# result is the check itself rather than a second list of alerts.
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  # New advisories appear without any change to the code.
+  schedule:
+    - cron: "37 5 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  osv-scanner:
+    name: OSV-Scanner
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
+        with:
+          scan-args: |-
+            --lockfile=pnpm-lock.yaml
+            --lockfile=test/types/package-lock.json
