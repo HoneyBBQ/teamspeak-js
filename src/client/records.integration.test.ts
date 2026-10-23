@@ -60,14 +60,22 @@ interface Watcher {
 }
 
 /** The next move of `clientID` that `watcher` sees. */
-function nextMove(watcher: Watcher, clientID: ClientID): Promise<ClientMovedEvent> {
+/**
+ * The next move of `clientID` into `target`. Matching the target as well keeps
+ * a late event of an earlier move from being taken for this one.
+ */
+function nextMove(
+  watcher: Watcher,
+  clientID: ClientID,
+  target: ChannelID,
+): Promise<ClientMovedEvent> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       off();
       reject(new Error("no clientMoved event arrived"));
     }, EVENT_MS);
     const off = watcher.on("clientMoved", (event) => {
-      if (event.clientID !== clientID) return;
+      if (event.clientID !== clientID || event.targetChannelID !== target) return;
       clearTimeout(timer);
       off();
       resolve(event);
@@ -138,7 +146,7 @@ describe.skipIf(SKIP)("Records and events when the server says less — live", (
       getWatcher() ?? ctx.skip("this transport is not provisioned here");
 
     it("names no invoker for a client's own move, and says where it came from", async (ctx) => {
-      const seen = nextMove(needs(ctx), subjectID);
+      const seen = nextMove(needs(ctx), subjectID, room);
       await moveClient(subject, subjectID, room);
       const event = await seen;
       console.log("own move:", event);
@@ -152,7 +160,7 @@ describe.skipIf(SKIP)("Records and events when the server says less — live", (
     }, 20_000);
 
     it("names the invoker of an admin move, and where it came from", async (ctx) => {
-      const seen = nextMove(needs(ctx), subjectID);
+      const seen = nextMove(needs(ctx), subjectID, home);
       await moveClient(admin, subjectID, home);
       const event = await seen;
       console.log("admin move:", event);
