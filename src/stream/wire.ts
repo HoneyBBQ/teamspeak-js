@@ -38,6 +38,12 @@ const SOURCES: readonly StreamSource[] = ["none", "camera", "screen", "window", 
 /** The names of `accessibility`, by wire number. */
 const ACCESSIBILITIES: readonly StreamAccessibility[] = ["none", "public", "contacts", "private"];
 
+/**
+ * The extension a server names in `virtualserver_capability_extensions` when it
+ * does peer to peer streams.
+ */
+export const STREAM_P2P = "STREAM_P2P";
+
 /** The names of `mode`, by wire number; 0 has none. */
 const TRANSPORTS: ReadonlyArray<StreamTransport | undefined> = [undefined, "p2p"];
 

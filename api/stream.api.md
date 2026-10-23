@@ -192,6 +192,7 @@ export interface StreamsClient extends CommandExecutor {
     readonly serverCapabilities: {
         readonly family: ServerFamily;
         readonly version: string;
+        readonly extensions: readonly string[];
     };
     readonly status: ClientStatus;
     readonly view: {
@@ -228,7 +229,8 @@ export interface StreamStoppedEvent {
 
 // @public
 export class StreamsUnsupportedError extends TeamspeakError {
-    constructor(family: ServerFamily, version: string);
+    constructor(family: ServerFamily, version: string, extensions: readonly string[]);
+    readonly extensions: readonly string[];
     readonly family: ServerFamily;
     // (undocumented)
     static readonly kind: string;

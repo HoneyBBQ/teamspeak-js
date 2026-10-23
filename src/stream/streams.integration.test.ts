@@ -961,6 +961,7 @@ describe.skipIf(SKIP)("Streams — live", { timeout: 30_000 }, () => {
         .catch((e: unknown) => e);
       expect(error).toMatchObject({ family: "ts3" });
       expect((error as StreamsUnsupportedError).version).toMatch(/^3\./);
+      expect((error as StreamsUnsupportedError).extensions).toEqual([]);
     });
   });
 });
