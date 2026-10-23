@@ -162,6 +162,8 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
   #lastSent = 0;
   #keepAlive: ReturnType<typeof setTimeout> | undefined;
   #queue: Promise<unknown> = Promise.resolve();
+  /** Connected with no `server`, so the `events` are registered by the first `use()`. */
+  #eventsPending = false;
   #closed = true;
   /**
    * Bumped by `disconnect()`. A connection attempt that was in flight compares
@@ -425,7 +427,7 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     transport.onLine = (line) => this.#handleLine(line);
     transport.onClose = (error) => this.#handleClose(error);
 
-    const { transport: resolvedTransport, server, nickname, eventCategories } = this.#options;
+    const { transport: resolvedTransport, server, nickname } = this.#options;
     const login = resolvedTransport.kind === "tcp" ? resolvedTransport.login : undefined;
     if (login !== undefined) {
       await this.login(login.name, login.password, { signal }).catch((error: unknown) => {
@@ -445,17 +447,33 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     // Like the version, a failure here fails the connect: a client that cannot
     // tell which one it is would miss its own kick without saying so.
     await this.#learnSelf(signal);
+    // Notifications and the roster belong to a selected server. Measured on
+    // TeamSpeak 3 3.13.8 and TeamSpeak 6 6.0.0 (raw TCP and SSH): with none
+    // selected `version`, `whoami`, `instanceinfo` and `serverlist` answer,
+    // while `servernotifyregister`, `clientlist` and `clientupdate` are refused
+    // with 1024 (invalid serverID). So a client with no `server` connects for
+    // the instance-level commands, and does this on its first `use()`.
+    this.#eventsPending = false;
     if (this.#notifications) {
-      for (const category of eventCategories) {
-        // The channel category takes the channel to watch, or 0 for all of them;
-        // the others take none, and the server refuses one they do not know.
-        await this.#register(category, category === "channel" ? 0 : undefined, { signal });
-      }
-      // Only worth listing when there is something to fill: the groups and the
-      // invoker of a message this client would otherwise not know.
-      if (eventCategories.length > 0) await this.#learnClients(signal);
+      if (server === undefined) this.#eventsPending = true;
+      else await this.#registerEvents(signal);
     }
     this.#startKeepAlive(transport);
+  }
+
+  /**
+   * Register the configured categories and list the clients, once a server is
+   * selected.
+   */
+  async #registerEvents(signal: AbortSignal | undefined): Promise<void> {
+    for (const category of this.#options.eventCategories) {
+      // The channel category takes the channel to watch, or 0 for all of them;
+      // the others take none, and the server refuses one they do not know.
+      await this.#register(category, category === "channel" ? 0 : undefined, { signal });
+    }
+    // Only worth listing when there is something to fill: the groups and the
+    // invoker of a message this client would otherwise not know.
+    if (this.#options.eventCategories.length > 0) await this.#learnClients(signal);
   }
 
   /**
@@ -616,6 +634,10 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
    * and the notifications registered are gone, so `use` again and
    * {@link QueryClient.registerNotifications} again.
    *
+   * A client connected with no `server` has registered no `events` yet, as
+   * the server refuses that with none selected: the first successful `use`
+   * registers them.
+   *
    * A reconnect starts over from the options the client was made with: it logs
    * in, selects `server` and registers `events` again, and does not repeat a
    * `use` made by hand.
@@ -629,7 +651,10 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     // none has no use for.
     if (!this.#notifications) return;
     await this.#learnSelf(options.signal);
-    if (this.#options.eventCategories.length > 0) await this.#learnClients(options.signal);
+    if (this.#eventsPending) {
+      await this.#registerEvents(options.signal);
+      this.#eventsPending = false;
+    } else if (this.#options.eventCategories.length > 0) await this.#learnClients(options.signal);
   }
 
   /** The `use` command, and what it does to what the client knows. */

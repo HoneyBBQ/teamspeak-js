@@ -126,6 +126,10 @@ export interface QueryClientOptions {
    * WebQuery the transport answers `use` itself, by addressing that server in
    * its requests. Unset leaves the instance selected on raw TCP, where the
    * server's own default applies.
+   *
+   * Without it the client connects with no server selected, which serves the
+   * instance-level commands (`instanceinfo`, `serverlist`, `use`). The events
+   * need a server, so they are registered by the first {@link QueryClient.use}.
    */
   readonly server?: { readonly id: ServerID | number } | { readonly port: number } | undefined;
   /** The query client's nickname on the server (`client_nickname` of `use`). */

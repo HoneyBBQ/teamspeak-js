@@ -666,6 +666,28 @@ describe.skipIf(SKIP)("Integration — ServerQuery client", () => {
     30_000,
   );
 
+  // With no server selected the server refuses `servernotifyregister` and
+  // `clientlist` (1024) and answers the instance-level commands, so a client
+  // with no `server` connects, and registers its events at the first `use`.
+  it.each(KINDS.filter((kind) => kind !== "web"))(
+    "connects over %s with no server selected, and selects one later",
+    async (kind) => {
+      const { server: _server, nickname: _nickname, ...options } = optionsFor(kind);
+      const client = new QueryClient(options);
+      await connectWithRetries(client);
+      try {
+        expect(client.status).toBe("connected");
+        expect((await client.exec("instanceinfo")).length).toBe(1);
+        expect((await client.exec("serverlist")).length).toBeGreaterThan(0);
+        await client.use({ id: 1 });
+        expect(Number((await client.exec("whoami"))[0]?.["client_id"])).toBeGreaterThan(0);
+      } finally {
+        await client.disconnect();
+      }
+    },
+    30_000,
+  );
+
   // The commands below are measured on TS3 and TS6 over every transport, and
   // each test leaves nothing behind. One test per transport, so a transport that
   // lacks a command skips just its own.
