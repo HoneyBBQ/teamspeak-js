@@ -218,10 +218,20 @@ describe("floodRetryDelayMs", () => {
     expect(floodRetryDelayMs(refusal("524", "retry in 0ms"))).toBe(0);
   });
 
+  it("reads the wait a ServerQuery client is given, in whole seconds", () => {
+    expect(floodRetryDelayMs(refusal("524", "please wait 1 seconds"))).toBe(1000);
+    expect(floodRetryDelayMs(refusal("524", "please wait 600 seconds"))).toBe(600_000);
+    expect(floodRetryDelayMs(refusal("524", "please wait 0 seconds"))).toBe(0);
+  });
+
   it("is undefined for anything else", () => {
     expect(floodRetryDelayMs(refusal("524"))).toBeUndefined();
     expect(floodRetryDelayMs(refusal("524", "retry in 5 seconds"))).toBeUndefined();
     expect(floodRetryDelayMs(refusal("524", "retry in 99999999999ms"))).toBeUndefined();
+    expect(floodRetryDelayMs(refusal("524", "please wait 1.5 seconds"))).toBeUndefined();
+    expect(floodRetryDelayMs(refusal("524", "please wait seconds"))).toBeUndefined();
+    expect(floodRetryDelayMs(refusal("524", "please wait 1 seconds now"))).toBeUndefined();
+    expect(floodRetryDelayMs(refusal("3329", "please wait 5 seconds"))).toBeUndefined();
     expect(floodRetryDelayMs(refusal("1024", "retry in 10ms"))).toBeUndefined();
     expect(floodRetryDelayMs(new Error("retry in 10ms"))).toBeUndefined();
   });

@@ -251,9 +251,19 @@ export function parseErrorCode(raw: string | undefined): number {
 }
 
 /**
- * How long the server asks a client it refused as flooding to wait: the
- * `retry in 1985ms` of the extra message of error 524, in milliseconds. Undefined
- * for any other error, or one that names no wait.
+ * How many times a command refused as flooding is sent again after the pause
+ * the server asked for. On the voice protocol the first resend is usually
+ * refused once more with a shorter wait, and the second goes through (measured
+ * on TeamSpeak 3 and 6); on ServerQuery a refusal can be answered with a
+ * longer wait, which the caller's timeout then decides whether to sit out.
+ */
+export const FLOOD_RETRIES = 3;
+/** Added to the server's wait, which counts down to the millisecond. */
+export const FLOOD_HOLD_MARGIN_MS = 10;
+
+/**
+ * How long the server asks a client it refused as flooding to wait, in
+ * milliseconds. Undefined for any other error, or one that names no wait.
  *
  * Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 6.0.0: a voice client whose
  * antiflood points pass `virtualserver_antiflood_points_needed_command_block`
@@ -261,12 +271,28 @@ export function parseErrorCode(raw: string | undefined): number {
  * for each command, and the command is not run. The wait is a floor, not a
  * promise: a command sent as the wait ends is refused again with a shorter one,
  * and the second try went through in every measurement.
+ *
+ * A ServerQuery client (raw TCP and SSH; over WebQuery the server closes the
+ * connection and says nothing) that sends faster than
+ * `serverinstance_serverquery_flood_commands` per `_flood_time` gets the same
+ * error with the wait in whole seconds,
+ * `extra_msg=please\swait\s1\sseconds`, and the command is not run. The first
+ * refusals say 1; later ones say the instance's
+ * `serverinstance_serverquery_ban_time`, as the address is banned for that long
+ * (new connections are dropped meanwhile). Asking again every half second kept
+ * the ban going for as long as it was kept up (9 seconds against a ban time of
+ * 4), while waiting out the pause and asking once got through. The wait is a
+ * floor here too: about one resend in three after exactly the wait was refused
+ * again, with the ban time.
  */
 export function floodRetryDelayMs(error: Error): number | undefined {
   if (!(error instanceof ServerError) || error.code !== ErrorCode.ClientIsFlooding)
     return undefined;
-  const match = /^retry in (\d{1,9})ms$/.exec(error.extraMessage ?? "");
-  return match === null ? undefined : Number(match[1]);
+  const extra = error.extraMessage ?? "";
+  const millis = /^retry in (\d{1,9})ms$/.exec(extra);
+  if (millis !== null) return Number(millis[1]);
+  const seconds = /^please wait (\d{1,9}) seconds$/.exec(extra);
+  return seconds === null ? undefined : Number(seconds[1]) * 1000;
 }
 
 /**
