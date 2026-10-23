@@ -556,13 +556,11 @@ export interface ResolveStartInfo extends AttemptInfo {
 
 // @public
 export interface ServerCapabilities {
+    readonly extensions: readonly string[];
     readonly family: ServerFamily;
-    readonly hostBannerImageURL: string | undefined;
     readonly hostMessage: string;
     readonly hostMessageMode: HostMessageMode;
-    readonly iconID: IconID | undefined;
     readonly major: number;
-    readonly name: string;
     readonly serverID: ServerID;
     readonly serverUID: string;
     readonly uidAlgorithm: UIDAlgorithm;
@@ -595,7 +593,10 @@ export interface ServerView {
     readonly revision: number;
     readonly self: ClientEntry | undefined;
     readonly server: Readonly<Record<string, string>>;
+    readonly serverBannerImageURL: string | undefined;
     readonly serverGroups: ReadonlyMap<ServerGroupID, ServerGroup>;
+    readonly serverIconID: IconID | undefined;
+    readonly serverName: string;
     readonly status: ViewStatus;
     whenReady(options?: {
         readonly signal?: AbortSignal | undefined;

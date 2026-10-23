@@ -8,19 +8,22 @@
  *
  * Everything below comes from the handshake — `initserver` carries
  * `virtualserver_version`, the one place the server names itself, along with
- * its name, icon, banner and welcome message — so reading it costs no extra
- * round trip.
+ * the protocol extensions it supports and the messages it greets a client
+ * with — so reading it costs no extra round trip. Only what holds for the
+ * whole connection is kept here. The server's name, icon and banner can be
+ * edited while a client is connected, so they are on the view, which follows
+ * the edits: `view.serverName`, `view.serverIconID` and
+ * `view.serverBannerImageURL`.
  */
 
 import {
   asServerID,
   HostMessageMode,
   serverFamilyForVersion,
-  type IconID,
   type ServerFamily,
   type ServerID,
 } from "@honeybbq/teamspeak";
-import { parseIconID, parseUint64 } from "../core/internal.js";
+import { parseUint64 } from "../core/internal.js";
 import { uidAlgorithmForVersion, type UIDAlgorithm } from "./crypto/identity.js";
 
 /** What a server said about itself in the handshake. */
@@ -38,16 +41,16 @@ export interface ServerCapabilities {
    * this, and a client that picks differently never matches.
    */
   readonly uidAlgorithm: UIDAlgorithm;
-  /** The virtual server's name (`virtualserver_name`). */
-  readonly name: string;
   /**
-   * The server's icon (`virtualserver_icon_id`), or `undefined` for none. The
-   * server sends the icon's CRC32, sometimes as a negative 32-bit number; this
-   * is the unsigned value, which names the icon file.
+   * The optional protocol features the server says it supports
+   * (`virtualserver_capability_extensions`), in the server's order and each
+   * once, such as `["FILETIME", "STREAM_P2P"]`; test one with `includes`.
+   * Empty when it names none, as a TeamSpeak 3 server does. Frozen.
+   *
+   * It is what the server claims, read as sent; the SDK does not refuse a
+   * command because a name is missing from it.
    */
-  readonly iconID: IconID | undefined;
-  /** The host banner image's URL (`virtualserver_hostbanner_gfx_url`), if one is set. */
-  readonly hostBannerImageURL: string | undefined;
+  readonly extensions: readonly string[];
   /** The welcome message shown on connecting (`virtualserver_welcomemessage`). */
   readonly welcomeMessage: string;
   /** The virtual server's ID (`virtualserver_id`); 0 when the server did not send it. */
@@ -82,9 +85,7 @@ export function parseServerCapabilities(
     major,
     family: serverFamilyForVersion(version),
     uidAlgorithm: uidAlgorithmForVersion(version),
-    name: params["virtualserver_name"] ?? "",
-    iconID: parseIconID(params["virtualserver_icon_id"]),
-    hostBannerImageURL: params["virtualserver_hostbanner_gfx_url"]?.trim() || undefined,
+    extensions: extensions(params["virtualserver_capability_extensions"]),
     welcomeMessage: params["virtualserver_welcomemessage"] ?? "",
     serverID: asServerID(parseUint64(params["virtualserver_id"] ?? "")),
     serverUID: params["virtualserver_unique_identifier"] ?? "",
@@ -101,6 +102,15 @@ export function parseServerCapabilities(
  */
 export function unknownServerCapabilities(): ServerCapabilities {
   return parseServerCapabilities("");
+}
+
+/** The names of a comma-separated extension list, without blanks or repeats. */
+function extensions(value: string | undefined): readonly string[] {
+  const names = (value ?? "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => name !== "");
+  return Object.freeze([...new Set(names)]);
 }
 
 function hostMessageMode(value: string | undefined): HostMessageMode {

@@ -53,21 +53,34 @@ describe("parseServerCapabilities", () => {
   });
 
   // After EchoSixHIYA/teamspeak-js (0979775, 956d29c, by illusia).
-  it("reads the server's name, icon, banner and welcome message from initserver", () => {
+  it("reads the welcome message from initserver", () => {
     const caps = parseServerCapabilities({
       virtualserver_version: "3.13.8 [Build: 1779874471]",
-      virtualserver_name: "My Server",
-      virtualserver_icon_id: "-1528016466",
-      virtualserver_hostbanner_gfx_url: " https://example.com/banner.png ",
       virtualserver_welcomemessage: "Welcome!",
     });
     expect(caps.family).toBe("ts3");
-    expect(caps.name).toBe("My Server");
-    // The server sends the CRC32 as a signed 32-bit number; the icon file is
-    // named by the unsigned one.
-    expect(caps.iconID).toBe(2766950830);
-    expect(caps.hostBannerImageURL).toBe("https://example.com/banner.png");
     expect(caps.welcomeMessage).toBe("Welcome!");
+  });
+
+  it("reads the extensions in the server's order, each once, without blanks", () => {
+    // As TeamSpeak 6 6.0.0-beta13.1 and TeamSpeak 3 3.13 send them.
+    expect(
+      parseServerCapabilities({ virtualserver_capability_extensions: "FILETIME,STREAM_P2P" })
+        .extensions,
+    ).toEqual(["FILETIME", "STREAM_P2P"]);
+    expect(parseServerCapabilities({ virtualserver_capability_extensions: "" }).extensions).toEqual(
+      [],
+    );
+    expect(parseServerCapabilities({}).extensions).toEqual([]);
+    expect(
+      parseServerCapabilities({ virtualserver_capability_extensions: " B ,,A,B, " }).extensions,
+    ).toEqual(["B", "A"]);
+  });
+
+  it("freezes the extensions", () => {
+    const caps = parseServerCapabilities({ virtualserver_capability_extensions: "STREAM_P2P" });
+    expect(Object.isFrozen(caps.extensions)).toBe(true);
+    expect(caps.extensions.includes("STREAM_P2P")).toBe(true);
   });
 
   it("types the host message mode, and passes an unnamed value through", () => {
@@ -78,17 +91,6 @@ describe("parseServerCapabilities", () => {
     expect(mode("9")).toBe(9);
   });
 
-  it("reads no icon or banner as undefined, and an unsigned icon id as is", () => {
-    expect(parseServerCapabilities({ virtualserver_icon_id: "0" }).iconID).toBeUndefined();
-    expect(parseServerCapabilities({ virtualserver_icon_id: "x" }).iconID).toBeUndefined();
-    expect(parseServerCapabilities({ virtualserver_icon_id: "2766950830" }).iconID).toBe(
-      2766950830,
-    );
-    expect(
-      parseServerCapabilities({ virtualserver_hostbanner_gfx_url: "" }).hostBannerImageURL,
-    ).toBeUndefined();
-  });
-
   it("reports an honest unknown family but keeps the SHA-1 default", () => {
     const caps = unknownServerCapabilities();
     // Nothing has identified the server yet, so the family is unknown rather
@@ -97,6 +99,7 @@ describe("parseServerCapabilities", () => {
     expect(caps.family).toBe("unknown");
     expect(caps.uidAlgorithm).toBe("sha1");
     expect(caps.version).toBe("");
+    expect(caps.extensions).toEqual([]);
   });
 });
 

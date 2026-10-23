@@ -117,6 +117,15 @@ describe.skipIf(SKIP)("Audit corrections — live", () => {
     expect(Object.values(HostMessageMode)).toContain(mode);
   });
 
+  it("reports the extensions the server names", () => {
+    const { family, extensions } = voice.serverCapabilities;
+    console.log("extensions:", extensions);
+    expect(Object.isFrozen(extensions)).toBe(true);
+    // TeamSpeak 3 names none; TeamSpeak 6 names peer to peer streams.
+    if (family === "ts3") expect(extensions).toEqual([]);
+    else expect(extensions).toContain("STREAM_P2P");
+  });
+
   it.skipIf(FAMILY !== "ts6")(
     "findBans over the voice protocol returns the bans that match",
     async () => {
