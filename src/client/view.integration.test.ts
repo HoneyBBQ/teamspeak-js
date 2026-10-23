@@ -350,6 +350,47 @@ describe.skipIf(SKIP)("Server view — live", () => {
       }
     }
   }, 60_000);
+
+  it("holds a channel created while connected as a client that joins later holds it", async () => {
+    const id = await createChannel(admin, { name: `vw-d1-${RUN}`, isPermanent: true });
+    created.push(id);
+    await eventually("the channel in the first view", () => watcher.view.channel(id) !== undefined);
+
+    await sleep(2_200);
+    const later = await connectClient(`ts-js-vwd-${RUN}`);
+    try {
+      const seen = watcher.view.channel(id);
+      const listed = later.view.channel(id);
+      expect(seen).toBeDefined();
+      expect(listed).toBeDefined();
+      // Derived or unknowable to the first view: the order is the server's to
+      // settle, the counts and the empty time come only with a listing, the
+      // codec encryption follows a server setting, the quota is TS6 only and
+      // the unique identifier only comes with a notification on TS6.
+      const drop = (c: Channel): Record<string, unknown> => {
+        const {
+          order: _order,
+          totalClients: _total,
+          totalFamilyClients: _family,
+          neededSubscribePower: _subscribe,
+          emptyForMs: _empty,
+          isUnencrypted: _unencrypted,
+          storageQuota: _quota,
+          uid: _uid,
+          filePath: _path,
+          ...rest
+        } = c;
+        return rest;
+      };
+      expect(drop(seen!)).toEqual(drop(listed!));
+      expect(seen!.codec).toBe(4);
+      expect(seen!.maxClients).toBe(-1);
+      if (seen!.uid !== "") expect(seen!.uid).toBe(listed!.uid);
+    } finally {
+      await later.disconnect().catch(() => {});
+      await deleteChannel(admin, id, { force: true }).catch(() => {});
+    }
+  }, 60_000);
 });
 
 /** Poll until `condition` holds, for as long as an event may take. */

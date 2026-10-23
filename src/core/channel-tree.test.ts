@@ -418,6 +418,75 @@ function operate(
   }
 }
 
+describe("ChannelTree.applyCreated, defaults", () => {
+  it("gives a channel made with only a name the server's defaults", () => {
+    const result = handleNotification(
+      {
+        name: "notifychannelcreated",
+        params: {
+          cid: "8",
+          cpid: "0",
+          channel_name: "Gamma",
+          channel_order: "4",
+          channel_flag_permanent: "1",
+          invokerid: "35",
+          invokername: "admin",
+          invokeruid: "serveradmin",
+        },
+      },
+      1,
+      new Map(),
+    );
+    if (result.kind !== "channelCreated") throw new Error(result.kind);
+    const channel = ChannelTree.from([]).applyCreated(result.event).get(id(8))!;
+    expect(channel).toMatchObject({
+      name: "Gamma",
+      isPermanent: true,
+      isSemiPermanent: false,
+      isDefault: false,
+      hasPassword: false,
+      topic: "",
+      description: "",
+      codec: 4,
+      codecQuality: 5,
+      maxClients: -1,
+      maxFamilyClients: -1,
+      neededTalkPower: 0,
+      codecLatencyFactor: 1,
+      isMaxClientsUnlimited: true,
+      isMaxFamilyClientsUnlimited: true,
+      isMaxFamilyClientsInherited: false,
+      isForcedSilence: false,
+      deleteDelayMs: 0,
+      namePhonetic: "",
+      bannerURL: "",
+      bannerMode: 0,
+    });
+    // No icon is how the welcome reads icon 0; the rest are not known from a notification, so not claimed.
+    expect(channel.iconID).toBeUndefined();
+    expect(channel.isUnencrypted).toBeUndefined();
+    expect(channel.storageQuota).toBeUndefined();
+  });
+
+  it("lets what the notification carries override a default", () => {
+    const event = created(8, 0, 0);
+    const channel = ChannelTree.from([])
+      .applyCreated({
+        ...event,
+        changes: { ...event.changes, codec: 5, maxClients: 3, topic: "hi", hasPassword: true },
+      })
+      .get(id(8))!;
+    expect(channel).toMatchObject({
+      codec: 5,
+      codecQuality: 5,
+      maxClients: 3,
+      maxFamilyClients: -1,
+      topic: "hi",
+      hasPassword: true,
+    });
+  });
+});
+
 describe("ChannelTree against the server's rules", () => {
   it("equals the server's listing after every step of random operations", () => {
     for (let seed = 1; seed <= 150; seed++) {

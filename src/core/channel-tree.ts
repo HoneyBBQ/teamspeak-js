@@ -334,6 +334,44 @@ function parentOf(draft: Draft, parent: ChannelID): ChannelID {
   return TOP;
 }
 
+/**
+ * What a channel holds when nothing was said of a property: the server's
+ * defaults, as the welcome's `channellist` would present a channel made with
+ * only a name. A `notifychannelcreated` carries just what the creator gave, so
+ * a created channel starts from this row and takes the notification over it.
+ * Measured on TS3 3.13.8 and TS6 6.0.0, and guarded by a live test.
+ *
+ * Left out, so the channel does not claim them: `channel_codec_is_unencrypted`
+ * (it may follow the server's codec encryption mode, which is not known here),
+ * `channel_storage_quota` (TS6 only), `channel_description` (`channellist`
+ * never carries it) and the unique identifier (the notification carries it on
+ * TS6 only).
+ */
+const CREATED_CHANNEL_DEFAULTS: Readonly<Record<string, string>> = {
+  channel_name: "",
+  channel_topic: "",
+  channel_codec: "4",
+  channel_codec_quality: "5",
+  channel_maxclients: "-1",
+  channel_maxfamilyclients: "-1",
+  channel_order: "0",
+  channel_flag_permanent: "0",
+  channel_flag_semi_permanent: "0",
+  channel_flag_default: "0",
+  channel_flag_password: "0",
+  channel_codec_latency_factor: "1",
+  channel_delete_delay: "0",
+  channel_flag_maxclients_unlimited: "1",
+  channel_flag_maxfamilyclients_unlimited: "1",
+  channel_flag_maxfamilyclients_inherited: "0",
+  channel_needed_talk_power: "0",
+  channel_forced_silence: "0",
+  channel_name_phonetic: "",
+  channel_icon_id: "0",
+  channel_banner_gfx_url: "",
+  channel_banner_mode: "0",
+};
+
 function create(draft: Draft, event: ChannelCreatedEvent): void {
   const { channelID, changes } = event;
   if (draft.channels.has(channelID)) {
@@ -342,7 +380,7 @@ function create(draft: Draft, event: ChannelCreatedEvent): void {
     remove(draft, channelID);
   }
   const parentID = parentOf(draft, event.parentID);
-  const base = parseChannel({ cid: String(channelID) });
+  const base = parseChannel({ ...CREATED_CHANNEL_DEFAULTS, cid: String(channelID) });
   draft.channels.set(channelID, applyChannelChanges(base, { ...changes, parentID }));
   insert(draft, parentID, channelID, changes.order);
 }
