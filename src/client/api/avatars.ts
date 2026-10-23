@@ -23,6 +23,7 @@ import {
 import type { IconID, UID } from "@honeybbq/teamspeak";
 import type { Client } from "../client.js";
 import type { FileTransferOptions } from "../transfer.js";
+import { verifyStored, withDialCleanup } from "./upload-checks.js";
 
 /** Options for the avatar and icon transfers. */
 export type AvatarTransferOptions = Pick<FileTransferOptions, "signal" | "trace">;
@@ -84,7 +85,14 @@ export async function uploadAvatar(
     overwrite: true,
     ...(options.signal ? { signal: options.signal } : {}),
   });
-  await client.uploadFileData(client.host, info, Readable.from([data]), options);
+  await withDialCleanup(client, info.serverFileTransferID, () =>
+    client.uploadFileData(client.host, info, Readable.from([data]), options),
+  );
+  // Stored under a name the server derives from the uploader's uid, not the
+  // one asked for (measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 6.0.0).
+  await verifyStored(client, CHANNEL_ZERO, `/${avatarFileName(client.uid)}`, BigInt(data.length), {
+    signal: options.signal,
+  });
   await updateClient(client, { avatar: md5 });
   return md5;
 }
@@ -150,7 +158,12 @@ export async function uploadIcon(
     overwrite: true,
     ...(options.signal ? { signal: options.signal } : {}),
   });
-  await client.uploadFileData(client.host, info, Readable.from([data]), options);
+  await withDialCleanup(client, info.serverFileTransferID, () =>
+    client.uploadFileData(client.host, info, Readable.from([data]), options),
+  );
+  await verifyStored(client, CHANNEL_ZERO, iconFileName(id), BigInt(data.length), {
+    signal: options.signal,
+  });
   return id;
 }
 
