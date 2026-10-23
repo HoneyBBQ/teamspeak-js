@@ -81,9 +81,13 @@ function aesCtr(key: Uint8Array, iv: Uint8Array, data: Uint8Array): Uint8Array {
 
 // ---- AES-CMAC (RFC 4493) ----------------------------------------------------
 
+/**
+ * The CMAC subkeys of each key, derived once: a session uses one key for every
+ * packet, and deriving them costs a cipher of its own.
+ */
+const subkeyCache = new WeakMap<Uint8Array, [Uint8Array, Uint8Array]>();
+
 function aesEcb(key: Uint8Array, block: Uint8Array): Uint8Array {
-  // Node.js does not expose ECB directly; simulate via CTR with zero IV and
-  // a zero-input (CTR of 0-block XOR with input = ECB)
   const cipher = createCipheriv("aes-128-ecb", Buffer.from(key), null);
   cipher.setAutoPadding(false);
   return Buffer.concat([cipher.update(Buffer.from(block)), cipher.final()]);
@@ -110,6 +114,8 @@ const RB = new Uint8Array(EAX_BLOCK_SIZE);
 RB[EAX_BLOCK_SIZE - 1] = 0x87;
 
 function generateSubkeys(key: Uint8Array): [Uint8Array, Uint8Array] {
+  const cached = subkeyCache.get(key);
+  if (cached !== undefined) return cached;
   const zero = new Uint8Array(EAX_BLOCK_SIZE);
   const L = aesEcb(key, zero);
 
@@ -119,34 +125,33 @@ function generateSubkeys(key: Uint8Array): [Uint8Array, Uint8Array] {
   let K2 = shiftLeft1(K1);
   if ((K1[0]! & 0x80) !== 0) K2 = xorBlock(K2, RB);
 
-  return [K1, K2];
+  const subkeys: [Uint8Array, Uint8Array] = [K1, K2];
+  subkeyCache.set(key, subkeys);
+  return subkeys;
 }
 
+const ZERO_IV = Buffer.alloc(EAX_BLOCK_SIZE);
+
+/**
+ * AES-CMAC: the last block of AES-CBC with a zero IV over the message, its last
+ * block padded and XORed with a subkey. One cipher for the whole message.
+ */
 export function aesCmac(key: Uint8Array, message: Uint8Array): Uint8Array {
   const [K1, K2] = generateSubkeys(key);
 
   const n = Math.max(1, Math.ceil(message.length / EAX_BLOCK_SIZE));
   const lastBlockComplete = message.length > 0 && message.length % EAX_BLOCK_SIZE === 0;
 
-  let X: Uint8Array = new Uint8Array(EAX_BLOCK_SIZE);
-
-  for (let i = 0; i < n - 1; i++) {
-    const block = message.slice(i * EAX_BLOCK_SIZE, (i + 1) * EAX_BLOCK_SIZE);
-    X = Uint8Array.from(aesEcb(key, xorBlock(X, block)));
-  }
-
-  const lastBlock = new Uint8Array(EAX_BLOCK_SIZE);
+  const padded = Buffer.alloc(n * EAX_BLOCK_SIZE);
+  padded.set(message);
   const lastStart = (n - 1) * EAX_BLOCK_SIZE;
-  const lastSlice = message.slice(lastStart);
-  lastBlock.set(lastSlice);
+  if (!lastBlockComplete) padded[message.length] = 0x80;
+  const subkey = lastBlockComplete ? K1 : K2;
+  for (let i = 0; i < EAX_BLOCK_SIZE; i++)
+    padded[lastStart + i] = padded[lastStart + i]! ^ subkey[i]!;
 
-  let Mn: Uint8Array;
-  if (lastBlockComplete) {
-    Mn = xorBlock(lastBlock, K1);
-  } else {
-    if (lastSlice.length < EAX_BLOCK_SIZE) lastBlock[lastSlice.length] = 0x80;
-    Mn = xorBlock(lastBlock, K2);
-  }
-
-  return Uint8Array.from(aesEcb(key, xorBlock(X, Mn)));
+  const cipher = createCipheriv("aes-128-cbc", Buffer.from(key), ZERO_IV);
+  cipher.setAutoPadding(false);
+  const out = cipher.update(padded);
+  return Uint8Array.from(out.subarray(out.length - EAX_BLOCK_SIZE));
 }
