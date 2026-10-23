@@ -169,12 +169,23 @@ const client = new Client(identity, "ts.example.com", "Bot", {
 const caps = client.serverCapabilities;
 // {
 //   version: "6.0.0-beta13.1 [Build: 1790080330]", major: 6, family: "ts6",
-//   uidAlgorithm: "sha256", name: "TeamSpeak 6 Server", iconID: undefined,
-//   hostBannerImageURL: undefined, welcomeMessage: "…"
+//   uidAlgorithm: "sha256", extensions: ["FILETIME", "STREAM_P2P"],
+//   welcomeMessage: "…", …
 // }
 ```
 
 Read from `initserver` during the handshake, so it costs no extra round trip.
 The uid hash matters because TS3 hashes a client's public key with SHA-1 and TS6
 with SHA-256 — a client that assumes either one computes an identifier the other
-server never sends.
+server never sends. `extensions` lists the optional protocol features the server
+says it supports; a TeamSpeak 3 server names none.
+
+It holds only what lasts the connection. The server's name, icon and banner can
+be edited while a client is connected, so they are read from the view, which
+follows the edits:
+
+```typescript
+client.view.serverName; // "TeamSpeak 6 Server"
+client.view.serverIconID; // IconID | undefined
+client.view.serverBannerImageURL; // string | undefined
+```

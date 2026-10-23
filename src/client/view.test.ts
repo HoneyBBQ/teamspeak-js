@@ -132,6 +132,9 @@ describe.each(["ts3", "ts6"] as const)("the view from a %s welcome", (family) =>
     expect(client.view.channels.size).toBe(0);
     expect(client.view.self).toBeUndefined();
     expect(client.view.children()).toEqual([]);
+    expect(client.view.serverName).toBe("");
+    expect(client.view.serverIconID).toBeUndefined();
+    expect(client.view.serverBannerImageURL).toBeUndefined();
 
     const { connecting } = await open(client, sockets);
     expect(client.view.status).toBe("loading");
@@ -934,6 +937,41 @@ describe.each(["ts3", "ts6"] as const)("the groups and server of a %s view", (fa
     send(client, socket, "notifyserveredited virtualserver_name=Renamed");
     await settle();
     expect(view.revision).toBe(again);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  // After EchoSixHIYA/teamspeak-js (0979775, 956d29c, by illusia).
+  it("reads the server's name, icon and banner from the server, and follows edits", async () => {
+    const { client, socket } = await started();
+    const view = client.view;
+    expect(view.serverName).toBe(init["virtualserver_name"]);
+    // The recorded server has no icon ("0") and no banner ("").
+    expect(view.serverIconID).toBeUndefined();
+    expect(view.serverBannerImageURL).toBeUndefined();
+    const before = client.serverCapabilities;
+
+    send(
+      client,
+      socket,
+      "notifyserveredited invokerid=5 invokername=admin invokeruid=x virtualserver_name=Renamed" +
+        " virtualserver_icon_id=-1528016466" +
+        " virtualserver_hostbanner_gfx_url=\\shttps:\\/\\/example.com\\/banner.png\\s",
+    );
+    await settle();
+    expect(view.serverName).toBe("Renamed");
+    // The server sends the CRC32 as a signed 32-bit number; the icon file is
+    // named by the unsigned one.
+    expect(view.serverIconID).toBe(2766950830);
+    expect(view.serverBannerImageURL).toBe("https://example.com/banner.png");
+    // The handshake's record holds what lasts the connection, not these.
+    expect(client.serverCapabilities).toBe(before);
+
+    send(client, socket, "notifyserveredited virtualserver_icon_id=2766950830");
+    await settle();
+    expect(view.serverIconID).toBe(2766950830);
+    send(client, socket, "notifyserveredited virtualserver_icon_id=x");
+    await settle();
+    expect(view.serverIconID).toBeUndefined();
     await client.disconnect({ signal: AbortSignal.timeout(1) });
   });
 

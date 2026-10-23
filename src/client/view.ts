@@ -13,10 +13,12 @@ import {
   type ChannelGroup,
   type ChannelGroupID,
   type ClientID,
+  type IconID,
   type Logger,
   type ServerGroup,
   type ServerGroupID,
 } from "@honeybbq/teamspeak";
+import { parseIconID } from "../core/internal.js";
 import { abortReason } from "./abort.js";
 
 /**
@@ -179,6 +181,23 @@ export interface ServerView {
    * never held.
    */
   readonly server: Readonly<Record<string, string>>;
+  /**
+   * The virtual server's name (`virtualserver_name`), as `server` holds it now;
+   * empty before the server has said.
+   */
+  readonly serverName: string;
+  /**
+   * The server's icon (`virtualserver_icon_id`) as `server` holds it now, or
+   * `undefined` for none. The server sends the icon's CRC32, sometimes as a
+   * negative 32-bit number; this is the unsigned value, which names the icon
+   * file.
+   */
+  readonly serverIconID: IconID | undefined;
+  /**
+   * The host banner image's URL (`virtualserver_hostbanner_gfx_url`) as
+   * `server` holds it now, or `undefined` when none is set.
+   */
+  readonly serverBannerImageURL: string | undefined;
 }
 
 /**
@@ -379,6 +398,15 @@ export class ViewStore {
       },
       get server() {
         return store.#server;
+      },
+      get serverName() {
+        return store.#server["virtualserver_name"] ?? "";
+      },
+      get serverIconID() {
+        return parseIconID(store.#server["virtualserver_icon_id"]);
+      },
+      get serverBannerImageURL() {
+        return store.#server["virtualserver_hostbanner_gfx_url"]?.trim() || undefined;
       },
     };
   }

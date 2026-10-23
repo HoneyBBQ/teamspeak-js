@@ -417,6 +417,8 @@ describe.skipIf(SKIP)("Server view, groups and server — live", () => {
       "virtualserver_name",
       "virtualserver_welcomemessage",
       "virtualserver_maxclients",
+      "virtualserver_icon_id",
+      "virtualserver_hostbanner_gfx_url",
     ]) {
       if (original[key] !== undefined) restore[key] = original[key];
     }
@@ -542,6 +544,7 @@ describe.skipIf(SKIP)("Server view, groups and server — live", () => {
     await editServer(admin, { virtualserver_name: `vg-name-${RUN}` });
     await renamed;
     expect(view.server["virtualserver_name"]).toBe(`vg-name-${RUN}`);
+    expect(view.serverName).toBe(`vg-name-${RUN}`);
 
     // The server does not say which of these changed: the edit arrives empty.
     const silent = nextEvent(watcher, "serverEdited", () => true);
@@ -565,6 +568,20 @@ describe.skipIf(SKIP)("Server view, groups and server — live", () => {
     for (const [key, value] of Object.entries(view.server)) {
       expect(info[key], key).toBe(value);
     }
+
+    // An icon and a banner: current once the edit is announced or
+    // getServerVariables has run. The server refuses a signed icon id in an
+    // edit (convert error), though it may send one.
+    const decorated = nextEvent(watcher, "serverEdited", () => true);
+    await editServer(admin, {
+      virtualserver_icon_id: "2766950830",
+      virtualserver_hostbanner_gfx_url: `https://example.com/vg-${RUN}.png`,
+    });
+    await decorated;
+    await getServerVariables(watcher);
+    console.log("icon as held:", view.server["virtualserver_icon_id"]);
+    expect(view.serverIconID).toBe(2766950830);
+    expect(view.serverBannerImageURL).toBe(`https://example.com/vg-${RUN}.png`);
     for (const counter of ["clientsonline", "channelsonline", "uptime", "client_connections"]) {
       expect(view.server).not.toHaveProperty(`virtualserver_${counter}`);
       expect(variables).toHaveProperty(`virtualserver_${counter}`);

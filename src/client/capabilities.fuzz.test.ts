@@ -30,9 +30,7 @@ describe("what a server says about itself", () => {
         fc.dictionary(
           fc.constantFrom(
             "virtualserver_version",
-            "virtualserver_name",
-            "virtualserver_icon_id",
-            "virtualserver_hostbanner_gfx_url",
+            "virtualserver_capability_extensions",
             "virtualserver_welcomemessage",
           ),
           text,
@@ -42,15 +40,13 @@ describe("what a server says about itself", () => {
           expect(Number.isInteger(capabilities.major)).toBe(true);
           expect(capabilities.family === "ts3").toBe(capabilities.major === 3);
           expect(capabilities.family === "ts6").toBe(capabilities.major >= 6);
-          const icon = capabilities.iconID;
-          if (icon !== undefined) {
-            expect(Number.isInteger(icon)).toBe(true);
-            expect(icon).toBeGreaterThanOrEqual(0);
-            expect(icon).toBeLessThanOrEqual(0xffff_ffff);
+          const names = capabilities.extensions;
+          expect(new Set(names).size).toBe(names.length);
+          for (const name of names) {
+            expect(name).not.toBe("");
+            expect(name).toBe(name.trim());
+            expect(name).not.toContain(",");
           }
-          const banner = capabilities.hostBannerImageURL;
-          if (banner !== undefined) expect(banner).toBe(banner.trim());
-          expect(banner).not.toBe("");
         },
       ),
       { numRuns: 1000 },
