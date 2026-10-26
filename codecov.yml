@@ -1,0 +1,32 @@
+# Unit and integration runs upload separately, flagged, and Codecov merges them
+# per commit. The total shown on the badge is that merge.
+codecov:
+  notify:
+    # One unit upload (Node 24) + integration legs (TS3, TS6), one upload each.
+    after_n_builds: 3
+
+# Informational: coverage is reported on pull requests, never a gate.
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
+
+flags:
+  unit:
+    carryforward: false
+  integration-ts3:
+    carryforward: false
+  integration-ts6:
+    carryforward: false
+
+# Tests and developer scripts, not the library.
+ignore:
+  - "**/*.test.ts"
+  - "**/*.typetest.ts"
+  - "src/**/testing/**"
+  - "test/**"
+  - "scripts/**"

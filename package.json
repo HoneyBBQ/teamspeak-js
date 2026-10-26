@@ -75,6 +75,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run --project @honeybbq/teamspeak --project scripts",
+    "test:coverage": "vitest run --coverage --project @honeybbq/teamspeak --project scripts",
     "test:watch": "vitest",
     "lint": "oxlint --deny-warnings .",
     "fmt": "oxfmt .",
@@ -109,6 +110,7 @@
     "@microsoft/api-extractor": "7.59.4",
     "@types/node": "^26.6.5",
     "@types/ssh2": "^1.15.6",
+    "@vitest/coverage-v8": "5.0.5",
     "fast-check": "^4.10.2",
     "oxfmt": "^0.73.0",
     "oxlint": "^1.88.0",
