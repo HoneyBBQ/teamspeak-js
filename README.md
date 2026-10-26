@@ -15,6 +15,7 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/@honeybbq/teamspeak"><img alt="npm version" src="https://img.shields.io/npm/v/@honeybbq/teamspeak"></a>
   <a href="https://github.com/HoneyBBQ/teamspeak-js/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/HoneyBBQ/teamspeak-js/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://codecov.io/gh/HoneyBBQ/teamspeak-js"><img alt="codecov" src="https://codecov.io/gh/HoneyBBQ/teamspeak-js/branch/main/graph/badge.svg"></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/HoneyBBQ/teamspeak-js"><img alt="OpenSSF Scorecard" src="https://api.scorecard.dev/projects/github.com/HoneyBBQ/teamspeak-js/badge"></a>
   <a href="https://github.com/HoneyBBQ/teamspeak-js/blob/main/package.json"><img alt="Node.js version" src="https://img.shields.io/node/v/@honeybbq/teamspeak"></a>
   <a href="https://github.com/HoneyBBQ/teamspeak-js/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>

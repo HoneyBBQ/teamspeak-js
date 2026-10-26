@@ -2,6 +2,21 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
+    // Informational: reported to Codecov, never a threshold.
+    coverage: {
+      provider: "v8",
+      reporter: ["text-summary", "lcov"],
+      include: ["src/**/*.ts"],
+      exclude: [
+        "**/*.test.ts",
+        "**/*.typetest.ts",
+        "**/*.fuzz.test.ts",
+        "**/*.integration.test.ts",
+        "src/**/testing/**",
+        "test/**",
+        "scripts/**",
+      ],
+    },
     projects: [
       {
         test: {

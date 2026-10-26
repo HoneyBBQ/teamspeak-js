@@ -62,7 +62,19 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: "pnpm"
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test
+      # Coverage is measured on one leg: it does not differ between Node versions.
+      - if: matrix.node-version != '24'
+        run: pnpm test
+      - if: matrix.node-version == '24'
+        run: pnpm test:coverage
+      - name: Upload coverage to Codecov
+        if: matrix.node-version == '24' && !cancelled()
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/lcov.info
+          flags: unit
+          fail_ci_if_error: false
 
   # The published declarations use `using` and `Disposable`, so the oldest
   # TypeScript that reads them is part of the supported environments (see
@@ -370,7 +382,7 @@ jobs:
           set -a
           . "$TS3_FIXTURE_ENV"
           set +a
-          pnpm test:integration
+          pnpm test:integration --coverage --coverage.reportsDirectory=coverage-integration
       # The instance tests stop and delete virtual servers, edit the instance,
       # reset every permission and finally stop the server process, so they run
       # alone, after everything above that needs the server, and the stop is
@@ -385,4 +397,14 @@ jobs:
           set -a
           . "$TS3_FIXTURE_ENV"
           set +a
-          pnpm test:integration:instance
+          pnpm test:integration:instance --coverage --coverage.reportsDirectory=coverage-instance
+      # One upload per leg, flagged by server generation. Codecov merges it
+      # with the unit upload for the same commit.
+      - name: Upload coverage to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage-integration/lcov.info,./coverage-instance/lcov.info
+          flags: integration-${{ matrix.server.name == 'TS3' && 'ts3' || 'ts6' }}
+          fail_ci_if_error: false

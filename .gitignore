@@ -33,3 +33,5 @@ node_modules/
 
 # Build output
 dist/
+coverage-integration
+coverage-instance
