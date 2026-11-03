@@ -52,25 +52,72 @@ export interface StreamsClient extends CommandExecutor {
 
 // ---- Values -----------------------------------------------------------------
 
+/** The values of the table below, before freezing. */
+const streamSourceValues = {
+  /** `0` on the wire: no source named. */
+  None: "none",
+  /** `1` on the wire: a camera. */
+  Camera: "camera",
+  /** `2` on the wire: a screen. */
+  Screen: "screen",
+  /** `3` on the wire: a window. */
+  Window: "window",
+  /** `4` on the wire. */
+  Session: "session",
+} as const;
 /**
  * What a stream shows. The server stores any number, so a stream from a client
  * that sends another value reports it as the number.
  */
-export type StreamSource = "none" | "camera" | "screen" | "window" | "session";
+export const StreamSource: typeof streamSourceValues =
+  /* @__PURE__ */ Object.freeze(streamSourceValues);
+/**
+ * One of {@link StreamSource}. May gain members in a minor release: a
+ * `switch` over it needs a default case.
+ */
+export type StreamSource = (typeof StreamSource)[keyof typeof StreamSource];
 
+/** The values of the table below, before freezing. */
+const streamAccessibilityValues = {
+  /** `0` on the wire. */
+  None: "none",
+  /** `1` on the wire: anyone. What `publish` sends unless told otherwise. */
+  Public: "public",
+  /** `2` on the wire: the publisher's contacts. */
+  Contacts: "contacts",
+  /** `3` on the wire. */
+  Private: "private",
+} as const;
 /**
  * Who a stream says may watch it. Only the publisher enforces it: the server
  * relays every request. A value outside the four is reported as the number.
  */
-export type StreamAccessibility = "none" | "public" | "contacts" | "private";
+export const StreamAccessibility: typeof streamAccessibilityValues =
+  /* @__PURE__ */ Object.freeze(streamAccessibilityValues);
+/**
+ * One of {@link StreamAccessibility}. May gain members in a minor release: a
+ * `switch` over it needs a default case.
+ */
+export type StreamAccessibility = (typeof StreamAccessibility)[keyof typeof StreamAccessibility];
 
+/** The values of the table below, before freezing. */
+const streamTransportValues = {
+  /** From the publisher to each viewer directly. */
+  P2P: "p2p",
+} as const;
 /**
  * How a stream's media travels: `"p2p"`, from the publisher to each viewer
  * directly, is the one mode this SDK publishes and watches. A server may
  * announce a stream in another mode; it is reported as the number, and
  * `watch` refuses it.
  */
-export type StreamTransport = "p2p";
+export const StreamTransport: typeof streamTransportValues =
+  /* @__PURE__ */ Object.freeze(streamTransportValues);
+/**
+ * One of {@link StreamTransport}. May gain members in a minor release: a
+ * `switch` over it needs a default case.
+ */
+export type StreamTransport = (typeof StreamTransport)[keyof typeof StreamTransport];
 
 /**
  * A stream, as the server describes it.
@@ -140,12 +187,29 @@ export interface RawSignal {
 
 // ---- Peers ------------------------------------------------------------------
 
+/** The values of the table below, before freezing. */
+const peerCloseCauseValues = {
+  /** Its own `close()`. */
+  Closed: "closed",
+  /** The other end leaving. */
+  Left: "left",
+  /** The stream ending. */
+  Stopped: "stopped",
+  /** The client's connection ending. */
+  Disconnected: "disconnected",
+  /** `Streams.dispose()`. */
+  Disposed: "disposed",
+} as const;
 /**
- * Why a peer closed: `"closed"` for its own `close()`, `"left"` for the other
- * end leaving, `"stopped"` for the stream ending, `"disconnected"` for the
- * client's connection ending and `"disposed"` for `Streams.dispose()`.
+ * Why a peer closed.
  */
-export type PeerCloseCause = "closed" | "left" | "stopped" | "disconnected" | "disposed";
+export const PeerCloseCause: typeof peerCloseCauseValues =
+  /* @__PURE__ */ Object.freeze(peerCloseCauseValues);
+/**
+ * One of {@link PeerCloseCause}. May gain members in a minor release: a
+ * `switch` over it needs a default case.
+ */
+export type PeerCloseCause = (typeof PeerCloseCause)[keyof typeof PeerCloseCause];
 
 /**
  * A peer closing.
@@ -174,6 +238,44 @@ export interface PeerEvents {
   /** The peer closing. */
   closed: PeerClosed;
 }
+
+/** The values of the table below, before freezing. */
+const peerEventNameValues = {
+  /** A renegotiation offer from the publisher: an SDP. */
+  Offer: "offer",
+  /** The viewer's SDP answer. */
+  Answer: "answer",
+  /** An ICE candidate from the other end. */
+  Candidate: "candidate",
+  /** A signalling message that is none of the above. */
+  Signal: "signal",
+  /** The peer closing. */
+  Closed: "closed",
+} as const;
+/**
+ * The names of the events `Peer.on()` takes, as constants.
+ * `on(PeerEventName.Offer, ...)` and `on("offer", ...)` are the same call,
+ * and both give the listener the same payload type.
+ */
+export const PeerEventName: typeof peerEventNameValues =
+  /* @__PURE__ */ Object.freeze(peerEventNameValues);
+/**
+ * One of {@link PeerEventName}, and so a key of {@link PeerEvents}.
+ * May gain members in a minor release: a `switch` over it needs a default
+ * case.
+ */
+export type PeerEventName = (typeof PeerEventName)[keyof typeof PeerEventName];
+
+// Each direction fails to compile when `PeerEvents` and `PeerEventName`
+// drift: an event without a name, and a name that is not an event.
+const peerEventNameCoverEvents: [Exclude<keyof PeerEvents, PeerEventName>] extends [never]
+  ? true
+  : never = true;
+const peerEventNameNamesAreEvents: [Exclude<PeerEventName, keyof PeerEvents>] extends [never]
+  ? true
+  : never = true;
+void peerEventNameCoverEvents;
+void peerEventNameNamesAreEvents;
 
 /**
  * One end of a stream's signalling with one other client. SDP and ICE are
@@ -244,18 +346,50 @@ export interface ViewerIdentity {
   readonly nickname: string | undefined;
 }
 
+/** The values of the table below, before freezing. */
+const joinRequestStateValues = {
+  /** Not yet accepted or denied. */
+  Pending: "pending",
+  /** Accepted. */
+  Accepted: "accepted",
+  /** Denied. */
+  Denied: "denied",
+  /** The answer did not reach the server. */
+  Failed: "failed",
+  /** The viewer left first. */
+  Withdrawn: "withdrawn",
+  /** The stream stopped. */
+  Ended: "ended",
+} as const;
 /**
- * Where a join request stands: `"pending"` until it is accepted or denied,
- * `"failed"` when the answer did not reach the server, `"withdrawn"` when the
- * viewer left first and `"ended"` when the stream stopped.
+ * Where a join request stands.
  */
-export type JoinRequestState = "pending" | "accepted" | "denied" | "failed" | "withdrawn" | "ended";
+export const JoinRequestState: typeof joinRequestStateValues =
+  /* @__PURE__ */ Object.freeze(joinRequestStateValues);
+/**
+ * One of {@link JoinRequestState}. May gain members in a minor release: a
+ * `switch` over it needs a default case.
+ */
+export type JoinRequestState = (typeof JoinRequestState)[keyof typeof JoinRequestState];
 
+/** The values of the table below, before freezing. */
+const joinRequestCloseCauseValues = {
+  /** The viewer took it back or left view. */
+  Withdrawn: "withdrawn",
+  /** The stream ended first. */
+  Ended: "ended",
+} as const;
 /**
- * Why a request stopped waiting for an answer: `"withdrawn"` when the viewer
- * took it back or left view, `"ended"` when the stream ended first.
+ * Why a request stopped waiting for an answer.
  */
-export type JoinRequestCloseCause = "withdrawn" | "ended";
+export const JoinRequestCloseCause: typeof joinRequestCloseCauseValues =
+  /* @__PURE__ */ Object.freeze(joinRequestCloseCauseValues);
+/**
+ * One of {@link JoinRequestCloseCause}. May gain members in a minor release: a
+ * `switch` over it needs a default case.
+ */
+export type JoinRequestCloseCause =
+  (typeof JoinRequestCloseCause)[keyof typeof JoinRequestCloseCause];
 
 /**
  * A pending join request closing without an answer.
@@ -278,6 +412,43 @@ export interface JoinRequestEvents {
    */
   closed: JoinRequestClosed;
 }
+
+/** The values of the table below, before freezing. */
+const joinRequestEventNameValues = {
+  /**
+   * A request nobody had answered closing: the viewer withdrew it or left
+   * view, or the stream ended.
+   */
+  Closed: "closed",
+} as const;
+/**
+ * The names of the events `JoinRequest.on()` takes, as constants.
+ * `on(JoinRequestEventName.Closed, ...)` and `on("closed", ...)` are the same call,
+ * and both give the listener the same payload type.
+ */
+export const JoinRequestEventName: typeof joinRequestEventNameValues =
+  /* @__PURE__ */ Object.freeze(joinRequestEventNameValues);
+/**
+ * One of {@link JoinRequestEventName}, and so a key of {@link JoinRequestEvents}.
+ * May gain members in a minor release: a `switch` over it needs a default
+ * case.
+ */
+export type JoinRequestEventName = (typeof JoinRequestEventName)[keyof typeof JoinRequestEventName];
+
+// Each direction fails to compile when `JoinRequestEvents` and `JoinRequestEventName`
+// drift: an event without a name, and a name that is not an event.
+const joinRequestEventNameCoverEvents: [
+  Exclude<keyof JoinRequestEvents, JoinRequestEventName>,
+] extends [never]
+  ? true
+  : never = true;
+const joinRequestEventNameNamesAreEvents: [
+  Exclude<JoinRequestEventName, keyof JoinRequestEvents>,
+] extends [never]
+  ? true
+  : never = true;
+void joinRequestEventNameCoverEvents;
+void joinRequestEventNameNamesAreEvents;
 
 /**
  * A client asking to watch a stream this client publishes. The server relays
@@ -317,14 +488,32 @@ export interface JoinRequest {
   deny(reason?: string): Promise<void>;
 }
 
+/** The values of the table below, before freezing. */
+const streamEndCauseValues = {
+  /** `stop()`. */
+  Stopped: "stopped",
+  /** The server's `notifystreamstopped`. */
+  Server: "server",
+  /**
+   * The server said its publisher no longer streams (`client_is_streaming`
+   * cleared) and no stop followed within two seconds.
+   */
+  Gone: "gone",
+  /** The client's connection ending. */
+  Disconnected: "disconnected",
+  /** `Streams.dispose()`. */
+  Disposed: "disposed",
+} as const;
 /**
- * Why a published stream ended: `"stopped"` for `stop()`, `"server"` for the
- * server's `notifystreamstopped`, `"gone"` when the server said its publisher
- * no longer streams (`client_is_streaming` cleared) and no stop followed within
- * two seconds, and
- * `"disconnected"` and `"disposed"` as for a peer.
+ * Why a published stream ended.
  */
-export type StreamEndCause = "stopped" | "server" | "gone" | "disconnected" | "disposed";
+export const StreamEndCause: typeof streamEndCauseValues =
+  /* @__PURE__ */ Object.freeze(streamEndCauseValues);
+/**
+ * One of {@link StreamEndCause}. May gain members in a minor release: a
+ * `switch` over it needs a default case.
+ */
+export type StreamEndCause = (typeof StreamEndCause)[keyof typeof StreamEndCause];
 
 /**
  * A published stream ending.
@@ -350,6 +539,43 @@ export interface PublishedStreamEvents {
   /** The stream ending. */
   ended: StreamEnded;
 }
+
+/** The values of the table below, before freezing. */
+const publishedStreamEventNameValues = {
+  /** A client asking to watch. */
+  Request: "request",
+  /** The stream ending. */
+  Ended: "ended",
+} as const;
+/**
+ * The names of the events `PublishedStream.on()` takes, as constants.
+ * `on(PublishedStreamEventName.Request, ...)` and `on("request", ...)` are the same call,
+ * and both give the listener the same payload type.
+ */
+export const PublishedStreamEventName: typeof publishedStreamEventNameValues =
+  /* @__PURE__ */ Object.freeze(publishedStreamEventNameValues);
+/**
+ * One of {@link PublishedStreamEventName}, and so a key of {@link PublishedStreamEvents}.
+ * May gain members in a minor release: a `switch` over it needs a default
+ * case.
+ */
+export type PublishedStreamEventName =
+  (typeof PublishedStreamEventName)[keyof typeof PublishedStreamEventName];
+
+// Each direction fails to compile when `PublishedStreamEvents` and `PublishedStreamEventName`
+// drift: an event without a name, and a name that is not an event.
+const publishedStreamEventNameCoverEvents: [
+  Exclude<keyof PublishedStreamEvents, PublishedStreamEventName>,
+] extends [never]
+  ? true
+  : never = true;
+const publishedStreamEventNameNamesAreEvents: [
+  Exclude<PublishedStreamEventName, keyof PublishedStreamEvents>,
+] extends [never]
+  ? true
+  : never = true;
+void publishedStreamEventNameCoverEvents;
+void publishedStreamEventNameNamesAreEvents;
 
 /**
  * A stream this client publishes.
@@ -445,7 +671,10 @@ export interface StreamStoppedEvent {
    * `client_is_streaming` cleared or the publisher came into view not
    * streaming, without a stop reaching this client.
    */
-  readonly cause: "server" | "stopped" | "gone";
+  readonly cause:
+    | typeof StreamEndCause.Server
+    | typeof StreamEndCause.Stopped
+    | typeof StreamEndCause.Gone;
   /** The stop reason the server reported; 0 unless the stopper gave one, and for `"gone"`. */
   readonly reason: number;
 }
@@ -461,11 +690,21 @@ export interface StreamViewerEvent {
   readonly clientId: ClientID;
 }
 
+/** The values of the table below, before freezing. */
+const streamWarningCodeValues = {
+  /** An SDP offer with no `m=audio` section. */
+  OfferWithoutAudio: "offer-without-audio",
+} as const;
 /**
- * Why `Streams` warns: `"offer-without-audio"` for an SDP offer with no
- * `m=audio` section.
+ * Why `Streams` warns.
  */
-export type StreamWarningCode = "offer-without-audio";
+export const StreamWarningCode: typeof streamWarningCodeValues =
+  /* @__PURE__ */ Object.freeze(streamWarningCodeValues);
+/**
+ * One of {@link StreamWarningCode}. May gain members in a minor release: a
+ * `switch` over it needs a default case.
+ */
+export type StreamWarningCode = (typeof StreamWarningCode)[keyof typeof StreamWarningCode];
 
 /**
  * Something the SDK noticed and did not stop: the offer or message goes out
@@ -486,7 +725,10 @@ export interface StreamWarning {
  * The events of `Streams`.
  */
 export interface StreamsEventMap {
-  /** A stream becoming known: it started while this client could see it, or discovery found it. */
+  /**
+   * A stream becoming known: it started while this client could see it, or
+   * discovery found it.
+   */
   started: StreamInfo;
   /** What is known of a stream changing. */
   updated: StreamInfo;
@@ -504,3 +746,55 @@ export interface StreamsEventMap {
    */
   warning: StreamWarning;
 }
+
+/** The values of the table below, before freezing. */
+const streamsEventNameValues = {
+  /**
+   * A stream becoming known: it started while this client could see it, or
+   * discovery found it.
+   */
+  Started: "started",
+  /** What is known of a stream changing. */
+  Updated: "updated",
+  /** A stream ending. */
+  Stopped: "stopped",
+  /** A viewer being accepted into a stream. */
+  ViewerJoined: "viewerJoined",
+  /** A viewer leaving a stream. */
+  ViewerLeft: "viewerLeft",
+  /** A failure nobody awaits, such as a discovery request the server refused. */
+  Error: "error",
+  /**
+   * Something the SDK noticed and let through, such as an offer the
+   * TeamSpeak 6 client will not answer.
+   */
+  Warning: "warning",
+} as const;
+/**
+ * The names of the events `Streams.on()` takes, as constants.
+ * `on(StreamsEventName.Started, ...)` and `on("started", ...)` are the same call,
+ * and both give the listener the same payload type.
+ */
+export const StreamsEventName: typeof streamsEventNameValues =
+  /* @__PURE__ */ Object.freeze(streamsEventNameValues);
+/**
+ * One of {@link StreamsEventName}, and so a key of {@link StreamsEventMap}.
+ * May gain members in a minor release: a `switch` over it needs a default
+ * case.
+ */
+export type StreamsEventName = (typeof StreamsEventName)[keyof typeof StreamsEventName];
+
+// Each direction fails to compile when `StreamsEventMap` and `StreamsEventName`
+// drift: an event without a name, and a name that is not an event.
+const streamsEventNameCoverEvents: [Exclude<keyof StreamsEventMap, StreamsEventName>] extends [
+  never,
+]
+  ? true
+  : never = true;
+const streamsEventNameNamesAreEvents: [Exclude<StreamsEventName, keyof StreamsEventMap>] extends [
+  never,
+]
+  ? true
+  : never = true;
+void streamsEventNameCoverEvents;
+void streamsEventNameNamesAreEvents;

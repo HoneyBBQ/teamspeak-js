@@ -47,6 +47,11 @@ await pc.setLocalDescription(answer);
 await view.answer(answer.sdp!);
 ```
 
+The event names and the values the streams report have constants, and the string and the
+constant are the same: `streams.on(StreamsEventName.Started, ...)` is
+`streams.on("started", ...)`, and `StreamSource.Screen` is `"screen"`. Import them from
+`@honeybbq/teamspeak/stream`.
+
 Publishing: the publisher makes the offer, one peer connection for each viewer. The server
 relays every request to watch, from any channel, and enforces neither `viewerLimit` nor
 `accessibility`: deciding who is let in is the publisher's job, and `request` is emitted
