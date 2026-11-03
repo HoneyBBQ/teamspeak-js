@@ -68,8 +68,11 @@ export { Reason } from "./reason.js";
 // Small-integer enumerations, as named values and types.
 export {
   APIKeyScope,
+  BannerMode,
+  BindingSubsystem,
   ClientType,
   Codec,
+  CodecEncryptionMode,
   GroupAutoUpdateType,
   GroupNameMode,
   GroupType,
@@ -78,6 +81,7 @@ export {
   PermissionTarget,
   TextMessageTarget,
   PrivilegeKeyType,
+  VirtualServerStatus,
 } from "./enums.js";
 
 // Permissions, by id or by name.

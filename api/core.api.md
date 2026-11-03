@@ -266,6 +266,21 @@ export interface BanListOptions extends CommandOptions {
     readonly start?: number | undefined;
 }
 
+// Warning: (ae-forgotten-export) The symbol "bannerModeValues" needs to be exported by the entry point index.d.ts
+//
+// @public
+export const BannerMode: typeof bannerModeValues;
+
+// @public
+export type BannerMode = (typeof BannerMode)[keyof typeof BannerMode];
+
+// @public
+const bannerModeValues: {
+    readonly NoAdjust: 0;
+    readonly AdjustIgnoreAspect: 1;
+    readonly AdjustKeepAspect: 2;
+};
+
 // @public
 export type BanOptions = BanFields;
 
@@ -283,8 +298,23 @@ export interface Binding {
 
 // @public
 export interface BindingListOptions extends CommandOptions {
-    readonly subsystem?: string | undefined;
+    readonly subsystem?: BindingSubsystem | undefined;
 }
+
+// Warning: (ae-forgotten-export) The symbol "bindingSubsystemValues" needs to be exported by the entry point index.d.ts
+//
+// @public
+export const BindingSubsystem: typeof bindingSubsystemValues;
+
+// @public
+export type BindingSubsystem = (typeof BindingSubsystem)[keyof typeof BindingSubsystem];
+
+// @public
+const bindingSubsystemValues: {
+    readonly Voice: "voice";
+    readonly Query: "query";
+    readonly FileTransfer: "filetransfer";
+};
 
 // @public
 export interface Channel {
@@ -439,7 +469,7 @@ export interface ChannelPasswordChangedEvent {
 
 // @public
 export interface ChannelSettings {
-    readonly bannerMode?: number | undefined;
+    readonly bannerMode?: BannerMode | undefined;
     readonly bannerURL?: string | undefined;
     readonly codec?: Codec | undefined;
     readonly codecLatencyFactor?: number | undefined;
@@ -831,6 +861,21 @@ export const Codec: typeof codecValues;
 // @public
 export type Codec = (typeof Codec)[keyof typeof Codec];
 
+// Warning: (ae-forgotten-export) The symbol "codecEncryptionModeValues" needs to be exported by the entry point index.d.ts
+//
+// @public
+export const CodecEncryptionMode: typeof codecEncryptionModeValues;
+
+// @public
+export type CodecEncryptionMode = (typeof CodecEncryptionMode)[keyof typeof CodecEncryptionMode];
+
+// @public
+const codecEncryptionModeValues: {
+    readonly PerChannel: 0;
+    readonly ForcedOff: 1;
+    readonly ForcedOn: 2;
+};
+
 // @public
 const codecValues: {
     readonly SpeexNarrowband: 0;
@@ -900,6 +945,8 @@ const commandNameValues: {
     readonly ChatLoginToken: "chatlogintoken";
     readonly ClientAddPerm: "clientaddperm";
     readonly ClientAddServerGroup: "clientaddservergroup";
+    readonly ClientChatClosed: "clientchatclosed";
+    readonly ClientChatComposing: "clientchatcomposing";
     readonly ClientDBDelete: "clientdbdelete";
     readonly ClientDBEdit: "clientdbedit";
     readonly ClientDBFind: "clientdbfind";
@@ -971,6 +1018,7 @@ const commandNameValues: {
     readonly PermissionList: "permissionlist";
     readonly PermOverview: "permoverview";
     readonly PermReset: "permreset";
+    readonly PluginCmd: "plugincmd";
     readonly PrivilegeKeyAdd: "privilegekeyadd";
     readonly PrivilegeKeyDelete: "privilegekeydelete";
     readonly PrivilegeKeyList: "privilegekeylist";
@@ -3291,6 +3339,23 @@ export interface VirtualServer {
     readonly uuid?: string | undefined;
     readonly weblistEnabled?: boolean | undefined;
 }
+
+// Warning: (ae-forgotten-export) The symbol "virtualServerStatusValues" needs to be exported by the entry point index.d.ts
+//
+// @public
+export const VirtualServerStatus: typeof virtualServerStatusValues;
+
+// @public
+export type VirtualServerStatus = (typeof VirtualServerStatus)[keyof typeof VirtualServerStatus];
+
+// @public
+const virtualServerStatusValues: {
+    readonly Online: "online";
+    readonly Offline: "offline";
+    readonly BootingUp: "booting up";
+    readonly ShuttingDown: "shutting down";
+    readonly OnlineVirtual: "online virtual";
+};
 
 // @public
 export interface VoiceDataEvent {

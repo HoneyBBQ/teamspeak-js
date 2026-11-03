@@ -44,7 +44,10 @@ export interface ResolveDoneInfo extends AttemptInfo {
   readonly addr: string;
   /** The `host:port` that will be dialled. */
   readonly target: string;
-  /** What the resolver reports as the source of the answer dialled; may be empty. */
+  /**
+   * What the resolver reports as the source of the answer dialled: one of
+   * `ResolveSource` for the built-in resolver. May be empty.
+   */
   readonly source: string;
   /** Every answer the resolver gave, in order; empty when the address is used as given. */
   readonly candidates: readonly ResolvedAddr[];

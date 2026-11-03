@@ -385,6 +385,32 @@ export type EventMiddleware = (next: (event: ServerEvent) => void) => (event: Se
 
 // ---- Resolved address (from discovery) --------------------------------------
 
+/** The values of the table below, before freezing. */
+const resolveSourceValues = {
+  /** A `_ts3._udp` SRV record of the host named the address. */
+  SRV: "SRV",
+  /**
+   * A TSDNS server, found through a `_tsdns._tcp` SRV record of the host's
+   * domain, named the address.
+   */
+  TSDNSSRV: "TSDNS-SRV",
+  /** A TSDNS server on the host's domain, at its default port, named the address. */
+  TSDNSDirect: "TSDNS-Direct",
+  /**
+   * The address as given: an IP address, a name nothing else answered for, or
+   * any name once resolution ran out of time.
+   */
+  Direct: "Direct",
+} as const;
+/** How the built-in resolver found an address, as `ResolvedAddr` records it. */
+export const ResolveSource: typeof resolveSourceValues =
+  /* @__PURE__ */ Object.freeze(resolveSourceValues);
+/**
+ * One of {@link ResolveSource}. May gain members in a minor release: a
+ * `switch` over it needs a default case.
+ */
+export type ResolveSource = (typeof ResolveSource)[keyof typeof ResolveSource];
+
 /**
  * An address a server's name resolved to. Only `addr` is needed to connect;
  * the rest describes the answer.
@@ -392,7 +418,10 @@ export type EventMiddleware = (next: (event: ServerEvent) => void) => (event: Se
 export interface ResolvedAddr {
   /** The endpoint, as `host:port`. */
   readonly addr: string;
-  /** How it was found, such as `SRV`, `TSDNS-SRV`, `TSDNS-Direct` or `Direct`. */
+  /**
+   * How it was found. The built-in resolver sets one of `ResolveSource`; a
+   * plain string, since an `AddrResolver` of your own may set any.
+   */
   readonly source?: string | undefined;
   /** When the answer stops being valid; unset for no stated lifetime. */
   readonly expiry?: Date | undefined;

@@ -37,7 +37,7 @@ const propertyNameValues = {
   VirtualServerCreated: "virtualserver_created",
   /** `virtualserver_uptime`: Seconds since the virtual server started. */
   VirtualServerUptime: "virtualserver_uptime",
-  /** `virtualserver_codec_encryption_mode`: The global codec encryption mode of the virtual server. Editable. */
+  /** `virtualserver_codec_encryption_mode`: The global codec encryption mode of the virtual server; see `CodecEncryptionMode`. Editable. */
   VirtualServerCodecEncryptionMode: "virtualserver_codec_encryption_mode",
   /** `virtualserver_hostmessage`: The host message of the server. Editable. */
   VirtualServerHostMessage: "virtualserver_hostmessage",
@@ -151,7 +151,7 @@ const propertyNameValues = {
   VirtualServerWebListEnabled: "virtualserver_weblist_enabled",
   /** `virtualserver_ask_for_privilegekey`: 1 if clients are asked for a privilege key on their first connection to an unclaimed server, 0 if not. */
   VirtualServerAskForPrivilegeKey: "virtualserver_ask_for_privilegekey",
-  /** `virtualserver_hostbanner_mode`: The display mode for the virtual servers hostbanner. Editable. */
+  /** `virtualserver_hostbanner_mode`: The display mode for the virtual servers hostbanner; see `BannerMode`. Editable. */
   VirtualServerHostBannerMode: "virtualserver_hostbanner_mode",
   /** `virtualserver_channel_temp_delete_delay_default`: Default delay, in seconds, before an empty temporary channel is deleted. */
   VirtualServerChannelTempDeleteDelayDefault: "virtualserver_channel_temp_delete_delay_default",
@@ -168,7 +168,7 @@ const propertyNameValues = {
   VirtualServerCapabilityExtensions: "virtualserver_capability_extensions",
   /** `virtualserver_file_storage_class`: Storage backend of the server's files; empty for the local disk. TeamSpeak 3 only. */
   VirtualServerFileStorageClass: "virtualserver_file_storage_class",
-  /** `virtualserver_status`: Status of the virtual server (online | virtual online | offline | booting up | shutting down). Editable. */
+  /** `virtualserver_status`: Status of the virtual server (online | online virtual | offline | booting up | shutting down); see `VirtualServerStatus`. Editable. */
   VirtualServerStatus: "virtualserver_status",
   /** `connection_filetransfer_bandwidth_sent`: Current file transfer upload speed, in bytes per second. Also in hostinfo and clientinfo. */
   ConnectionFileTransferBandwidthSent: "connection_filetransfer_bandwidth_sent",

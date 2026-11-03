@@ -40,8 +40,9 @@ export interface VirtualServer {
   /** The voice port it listens on (`virtualserver_port`). */
   readonly port: number;
   /**
-   * Its state, as the server words it: "online", "offline", "booting up",
-   * "shutting down", "online virtual" (`virtualserver_status`).
+   * Its state, as the server words it (`virtualserver_status`); compare it
+   * with `VirtualServerStatus`. A plain string, since a server may send a
+   * state that table does not name.
    */
   readonly status: string;
   /** Its name (`virtualserver_name`); "" with `short`. */

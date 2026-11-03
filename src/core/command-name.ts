@@ -96,6 +96,10 @@ const commandNameValues = {
   ClientAddPerm: "clientaddperm",
   /** `clientaddservergroup`: Adds a client to one or more server groups specified with sgid. */
   ClientAddServerGroup: "clientaddservergroup",
+  /** `clientchatclosed`: Tells a client this client has closed its private chat window with it. Voice protocol only. */
+  ClientChatClosed: "clientchatclosed",
+  /** `clientchatcomposing`: Tells a client this client is typing a private message to it. Voice protocol only. */
+  ClientChatComposing: "clientchatcomposing",
   /** `clientdbdelete`: Deletes a client's properties from the database. */
   ClientDBDelete: "clientdbdelete",
   /** `clientdbedit`: Changes a client's settings using given properties. */
@@ -238,6 +242,8 @@ const commandNameValues = {
   PermOverview: "permoverview",
   /** `permreset`: Restores the default permission settings on the selected virtual server and creates a new initial administrator token. */
   PermReset: "permreset",
+  /** `plugincmd`: Sends a plugin-defined message to the clients of a channel, the server or chosen clients, for plugins to read. Voice protocol only. */
+  PluginCmd: "plugincmd",
   /** `privilegekeyadd`: Creates a new privilege key, a token that grants a server or channel group. */
   PrivilegeKeyAdd: "privilegekeyadd",
   /** `privilegekeydelete`: Deletes an existing token matching the token key specified with token. */

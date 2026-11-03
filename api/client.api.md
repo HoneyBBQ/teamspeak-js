@@ -556,6 +556,22 @@ export interface ResolveDoneInfo extends AttemptInfo {
     readonly target: string;
 }
 
+// Warning: (ae-forgotten-export) The symbol "resolveSourceValues" needs to be exported by the entry point index.d.ts
+//
+// @public
+export const ResolveSource: typeof resolveSourceValues;
+
+// @public
+export type ResolveSource = (typeof ResolveSource)[keyof typeof ResolveSource];
+
+// @public
+const resolveSourceValues: {
+    readonly SRV: "SRV";
+    readonly TSDNSSRV: "TSDNS-SRV";
+    readonly TSDNSDirect: "TSDNS-Direct";
+    readonly Direct: "Direct";
+};
+
 // @public
 export interface ResolveStartInfo extends AttemptInfo {
     readonly addr: string;

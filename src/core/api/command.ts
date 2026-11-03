@@ -668,7 +668,11 @@ export interface Channel {
   readonly isForcedSilence?: boolean | undefined;
   /** The URL of the channel's banner image (`channel_banner_gfx_url`). */
   readonly bannerURL?: string | undefined;
-  /** How the banner is scaled (`channel_banner_mode`). */
+  /**
+   * How the banner is fitted to the channel (`channel_banner_mode`); compare it
+   * with `BannerMode`. A plain number, since a server may send a mode that
+   * table does not name.
+   */
   readonly bannerMode?: number | undefined;
   /**
    * How long the channel has had no client, in milliseconds (`seconds_empty`,

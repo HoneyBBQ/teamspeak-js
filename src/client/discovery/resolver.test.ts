@@ -9,6 +9,7 @@ import {
 } from "./resolver.js";
 
 import { InvalidAddressError } from "../errors.js";
+import { ResolveSource } from "../types.js";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -111,5 +112,19 @@ describe("orderSrvRecords", () => {
   it("keeps all-zero weights in the order given", () => {
     const out = orderSrvRecords([rec("x", 1, 0), rec("y", 1, 0)], () => 0.9);
     expect(names(out)).toEqual(["x", "y"]);
+  });
+});
+
+describe("ResolveSource", () => {
+  it("is frozen and holds the values the resolver sets", async () => {
+    expect(Object.isFrozen(ResolveSource)).toBe(true);
+    expect(ResolveSource).toEqual({
+      SRV: "SRV",
+      TSDNSSRV: "TSDNS-SRV",
+      TSDNSDirect: "TSDNS-Direct",
+      Direct: "Direct",
+    });
+    const [answer] = await new Resolver().resolve("127.0.0.1:9987");
+    expect(answer?.source).toBe(ResolveSource.Direct);
   });
 });

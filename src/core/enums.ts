@@ -1,13 +1,14 @@
 /**
- * Enumerations the server reports and accepts as small integers.
+ * Enumerations the server reports and accepts as small integers or fixed
+ * strings.
  *
  * Each is an object of named values plus a type of the same name, the way
  * `Reason` is: the object names the values (`GroupType.Regular`), the type
  * restricts a parameter to them.
  *
- * Parameters take the type; parsed results carry a plain `number`, since a
- * server may send a value newer than this table — compare it against the
- * names (`group.type === GroupType.Query`).
+ * Parameters take the type; parsed results carry a plain `number` or `string`,
+ * since a server may send a value newer than this table — compare it against
+ * the names (`group.type === GroupType.Query`).
  *
  * Every table, and `ErrorCode` and `Reason` with them, may gain members in a
  * minor release: a `switch` over one needs a default case.
@@ -213,3 +214,83 @@ export const LogLevel: typeof logLevelValues = /* @__PURE__ */ Object.freeze(log
 
 /** A log level. */
 export type LogLevel = (typeof LogLevel)[keyof typeof LogLevel];
+
+/** The values of the table below, before freezing. */
+const bannerModeValues = {
+  /** Show the image at its own size. */
+  NoAdjust: 0,
+  /** Scale the image to fill its space, ignoring its aspect ratio. */
+  AdjustIgnoreAspect: 1,
+  /** Scale the image to fit its space, keeping its aspect ratio. */
+  AdjustKeepAspect: 2,
+} as const;
+/**
+ * How a banner image is fitted to its space: a channel's (`channel_banner_mode`)
+ * and the server's host banner (`virtualserver_hostbanner_mode`).
+ */
+export const BannerMode: typeof bannerModeValues = /* @__PURE__ */ Object.freeze(bannerModeValues);
+
+/** A banner mode. */
+export type BannerMode = (typeof BannerMode)[keyof typeof BannerMode];
+
+/** The values of the table below, before freezing. */
+const codecEncryptionModeValues = {
+  /** Each channel decides, by its `channel_codec_is_unencrypted`. */
+  PerChannel: 0,
+  /** Voice is never encrypted, whatever the channel says. */
+  ForcedOff: 1,
+  /** Voice is always encrypted, whatever the channel says. */
+  ForcedOn: 2,
+} as const;
+/** Whether the virtual server encrypts voice (`virtualserver_codec_encryption_mode`). */
+export const CodecEncryptionMode: typeof codecEncryptionModeValues =
+  /* @__PURE__ */ Object.freeze(codecEncryptionModeValues);
+
+/** A codec encryption mode. */
+export type CodecEncryptionMode = (typeof CodecEncryptionMode)[keyof typeof CodecEncryptionMode];
+
+/** The values of the table below, before freezing. */
+const virtualServerStatusValues = {
+  /** Running, and voice clients can connect. */
+  Online: "online",
+  /** Stopped. */
+  Offline: "offline",
+  /** Starting up. */
+  BootingUp: "booting up",
+  /** Stopping. */
+  ShuttingDown: "shutting down",
+  /**
+   * Stopped, but selected by a ServerQuery client with `-virtual` so it can be
+   * configured. Voice clients cannot connect, and it returns to offline when
+   * the last query client deselects it.
+   */
+  OnlineVirtual: "online virtual",
+} as const;
+/**
+ * The state of a virtual server (`virtualserver_status`), as `serverlist` and
+ * `whoami` report it.
+ */
+export const VirtualServerStatus: typeof virtualServerStatusValues =
+  /* @__PURE__ */ Object.freeze(virtualServerStatusValues);
+
+/** A virtual server status. */
+export type VirtualServerStatus = (typeof VirtualServerStatus)[keyof typeof VirtualServerStatus];
+
+/** The values of the table below, before freezing. */
+const bindingSubsystemValues = {
+  /** The voice port. */
+  Voice: "voice",
+  /** The ServerQuery port. */
+  Query: "query",
+  /** The file transfer port. */
+  FileTransfer: "filetransfer",
+} as const;
+/**
+ * What listens on an instance binding (`subsystem`), as `bindinglist` takes
+ * and reports it.
+ */
+export const BindingSubsystem: typeof bindingSubsystemValues =
+  /* @__PURE__ */ Object.freeze(bindingSubsystemValues);
+
+/** A binding subsystem. */
+export type BindingSubsystem = (typeof BindingSubsystem)[keyof typeof BindingSubsystem];
