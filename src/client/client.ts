@@ -1393,6 +1393,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
   /** Report the end of the session in progress, once. */
   #endSession(error: unknown): void {
     this.#viewStore.end(error);
+    // Report the voice this session dropped now, not after it ended.
+    this.#reportVoiceDrops(performance.now());
     const session = this.#session;
     if (session === undefined) return;
     this.#session = undefined;

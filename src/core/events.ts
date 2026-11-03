@@ -415,7 +415,9 @@ export interface VoiceDataEvent {
   /**
    * One encoded frame, copied: it stays valid after the listener returns. Empty
    * when the speaker stopped talking: it is the end of that speech, not a
-   * frame to decode.
+   * frame to decode. Other implementations treat a frame of one byte as the
+   * end of speech too; whether the official client does is not known, and a
+   * one-byte Opus packet is a valid one.
    */
   readonly data: Uint8Array;
 }

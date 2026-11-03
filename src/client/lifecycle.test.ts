@@ -648,6 +648,38 @@ describe("voice event fields", () => {
       vi.useRealTimers();
     }
   });
+
+  it("reports the drops a session still owes when it ends, and none after", async () => {
+    try {
+      const counts: number[] = [];
+      const logger: Logger = {
+        debug() {},
+        info() {},
+        warn: (msg, fields) => {
+          if (msg.startsWith("voice dropped")) counts.push((fields as { dropped: number }).dropped);
+        },
+        error() {},
+      };
+      const { client } = await connected({ logger });
+      vi.useFakeTimers({ toFake: ["Date", "performance", "setTimeout", "clearTimeout"] });
+      let heard = 0;
+      client.on("voiceData", () => heard++);
+      const handler = clientInternals(client).handler;
+      for (let i = 0; i < 1000; i++) handler.onPacket?.(packet(PacketType.Voice, frame(i, 9, 1)));
+      await settle();
+      const dropped = 1000 - heard;
+      expect(counts).toEqual([1]);
+
+      const done = client.disconnect({ signal: AbortSignal.timeout(1) });
+      vi.advanceTimersByTime(1);
+      await done;
+      expect(counts).toEqual([1, dropped - 1]);
+      vi.advanceTimersByTime(10_001);
+      expect(counts).toEqual([1, dropped - 1]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("reconnecting", () => {

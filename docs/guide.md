@@ -85,14 +85,15 @@ EventEmitter listener's would.
 
 Voice is the exception to "every event in order": while more than 256
 deliveries are waiting, voice frames are dropped (and counted in a warning at
-most every ten seconds) rather than queued without bound.
+most every ten seconds) rather than queued without bound. See
+[Receiving voice](#receiving-voice).
 
 `events(name, { signal })` is the same as an async iterator, buffering events
 that arrive while the loop body runs. The buffer is unbounded (voice excepted,
-see [Receiving voice](#receiving-voice)), so stop iterating when you stop reading. Aborting `signal` stops
-listening and makes the pending and later `next()` calls reject with the
-signal's reason, as Node's `events.on` does; `break`ing out of the loop, or a
-disconnect, ends it normally:
+see [Receiving voice](#receiving-voice)), so stop iterating when you stop
+reading. Aborting `signal` stops listening and makes the pending and later
+`next()` calls reject with the signal's reason, as Node's `events.on` does;
+`break`ing out of the loop, or a disconnect, ends it normally:
 
 ```typescript
 for await (const msg of client.events("textMessage", { signal })) {
