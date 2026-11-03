@@ -10,6 +10,14 @@ import {
 
 import { InvalidAddressError } from "../errors.js";
 
+// The machine's resolver may take seconds to say a made-up name has no SRV
+// record, longer than a test may run. These tests are about what the resolver
+// does with the answers, so every SRV lookup here finds none at once.
+vi.mock("node:dns/promises", () => ({
+  resolveSrv: () =>
+    Promise.reject(Object.assign(new Error("no SRV record"), { code: "ENOTFOUND" })),
+}));
+
 afterEach(() => vi.restoreAllMocks());
 
 describe("Resolver", () => {
