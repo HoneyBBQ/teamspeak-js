@@ -84,7 +84,7 @@ import type { FileUploadInfo, FileDownloadInfo } from "@honeybbq/teamspeak";
 import { CommandTimeoutError, NotConnectedError } from "@honeybbq/teamspeak";
 import { responseSpec } from "../core/internal.js";
 import type { Readable, Writable } from "node:stream";
-import type { SocketFactory, FileTransferSocketFactory } from "./types.js";
+import type { SocketFactory, FileTransferSocketFactory, EventIterator } from "./types.js";
 import { unknownServerCapabilities, type ServerCapabilities } from "./capabilities.js";
 import { joinHostPort, parseConnectAddress, splitHostPort } from "./address.js";
 import { commandChannel, incomingChannel, type CommandTrace } from "./diagnostics.js";
@@ -455,6 +455,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
   /** The group list rows of the command line being handled, by the name of the line. */
   #groupLine: { readonly name: string; readonly rows: Array<Record<string, string>> } | undefined;
   #voiceDropped = 0;
+  #voiceDropTimer: ReturnType<typeof setTimeout> | undefined;
+  #sessionCount = 0;
   #voiceDropWarnedAt = -Infinity;
 
   #eventMiddlewares: readonly EventMiddleware[];
@@ -1053,8 +1055,10 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * missed. The buffer is unbounded: an iterator that is not consumed as fast
    * as events arrive holds every one of them in memory until it is read, so
    * stop iterating (or abort `signal`) when you stop reading. Voice is the
-   * exception: at most 256 `voiceData` frames are buffered, and the rest are
-   * dropped, as for a listener that falls behind.
+   * exception: at most 256 `voiceData` frames are buffered, and when it is
+   * full the OLDEST frame is dropped for each one that arrives, because for
+   * live audio the newest is the one still worth playing. The iterator's
+   * `dropped` counts them.
    *
    * Iteration ends when the loop exits early (`break`, `return`, a throw), and
    * — for every event but `disconnected` — when the client disconnects. When
@@ -1068,8 +1072,9 @@ export class Client implements CommandExecutor, AsyncDisposable {
   events<K extends keyof EventMap>(
     event: K,
     options: { readonly signal?: AbortSignal | undefined } = {},
-  ): AsyncIterableIterator<EventMap[K]> {
+  ): EventIterator<EventMap[K]> {
     const { signal } = options;
+    let dropped = 0;
     const buffered: Array<EventMap[K]> = [];
     // The next() calls waiting for an event, oldest first.
     const waiting: Array<{
@@ -1093,8 +1098,9 @@ export class Client implements CommandExecutor, AsyncDisposable {
         return;
       }
       if (event === "voiceData" && buffered.length >= MAX_PENDING_DELIVERIES) {
+        buffered.shift();
+        dropped++;
         this.#dropVoice();
-        return;
       }
       buffered.push(payload);
     }) as Listener<EventMap, K>);
@@ -1122,7 +1128,10 @@ export class Client implements CommandExecutor, AsyncDisposable {
     if (signal?.aborted) abort();
     else signal?.addEventListener("abort", abort, { once: true });
 
-    const iterator: AsyncIterableIterator<EventMap[K]> = {
+    const iterator: EventIterator<EventMap[K]> = {
+      get dropped(): number {
+        return dropped;
+      },
       next(): Promise<IteratorResult<EventMap[K]>> {
         if (aborted) return Promise.reject(abortReason(signal!));
         if (buffered.length > 0) return Promise.resolve({ value: buffered.shift()!, done: false });
@@ -1146,6 +1155,16 @@ export class Client implements CommandExecutor, AsyncDisposable {
   }
 
   // ---- API shorthand -------------------------------------------------------
+
+  /**
+   * Numbers the sessions this client has completed, from 1; it is 0 before the
+   * first. Every connect, and every reconnect, is a new session, even when the
+   * server hands out the client id the last one had. `VoiceDataEvent.session`
+   * is this at the time the packet arrived.
+   */
+  get session(): number {
+    return this.#sessionCount;
+  }
 
   /** This client's id on the server, assigned in the handshake; 0 before it. */
   get clientID(): ClientID {
@@ -1270,6 +1289,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     // or a failure has already ended.
     if (this.#status !== ClientStatus.Connecting || this.#attempt.settled) return;
     this.#status = ClientStatus.Connected;
+    this.#sessionCount++;
     // A privilege key is spent by the join that used it: a reconnection must
     // not present it again.
     if (this.#clientInitOptions.privilegeKey !== "") {
@@ -1373,6 +1393,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
   /** Report the end of the session in progress, once. */
   #endSession(error: unknown): void {
     this.#viewStore.end(error);
+    // Report the voice this session dropped now, not after it ended.
+    this.#reportVoiceDrops(performance.now());
     const session = this.#session;
     if (session === undefined) return;
     this.#session = undefined;
@@ -1522,7 +1544,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     }
 
     if ((pType === 0 /* Voice */ || pType === 1) /* VoiceWhisper */ && p.data.length >= 5) {
-      this.#handleVoicePacket(p.data);
+      this.#handleVoicePacket(p.data, pType === 1, p.receivedAt);
       return;
     }
 
@@ -1533,7 +1555,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
 
   /**
    * Parse an incoming S2C voice packet.
-   * Format: [VId: u16] [CId: u16] [Codec: u8] [Data: var]
+   * Format: [VId: u16] [CId: u16] [Codec: u8] [Data: var]. The VId is the
+   * sender's own packet counter; Voice and VoiceWhisper have the same layout.
    *
    * A packet with no data is how a speaker's last frame is followed: the
    * server relays the empty frame a client sends when it stops talking, and it
@@ -1541,7 +1564,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * and TeamSpeak 6 6.0.0: the frames of `sendVoice` arrive as 45-byte packets
    * and an empty one as a 5-byte packet.
    */
-  #handleVoicePacket(payload: Uint8Array): void {
+  #handleVoicePacket(payload: Uint8Array, whisper: boolean, receivedAt: number): void {
     // Audio arrives fifty times a second per speaker; build no event nobody
     // will see.
     if (!this.#listeners.get("voiceData")?.length && this.#eventMiddlewares.length === 0) return;
@@ -1551,6 +1574,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     }
 
     const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+    const seq = view.getUint16(0, false);
     const clientId = view.getUint16(2, false);
     if (clientId === this.#clid) return;
 
@@ -1559,7 +1583,15 @@ export class Client implements CommandExecutor, AsyncDisposable {
     const data = payload.slice(5);
     this.#emitServerEvent({
       name: "voiceData",
-      payload: { clientID: asClientID(clientId), codec: payload[4]!, data },
+      payload: {
+        session: this.#sessionCount,
+        clientID: asClientID(clientId),
+        whisper,
+        seq,
+        codec: payload[4]!,
+        data,
+        receivedAt,
+      },
     });
   }
 
@@ -1939,7 +1971,22 @@ export class Client implements CommandExecutor, AsyncDisposable {
   #dropVoice(): void {
     this.#voiceDropped++;
     const now = performance.now();
-    if (now - this.#voiceDropWarnedAt < VOICE_DROP_WARN_INTERVAL_MS) return;
+    const wait = VOICE_DROP_WARN_INTERVAL_MS - (now - this.#voiceDropWarnedAt);
+    if (wait <= 0) {
+      this.#reportVoiceDrops(now);
+      return;
+    }
+    // Inside the interval: the drops are not lost, the report is deferred to
+    // its end. Reporting only on a later drop would leave the count of a short
+    // burst, which stops before the interval does, unreported for good.
+    this.#voiceDropTimer ??= setTimeout(() => this.#reportVoiceDrops(performance.now()), wait);
+    this.#voiceDropTimer.unref();
+  }
+
+  #reportVoiceDrops(now: number): void {
+    clearTimeout(this.#voiceDropTimer);
+    this.#voiceDropTimer = undefined;
+    if (this.#voiceDropped === 0) return;
     this.#voiceDropWarnedAt = now;
     // The count since the last warning, so each one says how bad it is now.
     this.#logger.warn("voice dropped: listeners are not keeping up", {

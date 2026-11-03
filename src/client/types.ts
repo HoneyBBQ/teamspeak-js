@@ -529,3 +529,18 @@ export interface ClientOptions {
    */
   readonly metaData?: string | undefined;
 }
+
+/**
+ * What `Client.events` returns: an async iterator over one kind of event, with
+ * a count of the events it dropped.
+ */
+export interface EventIterator<T> extends AsyncIterableIterator<T> {
+  /**
+   * How many events this iterator dropped because its buffer was full: only
+   * `voiceData` is bounded, so it is 0 for every other event. It counts the
+   * frames dropped for this iterator alone, since it was created; it never
+   * goes down. A client that is too far behind to build the event at all
+   * drops it before any iterator sees it, and that is logged, not counted here.
+   */
+  readonly dropped: number;
+}

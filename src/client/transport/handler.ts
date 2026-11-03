@@ -255,12 +255,17 @@ export class PacketHandler {
     this.#lastMessageReceived = performance.now();
 
     conn.on("message", (msg) => {
+      // Taken first: this is the moment the datagram came off the socket.
+      const receivedAt = performance.now();
       if (this.#closed) return;
       // Everything here parses what the network sent. Nothing it throws may
       // escape: from a socket callback it would be an uncaught exception, and
       // a malformed datagram from the server would take the process down.
       try {
-        this.#handleRawPacket(new Uint8Array(msg.buffer, msg.byteOffset, msg.byteLength));
+        this.#handleRawPacket(
+          new Uint8Array(msg.buffer, msg.byteOffset, msg.byteLength),
+          receivedAt,
+        );
       } catch (error: unknown) {
         if (this.onReceiveError) this.onReceiveError(error);
         else this.#logger.debug("dropped a malformed packet", { error: String(error) });
@@ -584,7 +589,7 @@ export class PacketHandler {
     }
   }
 
-  #handleRawPacket(raw: Uint8Array): void {
+  #handleRawPacket(raw: Uint8Array, receivedAt: number): void {
     if (raw.length < 11) return;
     if (raw.length > MAX_DATAGRAM_SIZE) {
       this.#logger.debug("dropped an oversized datagram", { size: raw.length });
@@ -606,7 +611,7 @@ export class PacketHandler {
       clientID: 0,
       generationID: this.#resolveGeneration(parsed.id, parsedType),
       data: new Uint8Array(0),
-      receivedAt: performance.now(),
+      receivedAt,
     };
 
     const decrypted = this.#decryptPacketData(p, header, ciphertext, tag);
