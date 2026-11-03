@@ -1,4 +1,5 @@
 import { PacketType } from "./packet.js";
+import type { RoundTripEstimate } from "../types.js";
 
 /** The three classes TeamSpeak counts traffic in. */
 export type TrafficClass = "speech" | "keepalive" | "control";
@@ -106,7 +107,7 @@ export class RoundTripEstimator {
   }
 
   /** The mean and the standard deviation in milliseconds, or null before the first sample. */
-  get(): { readonly meanMs: number; readonly deviationMs: number } | null {
+  get(): RoundTripEstimate | null {
     const n = this.#samples.length;
     if (n === 0) return null;
     const mean = this.#samples.reduce((a, b) => a + b, 0) / n;

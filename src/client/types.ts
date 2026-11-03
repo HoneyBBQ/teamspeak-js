@@ -531,6 +531,17 @@ export interface ClientOptions {
 }
 
 /**
+ * The keepalive round trip of a connection: the mean and the standard
+ * deviation, in milliseconds, over its last 10 pongs.
+ */
+export interface RoundTripEstimate {
+  /** The mean round trip, in milliseconds. */
+  readonly meanMs: number;
+  /** The standard deviation of the round trip, in milliseconds. */
+  readonly deviationMs: number;
+}
+
+/**
  * What `Client.events` returns: an async iterator over one kind of event, with
  * a count of the events it dropped.
  */

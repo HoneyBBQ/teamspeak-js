@@ -55,7 +55,9 @@ import {
   deleteMessage,
   getMessage,
   getOwnPermission,
+  getOwnPermissions,
   listMessages,
+  permissionByID,
   permissionByName,
   sendOfflineMessage,
   sendPrivateMessage,
@@ -466,6 +468,24 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     );
     expect(permission).toMatchObject({ name: "b_client_permissionoverview_own", value: 1 });
     expect(permission.id).toBeGreaterThan(0);
+  }, 20_000);
+
+  it("getOwnPermissions — reads several in the order asked, ids and names mixed", async () => {
+    const names = ["b_client_permissionoverview_own", "b_client_force_push_to_talk"];
+    const answered = await getOwnPermissions(
+      sharedClient,
+      [...names, names[0]!].map((n) => permissionByName(n)),
+    );
+    expect(answered.map((p) => p.name)).toEqual([names[0], names[1], names[0]]);
+    for (const [i, name] of names.entries()) {
+      expect(answered[i]).toEqual(await getOwnPermission(sharedClient, permissionByName(name)));
+    }
+    const mixed = await getOwnPermissions(sharedClient, [
+      permissionByID(answered[0]!.id),
+      permissionByName(names[1]!),
+      permissionByID(answered[0]!.id),
+    ]);
+    expect(mixed).toEqual([answered[0], answered[1], answered[0]]);
   }, 20_000);
 
   // Their answers arrive as notifications, so before they were mapped a raw

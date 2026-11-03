@@ -14,6 +14,12 @@ How to connect, handle events, send commands, move files and manage an identity.
 | `channelID`                                   | The channel we are in                             |
 | `serverCapabilities`                          | Server version, family and uid hash               |
 | `uid`                                         | Our own uid, hashed as the server does            |
+| `roundTrip`                                   | Keepalive round trip, once a pong has come back   |
+
+`roundTrip` is the keepalive ping/pong round trip of the voice connection, the
+mean and standard deviation over the last 10 pongs; the first comes about 5
+seconds after connecting, and a reconnect starts over. It is the ping this client
+reports to the server, so it is what other clients see for it.
 
 `connect()` rejects with an `InvalidAddressError` for an address that cannot be
 one — no host, or a port outside 1–65535 — before anything starts; a host name
@@ -217,6 +223,11 @@ for await (const entry of iterateClientDatabase(client)) {
   console.log(entry.nickname, entry.lastConnectedAt);
 }
 ```
+
+`getOwnPermission` reads one of this connection's own permissions, resolved
+across groups, channels and client settings; `getOwnPermissions` reads a list in
+one command and answers in the order asked. Both need
+`b_client_permissionoverview_own`.
 
 A command that sends content — `createChannel`'s channel, `editChannel`'s
 settings, `updateClient`, `editClient`, `editClientDatabase`,

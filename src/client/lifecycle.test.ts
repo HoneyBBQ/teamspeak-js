@@ -518,6 +518,26 @@ describe("voice delivery", () => {
   });
 });
 
+describe("roundTrip", () => {
+  it("is undefined before connecting and before the first pong", async () => {
+    const client = clientOn(() => new FakeSocket());
+    expect(client.roundTrip).toBeUndefined();
+    const { client: up } = await connected();
+    expect(up.roundTrip).toBeUndefined();
+    await up.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("is the handler's estimate while connected, and undefined after disconnect", async () => {
+    const { client } = await connected();
+    const handler = clientInternals(client).handler;
+    const estimate = { meanMs: 12.5, deviationMs: 1.5 };
+    vi.spyOn(handler, "roundTrip", "get").mockReturnValue(estimate);
+    expect(client.roundTrip).toEqual(estimate);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+    expect(client.roundTrip).toBeUndefined();
+  });
+});
+
 describe("voice event fields", () => {
   const frame = (seq: number, clid: number, ...data: number[]): Uint8Array =>
     Uint8Array.of(seq >> 8, seq & 0xff, clid >> 8, clid & 0xff, Codec.OpusVoice, ...data);

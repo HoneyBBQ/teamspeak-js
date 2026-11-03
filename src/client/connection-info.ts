@@ -1,5 +1,6 @@
 import { buildCommandOrdered } from "../core/internal.js";
 import type { TrafficClass, TrafficSnapshot } from "./transport/traffic.js";
+import type { RoundTripEstimate } from "./types.js";
 
 /** The classes in the order the server lists them. */
 const CLASSES: readonly TrafficClass[] = ["speech", "keepalive", "control"];
@@ -14,7 +15,7 @@ const CLASSES: readonly TrafficClass[] = ["speech", "keepalive", "control"];
  */
 export function buildSetConnectionInfo(
   traffic: TrafficSnapshot,
-  roundTrip: { readonly meanMs: number; readonly deviationMs: number } | null,
+  roundTrip: RoundTripEstimate | null,
 ): string {
   const fields: Array<[string, string]> = [];
   if (roundTrip !== null) {
