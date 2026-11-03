@@ -19,7 +19,8 @@ How to connect, handle events, send commands, move files and manage an identity.
 `roundTrip` is the keepalive ping/pong round trip of the voice connection, the
 mean and standard deviation over the last 10 pongs; the first comes about 5
 seconds after connecting, and a reconnect starts over. It is the ping this client
-reports to the server, so it is what other clients see for it.
+reports when the server asks, and other clients see it as it was then, not as it
+is now.
 
 `connect()` rejects with an `InvalidAddressError` for an address that cannot be
 one — no host, or a port outside 1–65535 — before anything starts; a host name

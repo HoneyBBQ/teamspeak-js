@@ -574,9 +574,11 @@ export class Client implements CommandExecutor, AsyncDisposable {
    *
    * It is the value this client reports as `connection_ping` and
    * `connection_ping_deviation` when the server asks for its connection info,
-   * so it is the ping other clients see for this one. A client cannot read its
-   * own `connection_ping` from the server: `getconnectioninfo` about itself
-   * has no such field.
+   * and the server keeps what it was told: the ping other clients see for this
+   * one is this value as it was when the server last asked, not as it is now
+   * (measured on TeamSpeak 3 and 6). A client cannot read its own
+   * `connection_ping` from the server: `getconnectioninfo` about itself has no
+   * such field.
    */
   get roundTrip(): RoundTripEstimate | undefined {
     if (this.#status !== ClientStatus.Connected) return undefined;
