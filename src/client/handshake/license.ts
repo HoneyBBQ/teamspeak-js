@@ -78,6 +78,7 @@ function parseLicenseBlock(data: Uint8Array): { block: LicenseBlock; consumed: n
   if (data.length < MIN_BLOCK_LEN) throw new Error("license too short");
   if (data[0] !== 0) throw new Error(`wrong key kind in license: ${data[0]}`);
 
+  // oxlint-disable-next-line typescript/no-unsafe-enum-assignment -- read off the wire; parseBlockPayload refuses a value no member names
   const blockType = data[33] as LicenseBlockType;
 
   // Timestamps are seconds since Unix epoch offset by 0x50e22700

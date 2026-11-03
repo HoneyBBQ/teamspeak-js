@@ -3,7 +3,7 @@ import { Crypt } from "../crypto/crypt.js";
 import { generateIdentitySync } from "../crypto/identity.js";
 import { FakeSocket, completeCryptoInit, sessionPacket } from "../testing/fake-server.js";
 import { PacketHandler } from "./handler.js";
-import { PacketType, packetType } from "./packet.js";
+import { PacketType, packetType, packetTypeOfByte } from "./packet.js";
 
 const PAYLOAD = Uint8Array.of(0, 1, 0, 2, 0, 4, 1);
 
@@ -43,7 +43,7 @@ describe("non-command receive generations", () => {
   it("answers ping across the 16-bit packet id wrap", () => {
     const { handler, socket, crypt } = session();
     const pongs = (): number =>
-      socket.sent.filter((data) => ((data[12]! & 0x0f) as PacketType) === PacketType.Pong).length;
+      socket.sent.filter((data) => packetTypeOfByte(data[12]!) === PacketType.Pong).length;
 
     socket.deliver(sessionPacket(crypt, PacketType.Ping, 0, 65535, new Uint8Array(0), 0));
     socket.deliver(sessionPacket(crypt, PacketType.Ping, 0, 0, new Uint8Array(0), 1));

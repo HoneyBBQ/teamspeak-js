@@ -27,8 +27,17 @@ export interface Packet {
   receivedAt: number; // performance.now(), a monotonic clock
 }
 
+/**
+ * The packet type in the low nibble of a type byte, as it came off the wire:
+ * the nibble can also hold 9 to 15, which name no type.
+ */
+export function packetTypeOfByte(typeByte: number): PacketType {
+  // oxlint-disable-next-line typescript/no-unsafe-enum-assignment -- read off the wire, where the nibble can be any value
+  return typeByte & 0x0f;
+}
+
 export function packetType(p: Packet): PacketType {
-  return p.typeFlagged & 0x0f;
+  return packetTypeOfByte(p.typeFlagged);
 }
 
 export function packetFlags(p: Packet): number {

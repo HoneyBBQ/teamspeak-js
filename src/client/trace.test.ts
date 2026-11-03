@@ -14,6 +14,7 @@ import {
 } from "@honeybbq/teamspeak";
 import { parseCommand } from "../core/internal.js";
 import { GroupWhisperScope, GroupWhisperType } from "./types.js";
+import { PacketType } from "./transport/packet.js";
 import {
   FakeSocket,
   completeCryptoInit,
@@ -495,7 +496,11 @@ describe("an attempt the caller's signal ended", () => {
       drive: async (client) => {
         const internals = clientInternals(client);
         // As the key exchange does: clientek under the dummy key, then the secret.
-        internals.handler.sendPacket(2, Buffer.from("clientek ek=AAAA proof=AAAA"), 0);
+        internals.handler.sendPacket(
+          PacketType.Command,
+          Buffer.from("clientek ek=AAAA proof=AAAA"),
+          0,
+        );
         completeCryptoInit(internals.crypt);
         internals.markHandshakeDone("");
       },
