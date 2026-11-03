@@ -4,6 +4,26 @@ Until 1.0.0-beta.4 this package was published as `@honeybbq/teamspeak-core`, and
 `@honeybbq/teamspeak-client` was a second package. The sections below, down to
 the last version heading, are the core's history; the client's is at the bottom.
 
+## 1.0.0-beta.25
+
+### Minor Changes
+
+- [#186](https://github.com/HoneyBBQ/teamspeak-js/pull/186) [`c4b5b5f`](https://github.com/HoneyBBQ/teamspeak-js/commit/c4b5b5fba07971a04d72d83249e2db035d1b5b0b) - `getOwnPermissions(client, permissions)` reads several of this connection's own permissions with one `permget` and answers one entry per permission, in the order asked; a permission whose value is 0 is answered with 0, and one the server does not know refuses the whole command with 2562. TS6's WebQuery answers a row that names a permission by name with the permission of an earlier row named by id, so a list that mixes ids and names is sent as two commands and put back in the order asked.
+
+  `client.roundTrip` is the keepalive round trip of the voice connection, `{ meanMs, deviationMs }` over the last 10 pongs, or `undefined` when the client is not connected or no pong has come back yet (the first comes about 5 seconds after connecting). It is the ping this client reports when the server asks for its connection info; other clients see it as it was when the server last asked. The new `RoundTripEstimate` type describes it.
+
+- [#184](https://github.com/HoneyBBQ/teamspeak-js/pull/184) [`71f9a3f`](https://github.com/HoneyBBQ/teamspeak-js/commit/71f9a3ffdd061a4eb31e27a53cb39ba1b2fa6112) - `VoiceDataEvent` gains `session` (the new `client.session`, which counts the sessions the client has completed, from 1), `whisper` (the packet type was VoiceWhisper), `seq` (the speaker's own packet counter, which wraps: compare with `((a - b) << 16 >> 16)`) and `receivedAt` (`performance.now()` milliseconds, taken when the datagram is read from the socket). Reorder a speaker's frames by (`session`, `clientID`, `whisper`) and then `seq`. The guide now recommends `for await (const v of client.events("voiceData", { signal }))` for receiving voice.
+
+  `client.events()` returns an `EventIterator`, an async iterator with a `dropped` count: for `voiceData`, how many frames its full buffer dropped.
+
+  **Behaviour change:** when an `events("voiceData")` buffer is full, it now drops the oldest buffered frame instead of the newest, so a consumer that catches up gets the most recent audio. Dropped voice is also reported in full: a burst that ended inside the ten-second warning interval used to be left out of the log.
+
+### Patch Changes
+
+- [#185](https://github.com/HoneyBBQ/teamspeak-js/pull/185) [`01c2fed`](https://github.com/HoneyBBQ/teamspeak-js/commit/01c2fed948f7e5e7103c7cb2803ecf53c577beb4) - `uploadFile` with a `Uint8Array` reports `progress` as the bytes go out, every 64 KiB, instead of once with the whole size before any was sent. `NotificationName.ClientNeededPermissions` now says what the server sends: this client's own values of a fixed set of permissions, while it joins and when its groups change, and never for a refused command. `ChannelTree` is marked `@experimental`, as the server view it comes from is.
+
+- [#187](https://github.com/HoneyBBQ/teamspeak-js/pull/187) [`7542bb8`](https://github.com/HoneyBBQ/teamspeak-js/commit/7542bb8275ed282343a10f58b954a75eeb83473f) - Documentation, from live measurement on TeamSpeak 3 3.13.8 and 6 6.0.0-beta13.1. `subscribeChannel` and `CommandName.ChannelSubscribe` said a subscription brings the channel's voice; it does not, voice reaches only the clients in the channel. The subscription functions and the view now say that joining or moving into a channel subscribes to it without a `channelSubscribed`, that leaving keeps the subscription, and that the channel this client is in cannot be unsubscribed from. `sendVoice`, `sendWhisper`, `updateClient`'s fields and the guide's new "What the server relays" say when the server drops voice: a speaker without talk power (channel voice only), away, input-muted or without input hardware, and a listener output-muted or without output hardware.
+
 ## 1.0.0-beta.24
 
 ### Minor Changes
