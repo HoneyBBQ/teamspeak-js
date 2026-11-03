@@ -4,6 +4,28 @@ Until 1.0.0-beta.4 this package was published as `@honeybbq/teamspeak-core`, and
 `@honeybbq/teamspeak-client` was a second package. The sections below, down to
 the last version heading, are the core's history; the client's is at the bottom.
 
+## 1.0.0-beta.22
+
+### Major Changes
+
+- [#176](https://github.com/HoneyBBQ/teamspeak-js/pull/176) [`42ba437`](https://github.com/HoneyBBQ/teamspeak-js/commit/42ba437c1c21280bac61966c271e36b8573d0c29) - Two inputs take a value table instead of a bare `number` or `string`. `ChannelSettings.bannerMode`, so `createChannel` and `editChannel`, is a `BannerMode`: pass a constant such as `BannerMode.AdjustKeepAspect`, or 0, 1 or 2. `BindingListOptions.subsystem` is a `BindingSubsystem`: pass `BindingSubsystem.Query`, or `"voice"`, `"query"` or `"filetransfer"`. A banner mode outside 0-2 or any other subsystem was always refused by the server, with error 1538. What the SDK reads back keeps its plain type.
+
+### Minor Changes
+
+- [#176](https://github.com/HoneyBBQ/teamspeak-js/pull/176) [`42ba437`](https://github.com/HoneyBBQ/teamspeak-js/commit/42ba437c1c21280bac61966c271e36b8573d0c29) - Four more value tables, for what a server reads and writes as bare numbers and strings: `BannerMode` (`channel_banner_mode` and `virtualserver_hostbanner_mode`), `CodecEncryptionMode` (`virtualserver_codec_encryption_mode`), `VirtualServerStatus` (`virtualserver_status`) and `BindingSubsystem` (`bindinglist`'s `subsystem`). Compare `VirtualServer.status` and `WhoAmI.serverStatus` with `VirtualServerStatus`. The client adds `ResolveSource`, the values the built-in resolver sets in `ResolvedAddr.source`.
+
+  `CommandName` names `clientchatclosed`, `clientchatcomposing` and `plugincmd`, the voice-only commands the SDK sends, so command middleware can compare against them.
+
+  A stopped server a ServerQuery client selected with `-virtual` reports `online virtual`, not `virtual online` as the `VirtualServerStatus` property description said.
+
+- [#175](https://github.com/HoneyBBQ/teamspeak-js/pull/175) [`147f5fc`](https://github.com/HoneyBBQ/teamspeak-js/commit/147f5fcfe092888bf1b12552fd0a9b88df85f425) - `@honeybbq/teamspeak/stream` names its events and values as constants: `streams.on(StreamsEventName.Started, (info) => { ... })`, `StreamSource.Screen`, `StreamEndCause.Server` and the like. The string names keep working and mean the same, so existing code needs no change.
+
+- [#177](https://github.com/HoneyBBQ/teamspeak-js/pull/177) [`bc2f2f7`](https://github.com/HoneyBBQ/teamspeak-js/commit/bc2f2f7414d477356a3a3669566ce78bb6ddd572) - `isValueOf(table, value)` checks a value against any of the SDK's tables and narrows it to the table's type, for a value read back from storage or a configuration file before it is passed as a parameter: `if (isValueOf(BannerMode, saved)) editChannel(client, cid, { bannerMode: saved })`. The tables hold the server's own numbers and strings, so a stored value reads back unchanged; `isValueOf` does not convert, so `"2"` is not `2`.
+
+  `editServer`, `editInstance` and `createServer` take a number, a bigint or a boolean (sent as 1 or 0) as well as a string for a raw property, so a table's constant goes in as it is, and an editor offers the `virtualserver_*` or `serverinstance_*` names of `PropertyName` for the keys (`ServerSettings`, `InstanceSettings`, `PropertyValue`). A value that is not a string was left out before. `getPermissionIDByName` offers the names of `PermissionName`, and still takes any other.
+
+- [#174](https://github.com/HoneyBBQ/teamspeak-js/pull/174) [`1a8a854`](https://github.com/HoneyBBQ/teamspeak-js/commit/1a8a8548bae132f8ee2dd43577079823a5060a17) - `ServerFamily`, `ConnectionTrafficClass`, `UIDAlgorithm`, `ViewStatus`, `FileTransferStage` and `QueryEventCategory` are now constants as well as types, and `QueryEventName` from `@honeybbq/teamspeak/query` names the query client's events: `client.on(QueryEventName.TextMessage, (message) => { ... })`. The string values keep working and mean the same, so existing code needs no change.
+
 ## 1.0.0-beta.21
 
 ### Patch Changes
