@@ -68,6 +68,7 @@ import {
 import { encodeRequest } from "../command/request.js";
 import type { CommandExecutor, CommandOptions, CommandRequest } from "../command/request.js";
 import { Codec, PrivilegeKeyType } from "../enums.js";
+import type { BindingSubsystem } from "../enums.js";
 import { ErrorCode } from "../errorcode.js";
 import { NoDataError, ServerError } from "../errors.js";
 import { permissionByID, permissionByName } from "../permission.js";
@@ -917,7 +918,7 @@ describe("parameter parity", () => {
       groupID: asChannelGroupID(0n),
     });
     await listComplaints(client, { targetDatabaseID: zeroDB });
-    await listBindings(client, { subsystem: "" });
+    await listBindings(client, { subsystem: "" as BindingSubsystem });
 
     expect(sent).toEqual([
       "channelcreate channel_name=x",

@@ -55,7 +55,7 @@ import {
   asServerID,
   asUID,
 } from "../command/ids.js";
-import type { GroupAutoUpdateType, GroupType } from "../enums.js";
+import type { BindingSubsystem, GroupAutoUpdateType, GroupType } from "../enums.js";
 import type { GroupDeleteOptions } from "./groups.js";
 import { parseServerGroup } from "./group-rows.js";
 import type { Permission } from "../permission.js";
@@ -171,9 +171,10 @@ export async function editInstance(
 /** An address the instance listens on. */
 export interface Binding {
   /**
-   * What listens there: `voice`, `query` or `filetransfer`. The server does not
+   * What listens there; compare it with `BindingSubsystem`. The server does not
    * name it in each row, so it is the subsystem asked for, or `voice` when none
-   * was.
+   * was. A plain string, since a server may send a subsystem that table does
+   * not name.
    */
   readonly subsystem: string;
   /** The address. */
@@ -184,8 +185,8 @@ export interface Binding {
 
 /** Which bindings {@link listBindings} reports. */
 export interface BindingListOptions extends CommandOptions {
-  /** Only this subsystem's: `voice`, `query` or `filetransfer`; unset for all (`subsystem`). */
-  readonly subsystem?: string | undefined;
+  /** Only this subsystem's; unset for all (`subsystem`). */
+  readonly subsystem?: BindingSubsystem | undefined;
 }
 
 /**
@@ -234,7 +235,11 @@ export async function getVersion(
 
 /** Which server and client a connection is, as `whoami` reports it. */
 export interface WhoAmI {
-  /** The virtual server's state, such as "online" (`virtualserver_status`). */
+  /**
+   * The virtual server's state (`virtualserver_status`); compare it with
+   * `VirtualServerStatus`. A plain string, since a server may send a state that
+   * table does not name.
+   */
   readonly serverStatus: string;
   /** The virtual server's id, 0 when none is selected (`virtualserver_id`). */
   readonly serverID: ServerID;

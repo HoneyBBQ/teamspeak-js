@@ -10,7 +10,7 @@
 
 // The client
 export { Client } from "./client.js";
-export { EventName, GroupWhisperType, GroupWhisperScope } from "./types.js";
+export { EventName, GroupWhisperType, GroupWhisperScope, ResolveSource } from "./types.js";
 
 export { ViewStatus } from "./view.js";
 export type { ServerView, ViewChangedEvent, ViewReadyEvent } from "./view.js";

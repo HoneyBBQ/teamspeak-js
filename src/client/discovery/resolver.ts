@@ -1,5 +1,6 @@
 import { resolveSrv } from "node:dns/promises";
 import { createConnection } from "node:net";
+import { ResolveSource } from "../types.js";
 import type { ResolvedAddr } from "../types.js";
 import { isIpAddress, joinHostPort, splitHostPort } from "../address.js";
 import { abortable } from "../abort.js";
@@ -58,7 +59,7 @@ export class Resolver {
       options.signal?.throwIfAborted();
       if (!budget.aborted) throw error;
       const { host, port } = splitHostPort(inputAddr);
-      return [{ addr: joinHostPort(host, port), source: "Direct" }];
+      return [{ addr: joinHostPort(host, port), source: ResolveSource.Direct }];
     }
   }
 
@@ -73,7 +74,7 @@ export class Resolver {
     const { host, port } = splitHostPort(inputAddr);
 
     if (isIpAddress(host)) {
-      return [{ addr: joinHostPort(host, port), source: "Direct" }];
+      return [{ addr: joinHostPort(host, port), source: ResolveSource.Direct }];
     }
 
     // A dot-less name may be a server nickname, which only the TeamSpeak
@@ -94,18 +95,20 @@ export class Resolver {
     // TSDNS via SRV _tsdns._tcp.<domain>
     const tsdnsSrv = await this.#resolveTSDNSSRV(domainList, host, signal);
     if (tsdnsSrv) {
-      return this.#setCache(inputAddr, [{ addr: tsdnsSrv, source: "TSDNS-SRV" }]);
+      return this.#setCache(inputAddr, [{ addr: tsdnsSrv, source: ResolveSource.TSDNSSRV }]);
     }
 
     // TSDNS direct :41144
     const tsdnsDirect = await this.#resolveTSDNSDirect(domainList, host, signal);
     if (tsdnsDirect) {
-      return this.#setCache(inputAddr, [{ addr: tsdnsDirect, source: "TSDNS-Direct" }]);
+      return this.#setCache(inputAddr, [{ addr: tsdnsDirect, source: ResolveSource.TSDNSDirect }]);
     }
 
     signal.throwIfAborted();
     // Plain DNS fallback
-    const fallback: ResolvedAddr[] = [{ addr: joinHostPort(host, port), source: "Direct" }];
+    const fallback: ResolvedAddr[] = [
+      { addr: joinHostPort(host, port), source: ResolveSource.Direct },
+    ];
     return this.#setCache(inputAddr, fallback);
   }
 
@@ -130,7 +133,7 @@ export class Resolver {
       if (!srvs || srvs.length === 0) return null;
       return orderSrvRecords(srvs).map((srv) => ({
         addr: joinHostPort(srv.name.replace(/\.$/, ""), String(srv.port)),
-        source: "SRV",
+        source: ResolveSource.SRV,
       }));
     } catch {
       return null;

@@ -36,7 +36,7 @@ import type { ChannelID, ClientDBID } from "../command/ids.js";
 import { asChannelID } from "../command/ids.js";
 import { NoDataError } from "../errors.js";
 import { ErrorCode } from "../errorcode.js";
-import type { Codec } from "../enums.js";
+import type { BannerMode, Codec } from "../enums.js";
 import type { Permission } from "../permission.js";
 
 /**
@@ -111,8 +111,8 @@ export interface ChannelSettings {
   readonly namePhonetic?: string | undefined;
   /** The URL of the channel's banner image (`channel_banner_gfx_url`); needs `b_channel_modify_banner`. */
   readonly bannerURL?: string | undefined;
-  /** How the banner is scaled (`channel_banner_mode`); needs `b_channel_modify_banner`. */
-  readonly bannerMode?: number | undefined;
+  /** How the banner is fitted to the channel (`channel_banner_mode`); needs `b_channel_modify_banner`. */
+  readonly bannerMode?: BannerMode | undefined;
 }
 
 const settingNames: WireNames<ChannelSettings> = {
