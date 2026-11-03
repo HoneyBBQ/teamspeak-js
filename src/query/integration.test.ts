@@ -60,6 +60,7 @@ import {
   findClients,
   findCustomProperty,
   getOwnPermission,
+  getOwnPermissions,
   PropertyName,
   deleteChannel,
   editChannel,
@@ -77,6 +78,7 @@ import {
   listServers,
   moveChannel,
   moveClient,
+  permissionByID,
   permissionByName,
   sendChannelMessage,
   setCustomProperty,
@@ -758,6 +760,32 @@ describe.skipIf(SKIP)("Integration — ServerQuery client", () => {
       const permission = await getOwnPermission(connected(), permissionByName("b_client_ban_list"));
       expect(permission).toMatchObject({ name: "b_client_ban_list", value: 1 });
       expect(permission.id).toBeGreaterThan(0);
+    }, 30_000);
+
+    it("reads several own permissions in one command, in the order asked", async () => {
+      const client = connected();
+      // b_client_force_push_to_talk is one a server admin is not granted: its
+      // value is 0, and it must still be answered. One name is asked twice.
+      const names = ["b_client_ban_list", "b_client_force_push_to_talk", "b_client_ban_list"];
+      const answered = await getOwnPermissions(
+        client,
+        names.map((n) => permissionByName(n)),
+      );
+      expect(answered.map((p) => p.name)).toEqual(names);
+      for (const [i, name] of names.entries()) {
+        expect(answered[i]).toEqual(await getOwnPermission(client, permissionByName(name)));
+      }
+
+      // Ids and names mixed: two commands, the order still the one asked.
+      const first = answered[0]!;
+      const second = answered[1]!;
+      const mixed = await getOwnPermissions(client, [
+        permissionByID(first.id),
+        permissionByName(second.name),
+        permissionByID(second.id),
+        permissionByName(first.name),
+      ]);
+      expect(mixed).toEqual([first, second, second, first]);
     }, 30_000);
 
     it("pages the ban list, bans by uid with a last nickname, and finds the ban", async (ctx) => {

@@ -17,7 +17,12 @@ import {
   setCustomProperty,
 } from "./clients.js";
 import { initFileDownload, initFileUpload } from "./files.js";
-import { addPrivilegeKey, getOwnPermission, listPrivilegeKeys } from "./groups.js";
+import {
+  addPrivilegeKey,
+  getOwnPermission,
+  getOwnPermissions,
+  listPrivilegeKeys,
+} from "./groups.js";
 import { addBan, findBans, listBans, sendOfflineMessage } from "./moderation.js";
 import {
   asAPIKeyID,
@@ -29,6 +34,7 @@ import {
   asServerID,
   asUID,
 } from "../command/ids.js";
+import { ServerError } from "../errors.js";
 import { encodeRequest } from "../command/request.js";
 import type { CommandExecutor, CommandRequest } from "../command/request.js";
 import { APIKeyScope } from "../enums.js";
@@ -268,6 +274,71 @@ describe("getOwnPermission", () => {
 
     expect(sent).toEqual(["permget permsid=i_client_move_power", "permget permid=204"]);
     expect(byName).toEqual({ id: 204, name: "i_client_move_power", value: 75 });
+  });
+});
+
+describe("getOwnPermissions", () => {
+  const own = (name: string, id: number, value: number) => ({
+    permsid: name,
+    permid: String(id),
+    permvalue: String(value),
+  });
+
+  it("asks for every permission in one command, rows in order", async () => {
+    const { client, sent } = recording([
+      own("i_client_move_power", 204, 75),
+      own("b_client_ban_list", 9, 0),
+      own("i_client_move_power", 204, 75),
+    ]);
+    const result = await getOwnPermissions(client, [
+      permissionByName("i_client_move_power"),
+      permissionByName("b_client_ban_list"),
+      permissionByName("i_client_move_power"),
+    ]);
+    expect(sent).toEqual([
+      "permget permsid=i_client_move_power|permsid=b_client_ban_list|permsid=i_client_move_power",
+    ]);
+    expect(result.map((p) => [p.name, p.value])).toEqual([
+      ["i_client_move_power", 75],
+      ["b_client_ban_list", 0],
+      ["i_client_move_power", 75],
+    ]);
+  });
+
+  it("sends nothing for no permissions", async () => {
+    const { client, sent } = recording();
+    expect(await getOwnPermissions(client, [])).toEqual([]);
+    expect(sent).toEqual([]);
+  });
+
+  it("splits a list of ids and names into two commands and keeps the order asked", async () => {
+    const { client, sent } = recording(
+      [own("a_name", 1, 10), own("c_name", 3, 30)],
+      [own("b_id", 2, 20), own("d_id", 4, 40), own("b_id", 2, 20)],
+    );
+    const result = await getOwnPermissions(client, [
+      permissionByID(asPermissionID(2)),
+      permissionByName("a_name"),
+      permissionByID(asPermissionID(4)),
+      permissionByName("c_name"),
+      permissionByID(asPermissionID(2)),
+    ]);
+    expect(sent).toEqual([
+      "permget permsid=a_name|permsid=c_name",
+      "permget permid=2|permid=4|permid=2",
+    ]);
+    expect(result.map((p) => p.name)).toEqual(["b_id", "a_name", "d_id", "c_name", "b_id"]);
+  });
+
+  it("propagates a refusal", async () => {
+    const client: CommandExecutor = {
+      send: async () => {
+        throw new ServerError(2562, "invalid permission ID");
+      },
+    };
+    await expect(getOwnPermissions(client, [permissionByName("nope")])).rejects.toMatchObject({
+      code: 2562,
+    });
   });
 });
 
