@@ -32,5 +32,6 @@ jobs:
       - uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
         with:
           scan-args: |-
+            --config=osv-scanner.toml
             --lockfile=pnpm-lock.yaml
             --lockfile=test/types/package-lock.json
