@@ -162,6 +162,23 @@ and `iterator.dropped` counts the frames it has dropped. A listener added with
 more than 256 deliveries are waiting; that is logged as a warning at most every
 ten seconds, with the number dropped since the last one.
 
+### What the server relays
+
+The server decides whose voice reaches whom, and drops the rest without an
+error. Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 6.0.0-beta13.1:
+
+- A speaker's voice to its channel is relayed while it may talk there: its
+  `isTalker` is set, or its talk power is at least the channel's needed talk
+  power. Being a priority speaker does not change that. A whisper does not need
+  talk power.
+- Neither is relayed while the speaker is away, input-muted, or without input
+  hardware, as it last told the server with `updateClient`. A bot that sets
+  `isAway` is not heard.
+- A listener gets neither while it is output-muted or without output hardware.
+  Being away or input-muted does not stop it hearing.
+- Voice reaches only the clients in the channel. Subscribing to another channel
+  shows its clients, not its voice.
+
 ## Commands
 
 Every command the voice protocol answers is a typed function, grouped by area.

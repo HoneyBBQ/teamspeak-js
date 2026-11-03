@@ -82,13 +82,13 @@ const commandNameValues = {
   ChannelMove: "channelmove",
   /** `channelpermlist`: Displays a list of permissions defined for a channel. */
   ChannelPermList: "channelpermlist",
-  /** `channelsubscribe`: Subscribes this client to a channel so it sees the clients in it and their voice. Voice protocol only. */
+  /** `channelsubscribe`: Subscribes this client to a channel so it sees the clients in it; their voice reaches only the clients in the channel. Voice protocol only. */
   ChannelSubscribe: "channelsubscribe",
   /** `channelsubscribeall`: Subscribes this client to every channel on the server. Voice protocol only. */
   ChannelSubscribeAll: "channelsubscribeall",
   /** `channelunsubscribe`: Unsubscribes this client from a channel, so the clients in it go out of view. Voice protocol only. */
   ChannelUnsubscribe: "channelunsubscribe",
-  /** `channelunsubscribeall`: Unsubscribes this client from every channel. Voice protocol only. */
+  /** `channelunsubscribeall`: Unsubscribes this client from every channel but the one it is in. Voice protocol only. */
   ChannelUnsubscribeAll: "channelunsubscribeall",
   /** `chatlogintoken`: Returns a JSON Web Token for logging in to the Matrix server the server uses for chat. TeamSpeak 6 only. */
   ChatLoginToken: "chatlogintoken",
