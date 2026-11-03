@@ -166,6 +166,21 @@ describe.skipIf(!ADDR)("what the server relays — live", () => {
     }
   }
 
+  /**
+   * `heard`, for a check that wants frames: up to three tries, since a state
+   * change the server has answered may take a moment to reach its relay. A
+   * check that wants none measures once: no frame is the state to hold, and a
+   * retry would only hide one that got through.
+   */
+  async function heardSome(whisper = false): Promise<number> {
+    let count = 0;
+    for (let attempt = 1; attempt <= 3 && count === 0; attempt++) {
+      if (attempt > 1) await sleep(500);
+      count = await heard(whisper);
+    }
+    return count;
+  }
+
   /** Set some of who's state, measure, and set it back. */
   async function heardWhile(
     who: Client,
@@ -184,8 +199,8 @@ describe.skipIf(!ADDR)("what the server relays — live", () => {
   }
 
   it("relays voice and whispers in the channel by default", async () => {
-    expect(await heard()).toBeGreaterThan(0);
-    expect(await heard(true)).toBeGreaterThan(0);
+    expect(await heardSome()).toBeGreaterThan(0);
+    expect(await heardSome(true)).toBeGreaterThan(0);
   }, 20_000);
 
   it("relays nothing from a speaker that is away, input-muted or without input hardware", async () => {
@@ -196,7 +211,7 @@ describe.skipIf(!ADDR)("what the server relays — live", () => {
     ] as const) {
       expect(await heardWhile(s, on, off), JSON.stringify(on)).toBe(0);
       expect(await heardWhile(s, on, off, true), `whisper ${JSON.stringify(on)}`).toBe(0);
-      expect(await heard(), `after ${JSON.stringify(off)}`).toBeGreaterThan(0);
+      expect(await heardSome(), `after ${JSON.stringify(off)}`).toBeGreaterThan(0);
     }
   }, 60_000);
 
@@ -208,7 +223,14 @@ describe.skipIf(!ADDR)("what the server relays — live", () => {
       expect(await heardWhile(l, on, off), JSON.stringify(on)).toBe(0);
       expect(await heardWhile(l, on, off, true), `whisper ${JSON.stringify(on)}`).toBe(0);
     }
-    expect(await heardWhile(l, { isAway: true }, { isAway: false })).toBeGreaterThan(0);
+    await updateClient(l, { isAway: true });
+    await sleep(300);
+    try {
+      expect(await heardSome(), "listener away").toBeGreaterThan(0);
+    } finally {
+      await updateClient(l, { isAway: false });
+      await sleep(300);
+    }
   }, 60_000);
 
   it.skipIf(!HAS_ADMIN)(
@@ -221,7 +243,7 @@ describe.skipIf(!ADDR)("what the server relays — live", () => {
       const dbid = await getClientDBIDByUID(admin!, s.uid);
       try {
         expect(await heard(), "talk power 0 of 50").toBe(0);
-        expect(await heard(true), "whisper with talk power 0 of 50").toBeGreaterThan(0);
+        expect(await heardSome(true), "whisper with talk power 0 of 50").toBeGreaterThan(0);
 
         await addClientPermission(
           admin!,
@@ -243,7 +265,7 @@ describe.skipIf(!ADDR)("what the server relays — live", () => {
         await editClient(admin!, s.clientID, { isTalker: true });
         await sleep(300);
         try {
-          expect(await heard(), "talker, talk power 0 of 50").toBeGreaterThan(0);
+          expect(await heardSome(), "talker, talk power 0 of 50").toBeGreaterThan(0);
         } finally {
           await editClient(admin!, s.clientID, { isTalker: false });
         }
@@ -303,7 +325,7 @@ describe.skipIf(!ADDR)("what the server relays — live", () => {
     );
     expect(announced).toBe(false);
     expect(l.view.clients.has(s.clientID)).toBe(true);
-    expect(await heard()).toBeGreaterThan(0);
+    expect(await heardSome()).toBeGreaterThan(0);
   }, 20_000);
 
   it.skipIf(PASSWORD_CHANNEL === "" || PASSWORD_CHANNEL_PASSWORD === "")(
