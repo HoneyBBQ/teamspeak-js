@@ -30,6 +30,7 @@ export type {
   ClientOptions,
   ResolvedAddr,
   DatagramSocket,
+  EventIterator,
   SocketFactory,
   FileTransferSocketFactory,
 } from "./types.js";

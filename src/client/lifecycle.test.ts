@@ -10,6 +10,7 @@ import {
   NotConnectedError,
   asClientID,
   type Logger,
+  type VoiceDataEvent,
 } from "@honeybbq/teamspeak";
 import { CommandThrottle } from "./throttle.js";
 import { PacketType, type Packet } from "./transport/packet.js";
@@ -18,6 +19,7 @@ import {
   completeCryptoInit,
   datagram,
   plainPacket,
+  sessionPacket,
   s2cHeader,
 } from "./testing/fake-server.js";
 import type { ClientOptions } from "./types.js";
@@ -509,6 +511,138 @@ describe("voice delivery", () => {
       // The first report comes with the first drop; the second counts the rest
       // of that burst and the first drop of the next.
       expect(counts).toEqual([1, firstDropped]);
+      await client.disconnect({ signal: AbortSignal.timeout(1) });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("voice event fields", () => {
+  const frame = (seq: number, clid: number, ...data: number[]): Uint8Array =>
+    Uint8Array.of(seq >> 8, seq & 0xff, clid >> 8, clid & 0xff, Codec.OpusVoice, ...data);
+
+  it("carries session, whisper, seq and the codec frame, per packet type", async () => {
+    const { client } = await connected();
+    const heard: VoiceDataEvent[] = [];
+    client.on("voiceData", (e) => heard.push(e));
+
+    const handler = clientInternals(client).handler;
+    handler.onPacket?.(packet(PacketType.Voice, frame(0xfffe, 9, 1, 2)));
+    handler.onPacket?.(packet(PacketType.VoiceWhisper, frame(3, 9, 7)));
+    await settle();
+
+    expect(client.session).toBe(1);
+    expect(heard.map((e) => [e.session, e.clientID, e.whisper, e.seq, e.data.length])).toEqual([
+      [1, 9, false, 0xfffe, 2],
+      [1, 9, true, 3, 1],
+    ]);
+    expect(heard[0]!.codec).toBe(Codec.OpusVoice);
+    // The documented comparison across the wrap.
+    const diff = (a: number, b: number): number => ((a - b) << 16) >> 16;
+    expect(diff(1, 0xffff)).toBe(2);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("stamps each event with the session it arrived in", async () => {
+    const { client } = await connected();
+    const heard: number[] = [];
+    client.on("voiceData", (e) => heard.push(e.session));
+    clientInternals(client).handler.onPacket?.(packet(PacketType.Voice, frame(0, 9, 1)));
+    await settle();
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+    expect(heard).toEqual([1]);
+  });
+
+  it("takes receivedAt when the datagram is read from the socket", async () => {
+    const { client, socket } = await connected();
+    const heard: VoiceDataEvent[] = [];
+    client.on("voiceData", (e) => heard.push(e));
+    const crypt = clientInternals(client).crypt;
+
+    let t = 5000;
+    const now = vi.spyOn(performance, "now").mockImplementation(() => (t += 10));
+    try {
+      socket.deliver(sessionPacket(crypt, PacketType.Voice, 0, 1, frame(4, 9, 1)));
+      socket.deliver(sessionPacket(crypt, PacketType.VoiceWhisper, 0, 1, frame(0, 9, 1)));
+    } finally {
+      now.mockRestore();
+    }
+    await settle();
+
+    expect(heard).toHaveLength(2);
+    // The first reading of the clock after the datagram is read is the stamp.
+    expect(heard[0]!.receivedAt).toBe(5010);
+    expect(heard[1]!.receivedAt).toBeGreaterThan(heard[0]!.receivedAt);
+    expect(heard[1]!.whisper).toBe(true);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("drops the oldest buffered frame when events('voiceData') is full, and counts it", async () => {
+    const { client } = await connected();
+    const iterator = client.events("voiceData");
+    const handler = clientInternals(client).handler;
+    // Below the queue's own limit per turn, so every frame reaches the iterator.
+    for (let seq = 0; seq < 300; seq++) {
+      handler.onPacket?.(packet(PacketType.Voice, frame(seq, 9, 1)));
+      if (seq % 100 === 99) await settle();
+    }
+    await settle();
+
+    expect(iterator.dropped).toBe(300 - 256);
+    const first = await iterator.next();
+    expect(first.value?.seq).toBe(300 - 256);
+    expect(iterator.dropped).toBe(44);
+    await iterator.return?.();
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("counts dropped frames per iterator, and 0 for events that are not bounded", async () => {
+    const { client } = await connected();
+    const slow = client.events("voiceData");
+    const handler = clientInternals(client).handler;
+    for (let seq = 0; seq < 256; seq++) {
+      handler.onPacket?.(packet(PacketType.Voice, frame(seq, 9, 1)));
+      if (seq % 100 === 99) await settle();
+    }
+    await settle();
+    const late = client.events("voiceData");
+    handler.onPacket?.(packet(PacketType.Voice, frame(256, 9, 1)));
+    await settle();
+
+    expect(slow.dropped).toBe(1);
+    expect(late.dropped).toBe(0);
+    expect(client.events("textMessage").dropped).toBe(0);
+    await slow.return?.();
+    await late.return?.();
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("reports every drop, even those of a burst that ends inside the report interval", async () => {
+    try {
+      const counts: number[] = [];
+      const logger: Logger = {
+        debug() {},
+        info() {},
+        warn: (msg, fields) => {
+          if (msg.startsWith("voice dropped")) counts.push((fields as { dropped: number }).dropped);
+        },
+        error() {},
+      };
+      const { client } = await connected({ logger });
+      vi.useFakeTimers({ toFake: ["Date", "performance", "setTimeout", "clearTimeout"] });
+      let heard = 0;
+      client.on("voiceData", () => heard++);
+      const handler = clientInternals(client).handler;
+      for (let i = 0; i < 1000; i++) handler.onPacket?.(packet(PacketType.Voice, frame(i, 9, 1)));
+      await settle();
+      const dropped = 1000 - heard;
+
+      // The first drop is reported at once; the rest of the burst is still owed.
+      expect(counts).toEqual([1]);
+      vi.advanceTimersByTime(10_001);
+      expect(counts).toEqual([1, dropped - 1]);
+      expect(counts.reduce((a, b) => a + b, 0)).toBe(dropped);
       await client.disconnect({ signal: AbortSignal.timeout(1) });
     } finally {
       vi.useRealTimers();

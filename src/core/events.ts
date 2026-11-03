@@ -370,8 +370,43 @@ export interface ClientChatClosedEvent {
 
 /** Audio from another client, in the channel or whispered. */
 export interface VoiceDataEvent {
+  /**
+   * The connection session the packet arrived in: `Client.session` at that
+   * time. A client id names a client only within one session, so when
+   * `session` changes, start every per-speaker state over. The key to order
+   * and de-jitter by is (`session`, `clientID`, `whisper`).
+   */
+  readonly session: number;
   /** Who is speaking. */
   readonly clientID: ClientID;
+  /**
+   * Whether the packet type was VoiceWhisper rather than Voice. The speaker's
+   * whispers and its other voice are two separate `seq` sequences, and this is
+   * all a receiver learns about a whisper: not its target.
+   */
+  readonly whisper: boolean;
+  /**
+   * The speaker's own number for the packet, the first u16 of the payload. The
+   * server relays it unchanged. It goes up by one with every packet the
+   * speaker sends, end of speech included, counting its whispers apart from the
+   * rest, and wraps from 65535 to 0, so compare two with the signed 16-bit
+   * difference `((a - b) << 16 >> 16)`, never with `a < b`. A gap is a packet
+   * that was lost or is still to come: the network and the server can reorder
+   * packets, and they are delivered as they arrived. A client that connects
+   * again counts from 0 again, under another client id.
+   *
+   * The speaker's client chooses it, so it is no fact to trust: bound any wait
+   * or buffer it drives.
+   */
+  readonly seq: number;
+  /**
+   * When the datagram was read from the socket, as `performance.now()`
+   * milliseconds: a monotonic clock in the same time origin as every other
+   * `performance.now()` reading in this process, before decryption or queueing.
+   * The difference between two is the time between their arrivals, whatever
+   * the wall clock does meanwhile. The packet itself carries no time.
+   */
+  readonly receivedAt: number;
   /**
    * How the audio is encoded; compare it with `Codec`. A plain number, since a
    * server may relay a codec that table does not name.
