@@ -30,7 +30,9 @@ address being resolved; the resolver applies both, `lookupTSDNS` returns the
 entries as the server sent them.
 
 `new Resolver({ nicknameLookup: true, nicknameService })` looks dot-less names up at
-`nicknameService`, an http: or https: URL, instead of at named.myteamspeak.com.
+`nicknameService`, an http: or https: URL, instead of at named.myteamspeak.com. `resolveSrv(name, { signal })` answers the
+resolver's SRV lookups, for DNS over HTTPS or another DNS server, and `fetch`
+the nickname lookup, for a proxy; both are also handy in tests.
 
 ```typescript
 import { Resolver, lookupTSDNS } from "@honeybbq/teamspeak/client";

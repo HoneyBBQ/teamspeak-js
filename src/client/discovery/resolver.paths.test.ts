@@ -148,6 +148,75 @@ describe("Resolver", () => {
   });
 });
 
+describe("Resolver with a custom resolveSrv", () => {
+  it("asks it instead of the system, with the full name and a signal", async () => {
+    const calls: Array<{ name: string; signal: AbortSignal }> = [];
+    const resolveSrv = async (name: string, options: { readonly signal: AbortSignal }) => {
+      calls.push({ name, signal: options.signal });
+      return [
+        { name: "backup.example.com.", port: 10001, priority: 20, weight: 0 },
+        { name: "voice.example.com.", port: 10000, priority: 10, weight: 0 },
+      ];
+    };
+
+    const answer = await new Resolver({ resolveSrv }).resolve("example.com");
+
+    expect(answer.map((a) => [a.addr, a.source])).toEqual([
+      ["voice.example.com:10000", ResolveSource.SRV],
+      ["backup.example.com:10001", ResolveSource.SRV],
+    ]);
+    expect(calls.map((c) => c.name)).toEqual(["_ts3._udp.example.com"]);
+    expect(calls[0]!.signal).toBeInstanceOf(AbortSignal);
+    expect(dns.srvLookups).toEqual([]);
+  });
+
+  it("answers the _tsdns._tcp lookups too", async () => {
+    await tsdnsAt("tsdns.example.com:41144", "1.2.3.4:9987");
+    const asked: string[] = [];
+    const resolveSrv = async (name: string) => {
+      asked.push(name);
+      return name === "_tsdns._tcp.example.com"
+        ? [{ name: "tsdns.example.com.", port: 41144, priority: 0, weight: 0 }]
+        : [];
+    };
+
+    const answer = await new Resolver({ resolveSrv }).resolve("ts.example.com");
+
+    expect(answer.map((a) => [a.addr, a.source])).toEqual([
+      ["1.2.3.4:9987", ResolveSource.TSDNSSRV],
+    ]);
+    expect(asked).toEqual([
+      "_ts3._udp.ts.example.com",
+      "_tsdns._tcp.ts.example.com",
+      "_tsdns._tcp.example.com",
+    ]);
+    expect(dns.srvLookups).toEqual([]);
+  });
+
+  it("takes a rejection or an empty list as no record", async () => {
+    const rejecting = new Resolver({ resolveSrv: () => Promise.reject(new Error("refused")) });
+    expect((await rejecting.resolve("a.example.com:9988"))[0]).toMatchObject({
+      addr: "a.example.com:9988",
+      source: ResolveSource.Direct,
+    });
+
+    const empty = new Resolver({ resolveSrv: () => Promise.resolve([]) });
+    expect((await empty.resolve("b.example.com"))[0]).toMatchObject({
+      addr: "b.example.com:9987",
+      source: ResolveSource.Direct,
+    });
+  });
+
+  it("cannot hold resolution up when it ignores the signal", async () => {
+    const resolver = new Resolver({ resolveSrv: () => new Promise(() => {}) });
+    const controller = new AbortController();
+    const reason = new Error("stop");
+    const pending = resolver.resolve("example.com", { signal: controller.signal });
+    setTimeout(() => controller.abort(reason), 10);
+    await expect(pending).rejects.toBe(reason);
+  });
+});
+
 describe("resolveNickname", () => {
   const service = new URL("https://named.example.com/lookup");
 

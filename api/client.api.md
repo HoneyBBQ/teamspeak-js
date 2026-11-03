@@ -582,8 +582,12 @@ export class Resolver implements AddrResolver {
 
 // @public
 export interface ResolverOptions {
+    readonly fetch?: typeof globalThis.fetch | undefined;
     readonly nicknameLookup?: boolean | undefined;
     readonly nicknameService?: string | URL | undefined;
+    readonly resolveSrv?: ((name: string, options: {
+        readonly signal: AbortSignal;
+    }) => Promise<readonly SrvRecord[]>) | undefined;
 }
 
 // Warning: (ae-forgotten-export) The symbol "resolveSourceValues" needs to be exported by the entry point index.d.ts
@@ -677,6 +681,14 @@ export interface SessionStartInfo extends AttemptInfo {
 
 // @public
 export type SocketFactory = (family: 4 | 6) => DatagramSocket;
+
+// @public
+export interface SrvRecord {
+    readonly name: string;
+    readonly port: number;
+    readonly priority: number;
+    readonly weight: number;
+}
 
 // @public
 export function subscribeAllChannels(client: Client, options?: CommandOptions): Promise<void>;
