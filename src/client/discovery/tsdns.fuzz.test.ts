@@ -2,11 +2,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import fc from "fast-check";
 import { createServer } from "node:net";
 import type { AddressInfo, Server } from "node:net";
-import { MAX_DISCOVERY_RESPONSE, queryTSDNS } from "./resolver.js";
+import { MAX_DISCOVERY_RESPONSE, lookupTSDNS } from "./resolver.js";
 
-// A TSDNS server answers over plain TCP with one line: the address, or 404.
+// A TSDNS server answers over plain TCP with one line: the address, or 404, and may end it by closing.
 // Whoever is on the path can send anything instead, in any chunking. Reading it
-// must give a line or nothing, never throw, never hold more than the bound, and
+// must give targets or nothing, never throw on what it reads, never hold more than the bound, and
 // never wait for the end of an answer that is already over the bound.
 
 let server: Server | undefined;
@@ -29,17 +29,18 @@ async function serving(chunks: readonly Uint8Array[]): Promise<string> {
   return `127.0.0.1:${(listening.address() as AddressInfo).port}`;
 }
 
-/** What the answer should read as: its first line, unless that is empty or an error. */
-function expected(answer: Uint8Array): string | null {
+/** What the answer should read as: the targets of its first line, unless that is empty or an error. */
+function expected(answer: Uint8Array): string[] {
   const text = Buffer.from(answer).toString("latin1");
   const end = text.indexOf("\n");
-  if (end < 0 || end >= MAX_DISCOVERY_RESPONSE) return null;
-  const line = Buffer.from(text.slice(0, end), "latin1").toString("utf8").trim();
-  return line === "" || line === "404" || line === "errors" ? null : line;
+  const line = Buffer.from(text.slice(0, end < 0 ? undefined : end), "latin1")
+    .toString("utf8")
+    .trim();
+  return line === "" || line === "404" || line === "errors" ? [] : line.split(/\s+/);
 }
 
 describe("a TSDNS answer", () => {
-  it("reads as its first line, or as nothing, in whatever chunks it arrives", async () => {
+  it("reads as its first line's targets, or as nothing, in whatever chunks it arrives", async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.oneof(
@@ -54,8 +55,8 @@ describe("a TSDNS answer", () => {
           const chunks: Uint8Array[] = [];
           for (let i = 0; i < answer.length; i += size) chunks.push(answer.subarray(i, i + size));
           const address = await serving(chunks);
-          const got = await queryTSDNS(address, "example.com");
-          expect(got).toBe(expected(answer));
+          const got = await lookupTSDNS(address, "example.com");
+          expect(got).toEqual(expected(answer));
           server?.close();
         },
       ),
@@ -63,10 +64,10 @@ describe("a TSDNS answer", () => {
     );
   }, 60_000);
 
-  it("is refused once it is longer than the bound without a line", async () => {
+  it("is rejected once it is longer than the bound without a line", async () => {
     const address = await serving([new Uint8Array(MAX_DISCOVERY_RESPONSE + 100).fill(0x61)]);
     const started = Date.now();
-    await expect(queryTSDNS(address, "example.com")).resolves.toBeNull();
+    await expect(lookupTSDNS(address, "example.com")).rejects.toThrow();
     expect(Date.now() - started).toBeLessThan(2_000);
   });
 });

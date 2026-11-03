@@ -507,6 +507,11 @@ export class InvalidIdentityError extends TeamspeakError {
 }
 
 // @public
+export function lookupTSDNS(server: string, host: string, options?: {
+    readonly signal?: AbortSignal | undefined;
+}): Promise<string[]>;
+
+// @public
 export const MAX_SECURITY_LEVEL = 160;
 
 // @public
@@ -565,6 +570,20 @@ export interface ResolveDoneInfo extends AttemptInfo {
     readonly error: unknown;
     readonly source: string;
     readonly target: string;
+}
+
+// @public
+export class Resolver implements AddrResolver {
+    constructor(options?: ResolverOptions);
+    resolve(inputAddr: string, options?: {
+        readonly signal?: AbortSignal | undefined;
+    }): Promise<ResolvedAddr[]>;
+}
+
+// @public
+export interface ResolverOptions {
+    readonly nicknameLookup?: boolean | undefined;
+    readonly nicknameService?: string | URL | undefined;
 }
 
 // Warning: (ae-forgotten-export) The symbol "resolveSourceValues" needs to be exported by the entry point index.d.ts

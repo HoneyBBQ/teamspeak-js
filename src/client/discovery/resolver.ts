@@ -1,12 +1,15 @@
 import { resolveSrv } from "node:dns/promises";
 import { createConnection } from "node:net";
 import { ResolveSource } from "../types.js";
-import type { ResolvedAddr } from "../types.js";
+import type { AddrResolver, ResolvedAddr } from "../types.js";
 import { isIpAddress, joinHostPort, splitHostPort } from "../address.js";
 import { abortable } from "../abort.js";
+import { TeamspeakError } from "@honeybbq/teamspeak";
 import { InvalidAddressError } from "../errors.js";
 
 const TS_DNS_DEFAULT_PORT = 41144;
+/** What a TSDNS entry has for a port to say: the one the user gave. */
+const PORT_PLACEHOLDER = ":$PORT";
 const NICKNAME_LOOKUP_URL = "https://named.myteamspeak.com/lookup";
 const CACHE_TTL_MS = 10 * 60 * 1000;
 /**
@@ -30,14 +33,31 @@ export const MAX_DISCOVERY_RESPONSE: number = 8 * 1024;
 export interface ResolverOptions {
   /** Look dot-less names up at named.myteamspeak.com; off by default. */
   readonly nicknameLookup?: boolean | undefined;
+  /**
+   * The nickname lookup endpoint, an http: or https: URL; the default is
+   * `https://named.myteamspeak.com/lookup`. Used only with `nicknameLookup`:
+   * setting it does not turn the lookup on. For a test double or a mirror of
+   * the service. The name is sent as the `name` query parameter, and the first
+   * line of the answer is the address. A URL that is not http: or https: throws
+   * a TypeError.
+   */
+  readonly nicknameService?: string | URL | undefined;
 }
 
-export class Resolver {
+/**
+ * The resolver a Client uses unless it is given another. It resolves as the
+ * TeamSpeak application does, so on its own it shows where an address leads:
+ * `await new Resolver().resolve("ts.example.com")`. Answers are kept for ten
+ * minutes.
+ */
+export class Resolver implements AddrResolver {
   readonly #cache = new Map<string, ResolvedAddr[]>();
   readonly #nicknameLookup: boolean;
+  readonly #nicknameService: URL;
 
   constructor(options: ResolverOptions = {}) {
     this.#nicknameLookup = options.nicknameLookup ?? false;
+    this.#nicknameService = parseNicknameService(options.nicknameService ?? NICKNAME_LOOKUP_URL);
   }
 
   /**
@@ -81,7 +101,7 @@ export class Resolver {
     // service can answer: asking it sends the name to a third party, so it is
     // opt-in. Otherwise the name is resolved like any host.
     if (nicknames && this.#nicknameLookup && !host.includes(".") && host !== "localhost") {
-      const nickAddr = await resolveNickname(host, signal);
+      const nickAddr = await resolveNickname(host, this.#nicknameService, signal);
       signal.throwIfAborted();
       if (nickAddr) return this.#resolve(nickAddr, signal, false);
     }
@@ -93,15 +113,21 @@ export class Resolver {
     const domainList = getDomainList(host);
 
     // TSDNS via SRV _tsdns._tcp.<domain>
-    const tsdnsSrv = await this.#resolveTSDNSSRV(domainList, host, signal);
-    if (tsdnsSrv) {
-      return this.#setCache(inputAddr, [{ addr: tsdnsSrv, source: ResolveSource.TSDNSSRV }]);
+    const tsdnsSrv = await this.#resolveTSDNSSRV(domainList, host, port, signal);
+    if (tsdnsSrv.length > 0) {
+      return this.#setCache(
+        inputAddr,
+        tsdnsSrv.map((addr) => ({ addr, source: ResolveSource.TSDNSSRV })),
+      );
     }
 
     // TSDNS direct :41144
-    const tsdnsDirect = await this.#resolveTSDNSDirect(domainList, host, signal);
-    if (tsdnsDirect) {
-      return this.#setCache(inputAddr, [{ addr: tsdnsDirect, source: ResolveSource.TSDNSDirect }]);
+    const tsdnsDirect = await this.#resolveTSDNSDirect(domainList, host, port, signal);
+    if (tsdnsDirect.length > 0) {
+      return this.#setCache(
+        inputAddr,
+        tsdnsDirect.map((addr) => ({ addr, source: ResolveSource.TSDNSDirect })),
+      );
     }
 
     signal.throwIfAborted();
@@ -143,38 +169,75 @@ export class Resolver {
   async #resolveTSDNSSRV(
     domains: string[],
     queryHost: string,
+    port: string,
     signal?: AbortSignal,
-  ): Promise<string | null> {
+  ): Promise<string[]> {
     for (const domain of domains) {
       try {
         const srvs = await abortable(resolveSrv(`_tsdns._tcp.${domain}`), signal);
         if (!srvs || srvs.length === 0) continue;
         for (const srv of orderSrvRecords(srvs)) {
           const tsdnsAddr = joinHostPort(srv.name.replace(/\.$/, ""), String(srv.port));
-          const result = await queryTSDNS(tsdnsAddr, queryHost, signal);
-          if (result) return result;
+          const result = await askTSDNS(tsdnsAddr, queryHost, port, signal);
+          if (result.length > 0) return result;
         }
       } catch {
         continue;
       }
     }
-    return null;
+    return [];
   }
 
   async #resolveTSDNSDirect(
     domains: string[],
     queryHost: string,
+    port: string,
     signal?: AbortSignal,
-  ): Promise<string | null> {
+  ): Promise<string[]> {
     // Asked at once rather than in turn, so the probes cost one timeout in
     // all; the most specific domain's answer wins.
     const answers = await Promise.all(
       domains.map((domain) =>
-        queryTSDNS(joinHostPort(domain, String(TS_DNS_DEFAULT_PORT)), queryHost, signal),
+        askTSDNS(joinHostPort(domain, String(TS_DNS_DEFAULT_PORT)), queryHost, port, signal),
       ),
     );
-    return answers.find((answer) => answer !== null) ?? null;
+    return answers.find((answer) => answer.length > 0) ?? [];
   }
+}
+
+/**
+ * Ask one TSDNS server; a server that fails to answer is one with no answer,
+ * so it never fails the resolution.
+ */
+async function askTSDNS(
+  server: string,
+  host: string,
+  port: string,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  try {
+    return normalizeTSDNSEntries(await lookupTSDNS(server, host, { signal }), port);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Make each entry of a TSDNS answer a `host:port`, as TeamSpeak reads it: an
+ * entry without a port means 9987, and the port `$PORT` means `port`, the one
+ * the address being resolved had.
+ *
+ * @internal
+ */
+export function normalizeTSDNSEntries(entries: readonly string[], port: string): string[] {
+  return entries.map((entry) => {
+    if (entry.endsWith(PORT_PLACEHOLDER)) {
+      const host = splitHostPort(entry.slice(0, -PORT_PLACEHOLDER.length)).host;
+      return joinHostPort(host, port);
+    }
+    const target = splitHostPort(entry, "9987");
+    return joinHostPort(target.host, target.port);
+  });
 }
 
 // ---- Helpers ----------------------------------------------------------------
@@ -231,13 +294,27 @@ export function orderSrvRecords<T extends SrvRecord>(
   return ordered;
 }
 
+function parseNicknameService(service: string | URL): URL {
+  let url: URL;
+  try {
+    url = new URL(service);
+  } catch {
+    throw new TypeError(`nicknameService is not a URL: ${String(service)}`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new TypeError(`nicknameService is an http: or https: URL, not ${url.protocol}`);
+  }
+  return url;
+}
+
 /** @internal Ask the nickname service for `nickname`'s address. */
 export async function resolveNickname(
   nickname: string,
+  service: URL,
   signal?: AbortSignal,
 ): Promise<string | null> {
   try {
-    const url = new URL(NICKNAME_LOOKUP_URL);
+    const url = new URL(service);
     url.searchParams.set("name", nickname);
     const init: RequestInit = signal ? { signal } : {};
     const resp = await fetch(url.toString(), init);
@@ -270,52 +347,80 @@ async function readLimited(resp: Response, limit: number): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-/** @internal Ask the TSDNS server at `tsdnsAddr` for `queryHost`'s address. */
-export function queryTSDNS(
-  tsdnsAddr: string,
-  queryHost: string,
-  signal?: AbortSignal,
-): Promise<string | null> {
-  const [host, portStr] = splitHostPortParts(tsdnsAddr);
-  const port = parseInt(portStr, 10);
+/**
+ * Ask a TSDNS server where `host` is. The answer is the server's targets in
+ * its order and as it sent them: an entry may have no port, which TeamSpeak
+ * takes as 9987, or the literal port `$PORT`, the port the user gave (9987 by
+ * default). {@link Resolver} applies both. A name the server has no record for
+ * gives an empty list.
+ *
+ * The answer ends at its first line break or when the server closes the
+ * connection, whichever comes first. It rejects when the connection fails,
+ * when no answer completes within three seconds or grows past 8 KiB, and with
+ * the signal's reason when it aborts.
+ *
+ * @param server - The TSDNS server, `host` or `host:port`; the port defaults to 41144.
+ * @param host - The name to look up; it is sent without a port.
+ */
+export function lookupTSDNS(
+  server: string,
+  host: string,
+  options: { readonly signal?: AbortSignal | undefined } = {},
+): Promise<string[]> {
+  const { signal } = options;
+  const target = splitHostPort(server, String(TS_DNS_DEFAULT_PORT));
+  const port = parseInt(target.port, 10);
 
-  return new Promise((resolve) => {
-    if (signal?.aborted) return resolve(null);
-    const finish = (answer: string | null): void => {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason);
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let done = false;
+    const finish = (error: unknown, answer?: string[]): void => {
+      if (done) return;
+      done = true;
       clearTimeout(timeout);
       signal?.removeEventListener("abort", onAbort);
       socket.destroy();
-      resolve(answer);
+      if (error !== undefined) reject(error);
+      else resolve(answer ?? []);
     };
-    const onAbort = (): void => finish(null);
-    const timeout = setTimeout(() => finish(null), TSDNS_TIMEOUT_MS);
+    const answerOf = (bytes: Buffer): string[] => {
+      const line = bytes.toString("utf8").trim();
+      return !line || line === "404" || line === "errors" ? [] : line.split(/\s+/);
+    };
+    const timedOut = (): void =>
+      finish(new TeamspeakError(`the TSDNS server ${server} did not answer in time`));
+    const onAbort = (): void => finish(signal?.reason);
+    const timeout = setTimeout(timedOut, TSDNS_TIMEOUT_MS);
 
-    const socket = createConnection({ host, port, timeout: 2_000 }, () => {
-      socket.write(`${queryHost}\n`);
+    const socket = createConnection({ host: target.host, port, timeout: 2_000 }, () => {
+      socket.write(`${host}\n`);
     });
 
-    let buf = "";
     socket.on("data", (chunk: Buffer) => {
-      buf += chunk.toString("latin1");
-      const idx = buf.indexOf("\n");
+      chunks.push(chunk);
+      size += chunk.length;
+      const all = chunks.length === 1 ? chunks[0]! : Buffer.concat(chunks);
+      chunks.length = 0;
+      chunks.push(all);
+      const idx = all.indexOf(0x0a);
       if (idx >= 0 && idx < MAX_DISCOVERY_RESPONSE) {
-        const line = Buffer.from(buf.slice(0, idx), "latin1").toString("utf8").trim();
-        finish(!line || line === "404" || line === "errors" ? null : line);
-      } else if (buf.length >= MAX_DISCOVERY_RESPONSE) {
+        finish(undefined, answerOf(all.subarray(0, idx)));
+      } else if (size >= MAX_DISCOVERY_RESPONSE) {
         // No answer is that long.
-        finish(null);
+        finish(
+          new TeamspeakError(
+            `the TSDNS server ${server} sent ${MAX_DISCOVERY_RESPONSE} bytes without ending its answer`,
+          ),
+        );
       }
     });
-
-    socket.on("error", () => finish(null));
-    socket.on("timeout", () => finish(null));
+    socket.on("end", () => finish(undefined, answerOf(Buffer.concat(chunks))));
+    socket.on("error", (error) => finish(error));
+    socket.on("timeout", timedOut);
     signal?.addEventListener("abort", onAbort, { once: true });
   });
-}
-
-function splitHostPortParts(addr: string): [string, string] {
-  const { host, port } = splitHostPort(addr);
-  return [host, port];
 }
 
 function getDomainList(host: string): string[] {
