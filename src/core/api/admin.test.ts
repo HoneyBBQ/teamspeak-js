@@ -34,7 +34,7 @@ import {
   asServerID,
   asUID,
 } from "../command/ids.js";
-import { ServerError } from "../errors.js";
+import { NoDataError, ServerError } from "../errors.js";
 import { encodeRequest } from "../command/request.js";
 import type { CommandExecutor, CommandRequest } from "../command/request.js";
 import { APIKeyScope } from "../enums.js";
@@ -328,6 +328,14 @@ describe("getOwnPermissions", () => {
       "permget permid=2|permid=4|permid=2",
     ]);
     expect(result.map((p) => p.name)).toEqual(["b_id", "a_name", "d_id", "c_name", "b_id"]);
+  });
+
+  it("refuses an answer with fewer or more rows than permissions asked", async () => {
+    const asked = [permissionByName("a_name"), permissionByName("b_name")];
+    const fewer = recording([own("a_name", 1, 10)]);
+    await expect(getOwnPermissions(fewer.client, asked)).rejects.toBeInstanceOf(NoDataError);
+    const more = recording([own("a_name", 1, 10), own("b_name", 2, 20), own("c_name", 3, 30)]);
+    await expect(getOwnPermissions(more.client, asked)).rejects.toBeInstanceOf(NoDataError);
   });
 
   it("propagates a refusal", async () => {

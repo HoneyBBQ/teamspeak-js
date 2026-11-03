@@ -592,7 +592,9 @@ export async function getOwnPermissions(
       indexes.map((index) => [params[index]!]),
       options,
     );
-    if (rows.length < indexes.length) {
+    // Matched by position: more rows than asked leave no telling which
+    // answers which, so that is refused as much as fewer.
+    if (rows.length !== indexes.length) {
       throw new NoDataError("permget", `the server answered ${rows.length} of ${indexes.length}`);
     }
     indexes.forEach((index, n) => {
