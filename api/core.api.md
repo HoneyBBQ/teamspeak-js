@@ -1641,6 +1641,9 @@ export function getMessage(client: CommandExecutor, messageID: MessageID, option
 export function getOwnPermission(client: CommandExecutor, permission: Permission, options?: CommandOptions): Promise<OwnPermission>;
 
 // @public
+export function getOwnPermissions(client: CommandExecutor, permissions: readonly Permission[], options?: CommandOptions): Promise<OwnPermission[]>;
+
+// @public
 export function getPermissionIDByName(client: CommandExecutor, name: PermissionName | (string & {}), options?: CommandOptions): Promise<PermissionID | undefined>;
 
 // @public

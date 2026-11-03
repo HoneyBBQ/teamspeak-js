@@ -84,7 +84,12 @@ import type { FileUploadInfo, FileDownloadInfo } from "@honeybbq/teamspeak";
 import { CommandTimeoutError, NotConnectedError } from "@honeybbq/teamspeak";
 import { responseSpec } from "../core/internal.js";
 import type { Readable, Writable } from "node:stream";
-import type { SocketFactory, FileTransferSocketFactory, EventIterator } from "./types.js";
+import type {
+  SocketFactory,
+  FileTransferSocketFactory,
+  EventIterator,
+  RoundTripEstimate,
+} from "./types.js";
 import { unknownServerCapabilities, type ServerCapabilities } from "./capabilities.js";
 import { joinHostPort, parseConnectAddress, splitHostPort } from "./address.js";
 import { commandChannel, incomingChannel, type CommandTrace } from "./diagnostics.js";
@@ -558,6 +563,26 @@ export class Client implements CommandExecutor, AsyncDisposable {
   /** Where the client is in its connection's life. */
   get status(): ClientStatus {
     return this.#status;
+  }
+
+  /**
+   * The keepalive ping/pong round trip of the voice connection: the mean and
+   * the standard deviation over the last 10 pongs, or `undefined` when the
+   * client is not connected or no pong has arrived yet. A ping goes every 5
+   * seconds, so the first value comes about 5 seconds after connecting, and
+   * each connection, a reconnect included, starts over.
+   *
+   * It is the value this client reports as `connection_ping` and
+   * `connection_ping_deviation` when the server asks for its connection info,
+   * and the server keeps what it was told: the ping other clients see for this
+   * one is this value as it was when the server last asked, not as it is now
+   * (measured on TeamSpeak 3 and 6). A client cannot read its own
+   * `connection_ping` from the server: `getconnectioninfo` about itself has no
+   * such field.
+   */
+  get roundTrip(): RoundTripEstimate | undefined {
+    if (this.#status !== ClientStatus.Connected) return undefined;
+    return this.#handler.roundTrip ?? undefined;
   }
 
   // ---- Connection -----------------------------------------------------------

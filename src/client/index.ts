@@ -31,6 +31,7 @@ export type {
   ResolvedAddr,
   DatagramSocket,
   EventIterator,
+  RoundTripEstimate,
   SocketFactory,
   FileTransferSocketFactory,
 } from "./types.js";

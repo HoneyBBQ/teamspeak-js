@@ -2,7 +2,7 @@ import { createSocket } from "node:dgram";
 import { lookup } from "node:dns/promises";
 import { parseConnectAddress } from "../address.js";
 import type { Crypt } from "../crypto/crypt.js";
-import type { DatagramSocket, SocketFactory } from "../types.js";
+import type { DatagramSocket, RoundTripEstimate, SocketFactory } from "../types.js";
 import type { Logger } from "@honeybbq/teamspeak";
 import { noopLogger } from "@honeybbq/teamspeak";
 import {
@@ -458,7 +458,7 @@ export class PacketHandler {
   }
 
   /** The keepalive round-trip time, or null before the first pong. */
-  get roundTrip(): { readonly meanMs: number; readonly deviationMs: number } | null {
+  get roundTrip(): RoundTripEstimate | null {
     return this.#roundTrip.get();
   }
 

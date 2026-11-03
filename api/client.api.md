@@ -103,6 +103,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     get host(): string;
     on<K extends keyof EventMap>(event: K, listener: Listener<EventMap, K>): Unsubscribe;
     once<K extends keyof EventMap>(event: K, listener: Listener<EventMap, K>): Unsubscribe;
+    get roundTrip(): RoundTripEstimate | undefined;
     send(request: CommandRequest, options?: CommandOptions): Promise<Record<string, string>[]>;
     sendGroupWhisper(data: Uint8Array, target: GroupWhisperTarget, codec: Codec): void;
     sendVoice(data: Uint8Array, codec: Codec, options?: VoiceOptions): void;
@@ -615,6 +616,12 @@ const resolveSourceValues: {
 // @public
 export interface ResolveStartInfo extends AttemptInfo {
     readonly addr: string;
+}
+
+// @public
+export interface RoundTripEstimate {
+    readonly deviationMs: number;
+    readonly meanMs: number;
 }
 
 // @public

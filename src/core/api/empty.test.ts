@@ -45,6 +45,7 @@ import {
   createChannelGroup,
   findPermission,
   getOwnPermission,
+  getOwnPermissions,
   getPermissionOverview,
   listChannelGroupClients,
   listChannelGroupPermissions,
@@ -212,6 +213,7 @@ const required: Record<string, (client: CommandExecutor) => Promise<unknown>> = 
   addQueryLogin: (c) => addQueryLogin(c, "x"),
   setQueryLogin: (c) => setQueryLogin(c, "x"),
   getOwnPermission: (c) => getOwnPermission(c, permission),
+  getOwnPermissions: (c) => getOwnPermissions(c, [permission]),
   createServer: (c) => createServer(c, "x"),
   createServerSnapshot: (c) => createServerSnapshot(c),
 };
@@ -232,6 +234,7 @@ const keyed = [
   "addQueryLogin",
   "setQueryLogin",
   "getOwnPermission",
+  "getOwnPermissions",
   "createServer",
   "createServerSnapshot",
 ];

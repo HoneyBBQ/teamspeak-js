@@ -11,6 +11,7 @@ import {
   execRows,
   continueOnErrorParams,
   query,
+  queryRows,
   list,
   encodeFields,
   nonEmpty,
@@ -30,6 +31,7 @@ import type {
   PermissionValue,
   WireNames,
 } from "./command.js";
+import { NoDataError } from "../errors.js";
 import type { CommandExecutor, CommandOptions } from "../command/request.js";
 import type {
   ChannelGroupID,
@@ -525,6 +527,16 @@ export interface OwnPermission {
   readonly value: number;
 }
 
+/** The first row of a `permget` answer, read as an {@link OwnPermission}. */
+function parseOwnPermission(rows: ReadonlyArray<Record<string, string>>): OwnPermission {
+  const row = firstRow(rows, "permget", "permvalue");
+  return {
+    id: asPermissionID(uint(row, "permid", U32)),
+    name: str(row, "permsid"),
+    value: num(row, "permvalue"),
+  };
+}
+
 /**
  * The value of one permission for this connection, with every group, channel
  * and client setting resolved: what a client can check before trying
@@ -542,12 +554,52 @@ export async function getOwnPermission(
   options?: CommandOptions,
 ): Promise<OwnPermission> {
   const rows = await query(client, "permget", [permissionParam(permission)], options);
-  const row = firstRow(rows, "permget", "permvalue");
-  return {
-    id: asPermissionID(uint(row, "permid", U32)),
-    name: str(row, "permsid"),
-    value: num(row, "permvalue"),
-  };
+  return parseOwnPermission(rows);
+}
+
+/**
+ * The values of several permissions for this connection, in one `permget`:
+ * what {@link getOwnPermission} reads, for a list.
+ *
+ * The answer has one entry per permission asked, in the order asked: one
+ * asked twice is answered twice, and one whose value is 0 is answered with 0,
+ * not left out. A permission the server does not know refuses the whole
+ * command with error 2562 (invalid permission ID) and returns nothing. Needs
+ * `b_client_permissionoverview_own`. With none asked, nothing is sent and the
+ * answer is `[]`.
+ *
+ * TS6's WebQuery answers a row that names a permission by name with the
+ * permission of an earlier row that named one by id. So when the list mixes
+ * ids and names, this sends two commands, one for the names and one for the
+ * ids, and puts the entries back in the order asked; a list of one kind is
+ * one command.
+ */
+export async function getOwnPermissions(
+  client: CommandExecutor,
+  permissions: readonly Permission[],
+  options?: CommandOptions,
+): Promise<OwnPermission[]> {
+  const params = permissions.map(permissionParam);
+  const byName = params.flatMap((param, index) => (param[0] === "permsid" ? [index] : []));
+  const byID = params.flatMap((param, index) => (param[0] === "permid" ? [index] : []));
+  const groups = [byName, byID].filter((indexes) => indexes.length > 0);
+  const result: OwnPermission[] = [];
+  for (const indexes of groups) {
+    const rows = await queryRows(
+      client,
+      "permget",
+      [],
+      indexes.map((index) => [params[index]!]),
+      options,
+    );
+    if (rows.length < indexes.length) {
+      throw new NoDataError("permget", `the server answered ${rows.length} of ${indexes.length}`);
+    }
+    indexes.forEach((index, n) => {
+      result[index] = parseOwnPermission([rows[n]!]);
+    });
+  }
+  return result;
 }
 
 /** How a permission applies, in a {@link PermissionOverviewEntry}. */
