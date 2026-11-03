@@ -1,0 +1,4 @@
+[[IgnoredVulns]]
+id = "GHSA-g3hv-75wg-m249"
+ignoreUntil = 2027-02-01
+reason = "minimatch 10 reaches this repository only through the dev tools typedoc and @microsoft/api-extractor, never through the published package. The amplification needs optimizationLevel 2 or higher and an attacker's pattern; both tools use the default level 1, on patterns from this repository's own configuration. The fix is minimatch 11, which removed the Minimatch#matchOne that typedoc 0.28.20 calls (TypeStrong/typedoc#3150), and @microsoft/api-extractor 7.60.1 still pins minimatch 10.2.3."
