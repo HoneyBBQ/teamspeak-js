@@ -193,16 +193,14 @@ export class Resolver implements AddrResolver {
   }
 
   /** One SRV lookup, however it is answered, ended by the signal. */
-  async #srv(name: string, signal: AbortSignal | undefined): Promise<readonly SrvRecord[]> {
-    // The signal is always the resolution's; a custom lookup is given one too.
-    const lookup = signal ?? new AbortController().signal;
+  async #srv(name: string, signal: AbortSignal): Promise<readonly SrvRecord[]> {
     return abortable(
-      Promise.resolve().then(() => this.#resolveSrv(name, { signal: lookup })),
+      Promise.resolve().then(() => this.#resolveSrv(name, { signal })),
       signal,
     );
   }
 
-  async #resolveSRV(host: string, signal?: AbortSignal): Promise<ResolvedAddr[] | null> {
+  async #resolveSRV(host: string, signal: AbortSignal): Promise<ResolvedAddr[] | null> {
     try {
       const srvs = await this.#srv(`_ts3._udp.${host}`, signal);
       if (!srvs || srvs.length === 0) return null;
@@ -219,7 +217,7 @@ export class Resolver implements AddrResolver {
     domains: string[],
     queryHost: string,
     port: string,
-    signal?: AbortSignal,
+    signal: AbortSignal,
   ): Promise<string[]> {
     for (const domain of domains) {
       try {
