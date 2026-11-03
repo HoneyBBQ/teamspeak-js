@@ -36,21 +36,60 @@ export interface JoinRequest {
     readonly viewer: ViewerIdentity;
 }
 
+// Warning: (ae-forgotten-export) The symbol "joinRequestCloseCauseValues" needs to be exported by the entry point index.d.ts
+//
 // @public
-export type JoinRequestCloseCause = "withdrawn" | "ended";
+export const JoinRequestCloseCause: typeof joinRequestCloseCauseValues;
+
+// @public
+export type JoinRequestCloseCause = (typeof JoinRequestCloseCause)[keyof typeof JoinRequestCloseCause];
+
+// @public
+const joinRequestCloseCauseValues: {
+    readonly Withdrawn: "withdrawn";
+    readonly Ended: "ended";
+};
 
 // @public
 export interface JoinRequestClosed {
     readonly cause: JoinRequestCloseCause;
 }
 
+// Warning: (ae-forgotten-export) The symbol "joinRequestEventNameValues" needs to be exported by the entry point index.d.ts
+//
+// @public
+export const JoinRequestEventName: typeof joinRequestEventNameValues;
+
+// @public
+export type JoinRequestEventName = (typeof JoinRequestEventName)[keyof typeof JoinRequestEventName];
+
+// @public
+const joinRequestEventNameValues: {
+    readonly Closed: "closed";
+};
+
 // @public
 export interface JoinRequestEvents {
     closed: JoinRequestClosed;
 }
 
+// Warning: (ae-forgotten-export) The symbol "joinRequestStateValues" needs to be exported by the entry point index.d.ts
+//
 // @public
-export type JoinRequestState = "pending" | "accepted" | "denied" | "failed" | "withdrawn" | "ended";
+export const JoinRequestState: typeof joinRequestStateValues;
+
+// @public
+export type JoinRequestState = (typeof JoinRequestState)[keyof typeof JoinRequestState];
+
+// @public
+const joinRequestStateValues: {
+    readonly Pending: "pending";
+    readonly Accepted: "accepted";
+    readonly Denied: "denied";
+    readonly Failed: "failed";
+    readonly Withdrawn: "withdrawn";
+    readonly Ended: "ended";
+};
 
 // @public
 export interface Peer {
@@ -63,14 +102,45 @@ export interface Peer {
     readonly streamId: string;
 }
 
+// Warning: (ae-forgotten-export) The symbol "peerCloseCauseValues" needs to be exported by the entry point index.d.ts
+//
 // @public
-export type PeerCloseCause = "closed" | "left" | "stopped" | "disconnected" | "disposed";
+export const PeerCloseCause: typeof peerCloseCauseValues;
+
+// @public
+export type PeerCloseCause = (typeof PeerCloseCause)[keyof typeof PeerCloseCause];
+
+// @public
+const peerCloseCauseValues: {
+    readonly Closed: "closed";
+    readonly Left: "left";
+    readonly Stopped: "stopped";
+    readonly Disconnected: "disconnected";
+    readonly Disposed: "disposed";
+};
 
 // @public
 export interface PeerClosed {
     readonly cause: PeerCloseCause;
     readonly reason?: number | undefined;
 }
+
+// Warning: (ae-forgotten-export) The symbol "peerEventNameValues" needs to be exported by the entry point index.d.ts
+//
+// @public
+export const PeerEventName: typeof peerEventNameValues;
+
+// @public
+export type PeerEventName = (typeof PeerEventName)[keyof typeof PeerEventName];
+
+// @public
+const peerEventNameValues: {
+    readonly Offer: "offer";
+    readonly Answer: "answer";
+    readonly Candidate: "candidate";
+    readonly Signal: "signal";
+    readonly Closed: "closed";
+};
 
 // @public
 export interface PeerEvents {
@@ -90,6 +160,20 @@ export interface PublishedStream {
     stop(reason?: number): Promise<void>;
     viewers(): readonly ViewerPeer[];
 }
+
+// Warning: (ae-forgotten-export) The symbol "publishedStreamEventNameValues" needs to be exported by the entry point index.d.ts
+//
+// @public
+export const PublishedStreamEventName: typeof publishedStreamEventNameValues;
+
+// @public
+export type PublishedStreamEventName = (typeof PublishedStreamEventName)[keyof typeof PublishedStreamEventName];
+
+// @public
+const publishedStreamEventNameValues: {
+    readonly Request: "request";
+    readonly Ended: "ended";
+};
 
 // @public
 export interface PublishedStreamEvents {
@@ -116,11 +200,38 @@ export interface RawSignal {
     readonly json: string;
 }
 
+// Warning: (ae-forgotten-export) The symbol "streamAccessibilityValues" needs to be exported by the entry point index.d.ts
+//
 // @public
-export type StreamAccessibility = "none" | "public" | "contacts" | "private";
+export const StreamAccessibility: typeof streamAccessibilityValues;
 
 // @public
-export type StreamEndCause = "stopped" | "server" | "gone" | "disconnected" | "disposed";
+export type StreamAccessibility = (typeof StreamAccessibility)[keyof typeof StreamAccessibility];
+
+// @public
+const streamAccessibilityValues: {
+    readonly None: "none";
+    readonly Public: "public";
+    readonly Contacts: "contacts";
+    readonly Private: "private";
+};
+
+// Warning: (ae-forgotten-export) The symbol "streamEndCauseValues" needs to be exported by the entry point index.d.ts
+//
+// @public
+export const StreamEndCause: typeof streamEndCauseValues;
+
+// @public
+export type StreamEndCause = (typeof StreamEndCause)[keyof typeof StreamEndCause];
+
+// @public
+const streamEndCauseValues: {
+    readonly Stopped: "stopped";
+    readonly Server: "server";
+    readonly Gone: "gone";
+    readonly Disconnected: "disconnected";
+    readonly Disposed: "disposed";
+};
 
 // @public
 export interface StreamEnded {
@@ -212,17 +323,50 @@ export interface StreamsEventMap {
     warning: StreamWarning;
 }
 
+// Warning: (ae-forgotten-export) The symbol "streamsEventNameValues" needs to be exported by the entry point index.d.ts
+//
+// @public
+export const StreamsEventName: typeof streamsEventNameValues;
+
+// @public
+export type StreamsEventName = (typeof StreamsEventName)[keyof typeof StreamsEventName];
+
+// @public
+const streamsEventNameValues: {
+    readonly Started: "started";
+    readonly Updated: "updated";
+    readonly Stopped: "stopped";
+    readonly ViewerJoined: "viewerJoined";
+    readonly ViewerLeft: "viewerLeft";
+    readonly Error: "error";
+    readonly Warning: "warning";
+};
+
 // @public
 export interface StreamsOptions {
     readonly rememberDenied?: boolean | undefined;
 }
 
+// Warning: (ae-forgotten-export) The symbol "streamSourceValues" needs to be exported by the entry point index.d.ts
+//
 // @public
-export type StreamSource = "none" | "camera" | "screen" | "window" | "session";
+export const StreamSource: typeof streamSourceValues;
+
+// @public
+export type StreamSource = (typeof StreamSource)[keyof typeof StreamSource];
+
+// @public
+const streamSourceValues: {
+    readonly None: "none";
+    readonly Camera: "camera";
+    readonly Screen: "screen";
+    readonly Window: "window";
+    readonly Session: "session";
+};
 
 // @public
 export interface StreamStoppedEvent {
-    readonly cause: "server" | "stopped" | "gone";
+    readonly cause: typeof StreamEndCause.Server | typeof StreamEndCause.Stopped | typeof StreamEndCause.Gone;
     readonly info: StreamInfo;
     readonly reason: number;
 }
@@ -237,8 +381,13 @@ export class StreamsUnsupportedError extends TeamspeakError {
     readonly version: string;
 }
 
+// Warning: (ae-forgotten-export) The symbol "streamTransportValues" needs to be exported by the entry point index.d.ts
+//
 // @public
-export type StreamTransport = "p2p";
+export const StreamTransport: typeof streamTransportValues;
+
+// @public
+export type StreamTransport = (typeof StreamTransport)[keyof typeof StreamTransport];
 
 // @public
 export class StreamTransportUnsupportedError extends TeamspeakError {
@@ -248,6 +397,11 @@ export class StreamTransportUnsupportedError extends TeamspeakError {
     readonly streamId: string;
     readonly transport: number;
 }
+
+// @public
+const streamTransportValues: {
+    readonly P2P: "p2p";
+};
 
 // @public
 export interface StreamView extends Peer {
@@ -270,8 +424,18 @@ export interface StreamWarning {
     readonly streamId: string;
 }
 
+// Warning: (ae-forgotten-export) The symbol "streamWarningCodeValues" needs to be exported by the entry point index.d.ts
+//
 // @public
-export type StreamWarningCode = "offer-without-audio";
+export const StreamWarningCode: typeof streamWarningCodeValues;
+
+// @public
+export type StreamWarningCode = (typeof StreamWarningCode)[keyof typeof StreamWarningCode];
+
+// @public
+const streamWarningCodeValues: {
+    readonly OfferWithoutAudio: "offer-without-audio";
+};
 
 // @public
 export interface ViewerIdentity {
