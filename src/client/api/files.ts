@@ -134,6 +134,21 @@ function transferOptions(options: FileTransferOptions): FileTransferOptions {
   };
 }
 
+/**
+ * How much of a file in memory is handed to the transfer at a time. The
+ * `progress` hook counts the bytes as they go out; the whole file as one chunk
+ * would be counted, at once, before it was sent.
+ */
+const UPLOAD_CHUNK_BYTES = 64 * 1024;
+
+/** The file in chunks of UPLOAD_CHUNK_BYTES, one empty chunk for an empty file. */
+function* chunksOf(data: Uint8Array): Generator<Uint8Array> {
+  if (data.length === 0) yield data;
+  for (let at = 0; at < data.length; at += UPLOAD_CHUNK_BYTES) {
+    yield data.subarray(at, at + UPLOAD_CHUNK_BYTES);
+  }
+}
+
 function sizeOf(data: Uint8Array | Readable, declared: bigint | number | undefined): bigint {
   const size = declared === undefined ? undefined : BigInt(declared);
   if (size !== undefined && (size < 0n || !Number.isInteger(Number(declared)))) {
@@ -218,7 +233,7 @@ export async function uploadFile(
   // the transfer to refuse.
   const skip = Number(info.seekPosition);
   let source: Readable;
-  if (data instanceof Uint8Array) source = Readable.from([data.subarray(skip)]);
+  if (data instanceof Uint8Array) source = Readable.from(chunksOf(data.subarray(skip)));
   else if (skip === 0) source = data;
   else source = pipeline(data, skipBytes(skip), () => {});
   await withDialCleanup(client, info.serverFileTransferID, () =>

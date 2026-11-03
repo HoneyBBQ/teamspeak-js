@@ -190,7 +190,7 @@ default case.
 An API that may still change in a minor release is marked `@experimental` in its TSDoc,
 which editors and the API reference show. Today that is the whole
 `@honeybbq/teamspeak/query` entry point, the server view (`client.view` and the
-view events), the `previous` field of the client-left and channel-deleted
+view events), `ChannelTree`, the `previous` field of the client-left and channel-deleted
 events, and `getServerVariables`.
 
 ## Server behaviour the SDK works around

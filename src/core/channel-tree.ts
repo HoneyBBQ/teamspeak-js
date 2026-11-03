@@ -53,6 +53,8 @@ interface Draft {
  *
  * To follow a server through a ServerQuery connection, build the tree from
  * `listChannels` and apply the four channel events to it, each with its own method.
+ *
+ * @experimental New in 1.x and may change in a minor release.
  */
 export class ChannelTree {
   readonly #channels: ReadonlyMap<ChannelID, Channel>;
