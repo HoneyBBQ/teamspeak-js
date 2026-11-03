@@ -9,7 +9,7 @@ export {
   hash512,
   importPublicKey,
 } from "./identity.js";
-export type { UIDAlgorithm } from "./identity.js";
+export { UIDAlgorithm } from "./identity.js";
 export { Crypt } from "./crypt.js";
 export type { KeyNonce } from "./crypt.js";
 export { EAX, aesCmac } from "./eax.js";

@@ -111,12 +111,55 @@ export interface QueryClientOptions {
     readonly transport: QueryTransportOptions;
 }
 
+// Warning: (ae-forgotten-export) The symbol "queryEventCategoryValues" needs to be exported by the entry point index.d.ts
+//
 // @public
-export type QueryEventCategory = "server" | "channel" | "textserver" | "textchannel" | "textprivate" | "bans" | "tokenused";
+export const QueryEventCategory: typeof queryEventCategoryValues;
+
+// @public
+export type QueryEventCategory = (typeof QueryEventCategory)[keyof typeof QueryEventCategory];
+
+// @public
+const queryEventCategoryValues: {
+    readonly Server: "server";
+    readonly Channel: "channel";
+    readonly TextServer: "textserver";
+    readonly TextChannel: "textchannel";
+    readonly TextPrivate: "textprivate";
+    readonly Bans: "bans";
+    readonly TokenUsed: "tokenused";
+};
 
 // @public
 export interface QueryEventMap extends ServerEventMap, SessionEventMap {
 }
+
+// Warning: (ae-forgotten-export) The symbol "queryEventNameValues" needs to be exported by the entry point index.d.ts
+//
+// @public
+export const QueryEventName: typeof queryEventNameValues;
+
+// @public
+export type QueryEventName = (typeof QueryEventName)[keyof typeof QueryEventName];
+
+// @public
+const queryEventNameValues: {
+    readonly TextMessage: "textMessage";
+    readonly ClientEnter: "clientEnter";
+    readonly ClientLeave: "clientLeave";
+    readonly ClientMoved: "clientMoved";
+    readonly ChannelCreated: "channelCreated";
+    readonly ChannelEdited: "channelEdited";
+    readonly ChannelMoved: "channelMoved";
+    readonly ChannelDeleted: "channelDeleted";
+    readonly ChannelDescriptionChanged: "channelDescriptionChanged";
+    readonly ChannelPasswordChanged: "channelPasswordChanged";
+    readonly ServerEdited: "serverEdited";
+    readonly Notification: "notification";
+    readonly Connected: "connected";
+    readonly Disconnected: "disconnected";
+    readonly Kicked: "kicked";
+};
 
 // @public
 export type QueryEventsOption = boolean | {

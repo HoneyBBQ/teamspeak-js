@@ -44,8 +44,18 @@ export function failedToConnect(error: unknown): boolean {
   return typeof error === "object" && error !== null && failedBeforeConnect.has(error);
 }
 
+/** The values of the table below, before freezing. */
+const fileTransferStageValues = {
+  /** Reaching the transfer port, before the key is written. */
+  Dial: "dial",
+  /** After the connection opened, while the key or the file moved. */
+  Transfer: "transfer",
+} as const;
 /** Where a failed transfer failed. */
-export type FileTransferStage = "dial" | "transfer";
+export const FileTransferStage: typeof fileTransferStageValues =
+  /* @__PURE__ */ Object.freeze(fileTransferStageValues);
+/** One of {@link FileTransferStage}. */
+export type FileTransferStage = (typeof FileTransferStage)[keyof typeof FileTransferStage];
 
 /** The file transfer port is about to be dialled. */
 export interface FileTransferDialStartInfo {

@@ -22,10 +22,9 @@
  * @packageDocumentation
  */
 
-export { QueryClient } from "./client.js";
+export { QueryClient, QueryEventCategory, QueryEventName } from "./client.js";
 export type {
   QueryClientOptions,
-  QueryEventCategory,
   QueryEventMap,
   QueryEventsOption,
   QueryTransportOptions,

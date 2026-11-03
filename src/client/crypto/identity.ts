@@ -246,6 +246,13 @@ function generateKey(): KeyObject {
   return generateKeyPairSync("ec", { namedCurve: "prime256v1" }).privateKey;
 }
 
+/** The values of the table below, before freezing. */
+const uidAlgorithmValues = {
+  /** SHA-1, 20 bytes: a TeamSpeak 3 server. */
+  SHA1: "sha1",
+  /** SHA-256, 32 bytes: a TeamSpeak 6 server. */
+  SHA256: "sha256",
+} as const;
 /**
  * The hash a server uses for `client_unique_identifier`, keyed by the server's
  * major version.
@@ -254,16 +261,20 @@ function generateKey(): KeyObject {
  * 6 switched to SHA-256 (32 bytes). The algorithm is not negotiable on the
  * wire, so a client that guesses wrong computes a UID that matches nothing the
  * server ever sends — self-identification by UID silently fails.
- *
- * May gain members in a minor release, should a server generation change the
- * hash again: a `switch` over it needs a default case.
  */
-export type UIDAlgorithm = "sha1" | "sha256";
+export const UIDAlgorithm: typeof uidAlgorithmValues =
+  /* @__PURE__ */ Object.freeze(uidAlgorithmValues);
+/**
+ * One of {@link UIDAlgorithm}. May gain members in a minor release, should a
+ * server generation change the hash again: a `switch` over it needs a default
+ * case.
+ */
+export type UIDAlgorithm = (typeof UIDAlgorithm)[keyof typeof UIDAlgorithm];
 
 /** Pick the UID hash from a `virtualserver_version` string, e.g. "6.0.0-beta13.1". */
 export function uidAlgorithmForVersion(version: string): UIDAlgorithm {
   const major = Number.parseInt(version, 10);
-  return Number.isNaN(major) || major < 6 ? "sha1" : "sha256";
+  return Number.isNaN(major) || major < 6 ? UIDAlgorithm.SHA1 : UIDAlgorithm.SHA256;
 }
 
 /**

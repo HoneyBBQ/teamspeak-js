@@ -366,8 +366,19 @@ export interface FileTransferProgressInfo {
 // @public
 export type FileTransferSocketFactory = (host: string, port: number) => Duplex;
 
+// Warning: (ae-forgotten-export) The symbol "fileTransferStageValues" needs to be exported by the entry point index.d.ts
+//
 // @public
-export type FileTransferStage = "dial" | "transfer";
+export const FileTransferStage: typeof fileTransferStageValues;
+
+// @public
+export type FileTransferStage = (typeof FileTransferStage)[keyof typeof FileTransferStage];
+
+// @public
+const fileTransferStageValues: {
+    readonly Dial: "dial";
+    readonly Transfer: "transfer";
+};
 
 // @public
 export interface FileTransferTrace {
@@ -638,11 +649,22 @@ export function subscribeAllChannels(client: Client, options?: CommandOptions): 
 // @public
 export function subscribeChannel(client: Client, cid: ChannelID, options?: CommandOptions): Promise<void>;
 
+// Warning: (ae-forgotten-export) The symbol "uidAlgorithmValues" needs to be exported by the entry point index.d.ts
+//
 // @public
-export type UIDAlgorithm = "sha1" | "sha256";
+export const UIDAlgorithm: typeof uidAlgorithmValues;
+
+// @public
+export type UIDAlgorithm = (typeof UIDAlgorithm)[keyof typeof UIDAlgorithm];
 
 // @public
 export function uidAlgorithmForVersion(version: string): UIDAlgorithm;
+
+// @public
+const uidAlgorithmValues: {
+    readonly SHA1: "sha1";
+    readonly SHA256: "sha256";
+};
 
 // @public
 export function uidFromPublicKey(publicKey: string, algorithm: UIDAlgorithm): UID;
@@ -693,8 +715,21 @@ export interface ViewReadyEvent {
     readonly revision: number;
 }
 
+// Warning: (ae-forgotten-export) The symbol "viewStatusValues" needs to be exported by the entry point index.d.ts
+//
 // @public
-export type ViewStatus = "empty" | "loading" | "live" | "stale";
+export const ViewStatus: typeof viewStatusValues;
+
+// @public
+export type ViewStatus = (typeof ViewStatus)[keyof typeof ViewStatus];
+
+// @public
+const viewStatusValues: {
+    readonly Empty: "empty";
+    readonly Loading: "loading";
+    readonly Live: "live";
+    readonly Stale: "stale";
+};
 
 // @public
 export interface VoiceOptions {

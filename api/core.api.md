@@ -1072,8 +1072,20 @@ export interface ConnectedEvent {
     readonly reconnected: boolean;
 }
 
+// Warning: (ae-forgotten-export) The symbol "connectionTrafficClassValues" needs to be exported by the entry point index.d.ts
+//
 // @public
-export type ConnectionTrafficClass = "speech" | "keepalive" | "control";
+export const ConnectionTrafficClass: typeof connectionTrafficClassValues;
+
+// @public
+export type ConnectionTrafficClass = (typeof ConnectionTrafficClass)[keyof typeof ConnectionTrafficClass];
+
+// @public
+const connectionTrafficClassValues: {
+    readonly Speech: "speech";
+    readonly Keepalive: "keepalive";
+    readonly Control: "control";
+};
 
 // @public
 export const consoleLogger: Logger;
@@ -3048,11 +3060,23 @@ export interface ServerEventMap {
     textMessage: TextMessageEvent;
 }
 
+// Warning: (ae-forgotten-export) The symbol "serverFamilyValues" needs to be exported by the entry point index.d.ts
+//
 // @public
-export type ServerFamily = "ts3" | "ts6" | "unknown";
+export const ServerFamily: typeof serverFamilyValues;
+
+// @public
+export type ServerFamily = (typeof ServerFamily)[keyof typeof ServerFamily];
 
 // @public
 export function serverFamilyForVersion(version: string): ServerFamily;
+
+// @public
+const serverFamilyValues: {
+    readonly TS3: "ts3";
+    readonly TS6: "ts6";
+    readonly Unknown: "unknown";
+};
 
 // @public
 export type ServerFileTransferID = number & {

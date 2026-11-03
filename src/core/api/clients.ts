@@ -270,8 +270,21 @@ export async function getClientProperties(
   return firstRow(rows, "clientinfo");
 }
 
+/** The values of the table below, before freezing. */
+const connectionTrafficClassValues = {
+  /** Voice and whisper packets. */
+  Speech: "speech",
+  /** Ping and pong packets. */
+  Keepalive: "keepalive",
+  /** Every other packet: commands, acknowledgements and the handshake. */
+  Control: "control",
+} as const;
 /** The three classes of traffic the server counts. */
-export type ConnectionTrafficClass = "speech" | "keepalive" | "control";
+export const ConnectionTrafficClass: typeof connectionTrafficClassValues =
+  /* @__PURE__ */ Object.freeze(connectionTrafficClassValues);
+/** One of {@link ConnectionTrafficClass}. */
+export type ConnectionTrafficClass =
+  (typeof ConnectionTrafficClass)[keyof typeof ConnectionTrafficClass];
 
 /** One direction of one class of a client's traffic, as the client reported it. */
 export interface ClientTraffic {
