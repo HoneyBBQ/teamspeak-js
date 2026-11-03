@@ -1237,7 +1237,9 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * connected, and a RangeError for no target at all, more than 32 clients,
    * more than 255 channels, or an id the packet cannot hold. Whether a target
    * hears it is the server's decision, from `i_client_whisper_power` against
-   * the target's `i_client_needed_whisper_power`.
+   * the target's `i_client_needed_whisper_power`. Talk power does not apply to
+   * a whisper, but the rest of what decides whether voice is relayed does: see
+   * `sendVoice`.
    */
   sendWhisper(data: Uint8Array, targets: WhisperTargets, codec: Codec): void {
     if (!this.#canSend(false)) throw new NotConnectedError();
@@ -1265,6 +1267,14 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * frame marks the end of speech: the server relays it, and listeners get a
    * `voiceData` event with empty `data`. Throws a NotConnectedError unless the
    * client is connected.
+   *
+   * The server relays it only while this client may talk in the channel, its
+   * `isTalker` set or its talk power at least the channel's needed talk power,
+   * and is not away, input-muted or without input hardware, as it last told
+   * the server with `updateClient`; otherwise the frame is dropped without an
+   * error. A listener gets it only while it is not output-muted and has
+   * output hardware. Subscribing to a channel does not bring its voice.
+   * Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 6.0.0-beta13.1.
    */
   sendVoice(data: Uint8Array, codec: Codec, options?: VoiceOptions): void {
     // Reserved: VoiceOptions has no fields to read yet.

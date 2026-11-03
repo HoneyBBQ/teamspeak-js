@@ -60,8 +60,14 @@ export async function getServerVariables(
 }
 
 /**
- * Subscribe to a channel: receive its clients' events and voice without
- * joining it.
+ * Subscribe to a channel: see its clients and their changes without joining
+ * it. It does not bring the channel's voice, which only reaches the clients
+ * in it. The server answers with `channelSubscribed`.
+ *
+ * The channel this client joins, and every channel it moves into, is
+ * subscribed without being asked and without a `channelSubscribed`, and
+ * leaving a channel keeps the subscription. Measured on TeamSpeak 3 3.13.8 and
+ * TeamSpeak 6 6.0.0-beta13.1.
  */
 export async function subscribeChannel(
   client: Client,
@@ -71,7 +77,12 @@ export async function subscribeChannel(
   await client.send({ command: "channelsubscribe", params: [["cid", cid]] }, options);
 }
 
-/** Stop receiving a subscribed channel's events and voice. */
+/**
+ * Stop seeing a subscribed channel's clients: the server answers with
+ * `channelUnsubscribed`, and sends no `clientLeftView` for them. The channel
+ * this client is in cannot be unsubscribed from: the command succeeds and
+ * changes nothing.
+ */
 export async function unsubscribeChannel(
   client: Client,
   cid: ChannelID,
@@ -80,7 +91,7 @@ export async function unsubscribeChannel(
   await client.send({ command: "channelunsubscribe", params: [["cid", cid]] }, options);
 }
 
-/** Subscribe to every channel on the server. */
+/** Subscribe to every channel on the server; the server answers with a `channelSubscribed` per channel it subscribes. */
 export async function subscribeAllChannels(
   client: Client,
   options?: CommandOptions,
@@ -88,7 +99,7 @@ export async function subscribeAllChannels(
   await client.send({ command: "channelsubscribeall" }, options);
 }
 
-/** Unsubscribe from every channel on the server. */
+/** Unsubscribe from every channel but the one this client is in: a `channelUnsubscribed` for each. */
 export async function unsubscribeAllChannels(
   client: Client,
   options?: CommandOptions,

@@ -95,8 +95,9 @@ export interface ViewChangedEvent {
  *   Their order is derived from the events, because the server changes the
  *   order of a sibling without announcing it. See `ChannelTree`.
  * - The clients are those the server announced and has not since withdrawn:
- *   the ones in the channel this client joined, and in every channel it
- *   subscribed to afterwards. The server does not say who is in the others,
+ *   the ones in the channels this client is subscribed to: the one it joined,
+ *   every one it moved into (leaving keeps the subscription), and every one it
+ *   subscribed to. The server does not say who is in the others,
  *   and does not say when a subscription ends, so the view drops a channel's
  *   clients when it sees `channelUnsubscribed`. It is not a list of everyone on
  *   the server; `listClients` is, for the moment it is called.

@@ -667,15 +667,15 @@ export interface ClientUpdateOptions {
   readonly nickname?: string | undefined;
   /** How the nickname is pronounced, for text-to-speech (`client_nickname_phonetic`). */
   readonly nicknamePhonetic?: string | undefined;
-  /** Whether our microphone is muted (`client_input_muted`). */
+  /** Whether our microphone is muted (`client_input_muted`). While it is, the server relays none of our voice or whispers. */
   readonly isInputMuted?: boolean | undefined;
-  /** Whether our speakers are muted (`client_output_muted`). */
+  /** Whether our speakers are muted (`client_output_muted`). While they are, the server sends us no voice or whispers. */
   readonly isOutputMuted?: boolean | undefined;
-  /** Whether we have a working microphone (`client_input_hardware`). */
+  /** Whether we have a working microphone (`client_input_hardware`). Without one, the server relays none of our voice or whispers. */
   readonly hasInputHardware?: boolean | undefined;
-  /** Whether we have working speakers (`client_output_hardware`). */
+  /** Whether we have working speakers (`client_output_hardware`). Without them, the server sends us no voice or whispers. */
   readonly hasOutputHardware?: boolean | undefined;
-  /** Whether we are away (`client_away`). */
+  /** Whether we are away (`client_away`). While we are, the server relays none of our voice or whispers; we still hear others. */
   readonly isAway?: boolean | undefined;
   /** The away message (`client_away_message`). */
   readonly awayMessage?: string | undefined;
