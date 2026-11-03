@@ -11,10 +11,10 @@ import { ConnectionStalledError } from "../errors.js";
 import { FakeSocket, completeCryptoInit, sessionPacket } from "../testing/fake-server.js";
 import { processInit1 } from "../handshake/crypt-handshake.js";
 import { PacketHandler } from "./handler.js";
-import { PacketFlags, PacketType } from "./packet.js";
+import { PacketFlags, PacketType, packetTypeOfByte } from "./packet.js";
 
 function commandsSent(socket: FakeSocket): Uint8Array[] {
-  return socket.sent.filter((data) => ((data[12]! & 0x0f) as PacketType) === PacketType.Command);
+  return socket.sent.filter((data) => packetTypeOfByte(data[12]!) === PacketType.Command);
 }
 
 describe("robustness of the packet handler", () => {

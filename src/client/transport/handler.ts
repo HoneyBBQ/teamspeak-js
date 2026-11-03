@@ -10,6 +10,7 @@ import {
   PacketType,
   PacketFlags,
   packetType,
+  packetTypeOfByte,
   packetFlags,
   buildC2SHeader,
   parseS2CHeader,
@@ -563,7 +564,7 @@ export class PacketHandler {
     if (!this.#conn) return;
     if (data.length > TAG_SIZE + HEADER_SIZE - 1) {
       this.#traffic.recordSent(
-        data[TAG_SIZE + HEADER_SIZE - 1]! & 0x0f,
+        packetTypeOfByte(data[TAG_SIZE + HEADER_SIZE - 1]!),
         data.length,
         performance.now(),
       );
@@ -597,7 +598,7 @@ export class PacketHandler {
     const parsed = parseS2CHeader(header);
     // Init1 belongs to the start of the handshake; once crypto init has
     // completed, another one can only restart a session that is already set up.
-    const parsedType: PacketType = parsed.typeFlagged & 0x0f;
+    const parsedType = packetTypeOfByte(parsed.typeFlagged);
     if (parsedType === PacketType.Init1 && this.#crypt.cryptoInitComplete) return;
 
     const p: Packet = {

@@ -13,9 +13,9 @@ import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import type * as TS from "typescript";
 
-// The compiler API ships with TypeScript 5's JavaScript implementation; the
+// The compiler API ships with TypeScript 6's JavaScript implementation; the
 // repository builds with TypeScript 7, which has none, so this loads the API
-// the same way a bundler plugin would, from a 5.x copy.
+// the same way a bundler plugin would, from a 6.x copy.
 const require = createRequire(import.meta.url);
 const ts = require("typescript-api") as typeof TS;
 

@@ -107,24 +107,24 @@
     "@changesets/changelog-github": "^1.0.1",
     "@changesets/cli": "^3.0.3",
     "@honeybbq/teamspeak": "link:.",
-    "@microsoft/api-extractor": "7.59.4",
-    "@types/node": "^26.6.5",
+    "@microsoft/api-extractor": "7.60.1",
+    "@types/node": "^26.6.6",
     "@types/ssh2": "^1.15.6",
     "@vitest/coverage-v8": "5.0.5",
     "fast-check": "^4.10.2",
-    "oxfmt": "^0.74.0",
-    "oxlint": "^1.88.0",
-    "oxlint-tsgolint": "^7.0.2004",
+    "oxfmt": "^0.75.0",
+    "oxlint": "^1.90.0",
+    "oxlint-tsgolint": "^7.0.2005",
     "publint": "^0.3.25",
     "ssh2": "^1.17.0",
-    "tsx": "^4.21.0",
+    "tsx": "^4.23.15",
     "typedoc": "0.28.20",
     "typedoc-material-theme": "^1.4.1",
     "typescript": "^7.0.2",
-    "typescript-api": "npm:typescript@^5.9.3",
-    "vite": "^8.3.4",
+    "typescript-api": "npm:typescript@^6.0.3",
+    "vite": "^8.3.5",
     "vitest": "^5.0.5",
-    "werift": "^0.25.1"
+    "werift": "^0.25.2"
   },
   "peerDependencies": {
     "ssh2": "^1.17.0"
@@ -137,5 +137,5 @@
   "engines": {
     "node": ">=22.12"
   },
-  "packageManager": "pnpm@12.15.0"
+  "packageManager": "pnpm@12.16.1"
 }

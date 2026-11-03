@@ -419,7 +419,5 @@ describe.skipIf(SKIP)("Integration — one-call file transfers and the recursive
   );
 });
 
-const byPath = (
-  a: Array<string | boolean | bigint>,
-  b: Array<string | boolean | bigint>,
-): number => (String(a[0]) < String(b[0]) ? -1 : String(a[0]) > String(b[0]) ? 1 : 0);
+const byPath = (a: Array<string | boolean | bigint>, b: Array<string | boolean | bigint>): number =>
+  String(a[0]) < String(b[0]) ? -1 : String(a[0]) > String(b[0]) ? 1 : 0;
