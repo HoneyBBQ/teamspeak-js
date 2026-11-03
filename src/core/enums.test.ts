@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { BannerMode, BindingSubsystem, CodecEncryptionMode, VirtualServerStatus } from "./index.js";
+import {
+  BannerMode,
+  BindingSubsystem,
+  ClientStatus,
+  CodecEncryptionMode,
+  ErrorCode,
+  VirtualServerStatus,
+  isValueOf,
+} from "./index.js";
 
 describe("value tables", () => {
   it("are frozen and hold the values the servers use", () => {
@@ -24,5 +32,27 @@ describe("value tables", () => {
       Query: "query",
       FileTransfer: "filetransfer",
     });
+  });
+});
+
+describe("isValueOf", () => {
+  it("is true for exactly the table's values", () => {
+    expect([0, 1, 2].every((v) => isValueOf(BannerMode, v))).toBe(true);
+    expect(isValueOf(BannerMode, 3)).toBe(false);
+    expect(isValueOf(BindingSubsystem, "query")).toBe(true);
+    expect(isValueOf(ClientStatus, "connected")).toBe(true);
+    expect(isValueOf(ErrorCode, ErrorCode.OK)).toBe(true);
+  });
+
+  it("does not convert: text is not a number, and a member's name is not its value", () => {
+    expect(isValueOf(BannerMode, "2")).toBe(false);
+    expect(isValueOf(BannerMode, "AdjustKeepAspect")).toBe(false);
+    expect(isValueOf(VirtualServerStatus, "virtual online")).toBe(false);
+  });
+
+  it("is false for anything that is not a value", () => {
+    for (const v of [undefined, null, NaN, {}, [], 2n, true]) {
+      expect(isValueOf(BannerMode, v)).toBe(false);
+    }
   });
 });

@@ -289,10 +289,17 @@ export function encodeFields<T extends object>(fields: T, names: WireNames<T>): 
   return out;
 }
 
-/** Raw wire properties, sent as given; a value that is not a string is left out. */
-export const rawProperties = (settings: Readonly<Record<string, string>>): Params =>
-  Object.entries(settings).filter(
-    (entry): entry is [string, string] => typeof entry[1] === "string",
+/** The kinds of value a raw property is sent as. */
+const propertyKinds: ReadonlySet<string> = new Set(["string", "number", "bigint", "boolean"]);
+
+/**
+ * Raw wire properties, sent as given: a string as is, a number or bigint in
+ * decimal, a boolean as 1 or 0. Any other value, undefined among them, is left
+ * out.
+ */
+export const rawProperties = (settings: Readonly<Record<string, unknown>>): Params =>
+  Object.entries(settings).filter((entry): entry is [string, string | number | bigint | boolean] =>
+    propertyKinds.has(typeof entry[1]),
   );
 
 /** An encoder that omits an empty string instead of sending it. */

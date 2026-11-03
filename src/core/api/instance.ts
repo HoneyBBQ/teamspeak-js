@@ -27,6 +27,7 @@ import {
   SECOND,
 } from "./command.js";
 import type { WireNames } from "./command.js";
+import type { ServerSettings } from "./server.js";
 import type { CommandExecutor, CommandOptions } from "../command/request.js";
 import type { ChannelID, ServerID } from "../command/ids.js";
 import { asChannelID, asServerID } from "../command/ids.js";
@@ -166,7 +167,7 @@ export interface ServerCreated {
 export async function createServer(
   client: CommandExecutor,
   name: string,
-  settings: Readonly<Record<string, string>> = {},
+  settings: ServerSettings = {},
   options?: CommandOptions,
 ): Promise<ServerCreated> {
   const rows = await query(

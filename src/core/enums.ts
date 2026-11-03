@@ -10,6 +10,11 @@
  * since a server may send a value newer than this table — compare it against
  * the names (`group.type === GroupType.Query`).
  *
+ * The values are the server's own, plain numbers and strings, so they are what
+ * to store: one written to JSON or a database reads back unchanged. A value read
+ * back is a `number` or `string` to TypeScript; {@link isValueOf} narrows it to
+ * the table's type before it is passed as a parameter.
+ *
  * Every table, and `ErrorCode` and `Reason` with them, may gain members in a
  * minor release: a `switch` over one needs a default case.
  */
@@ -294,3 +299,24 @@ export const BindingSubsystem: typeof bindingSubsystemValues =
 
 /** A binding subsystem. */
 export type BindingSubsystem = (typeof BindingSubsystem)[keyof typeof BindingSubsystem];
+
+/**
+ * Whether `value` is one of `table`'s values, narrowing it to the table's type.
+ * For a value from outside the program, such as one read back from storage or
+ * a configuration file, before it is passed where the table's type is taken:
+ *
+ * ```ts
+ * if (!isValueOf(BannerMode, row.bannerMode)) throw new Error(`bad banner mode ${row.bannerMode}`);
+ * await editChannel(client, cid, { bannerMode: row.bannerMode });
+ * ```
+ *
+ * It takes any of the SDK's tables, of any entry point, and compares with
+ * `===`: a number kept as text, `"2"`, is not the number `2`, so a value stored
+ * in another form is converted first.
+ */
+export function isValueOf<T extends Readonly<Record<string, string | number>>>(
+  table: T,
+  value: unknown,
+): value is T[keyof T] {
+  return (Object.values(table) as unknown[]).includes(value);
+}

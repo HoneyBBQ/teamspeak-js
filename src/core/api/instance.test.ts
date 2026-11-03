@@ -10,11 +10,16 @@ import {
   stopInstance,
   stopServer,
 } from "./instance.js";
-import { addServerGroupPermissionByType, deleteServerGroupPermissionByType } from "./server.js";
+import {
+  addServerGroupPermissionByType,
+  deleteServerGroupPermissionByType,
+  editInstance,
+  editServer,
+} from "./server.js";
 import { asChannelID, asServerID } from "../command/ids.js";
 import { encodeRequest } from "../command/request.js";
 import type { CommandExecutor, CommandRequest } from "../command/request.js";
-import { GroupAutoUpdateType } from "../enums.js";
+import { BannerMode, GroupAutoUpdateType } from "../enums.js";
 import { permissionByName } from "../permission.js";
 
 /** An executor that records each request as the wire line it encodes to, answering from a queue. */
@@ -90,6 +95,29 @@ describe("virtual servers", () => {
       port: 9987,
       token: "KU5HLgrv6lJLSxKc0DECLsFERXuY0RwJmYF1HthX",
     });
+  });
+
+  it("sends raw settings as text: numbers in decimal, booleans as 1 or 0", async () => {
+    const { client, sent } = recording();
+    await editServer(client, {
+      virtualserver_hostbanner_mode: BannerMode.AdjustKeepAspect,
+      virtualserver_weblist_enabled: false,
+      virtualserver_max_download_total_bandwidth: 18446744073709551615n,
+      virtualserver_name: "Ü x",
+      virtualserver_hostmessage: undefined,
+    });
+    await editInstance(client, { serverinstance_serverquery_flood_commands: 50 });
+    expect(sent).toEqual([
+      "serveredit virtualserver_hostbanner_mode=2 virtualserver_weblist_enabled=0 virtualserver_max_download_total_bandwidth=18446744073709551615 virtualserver_name=Ü\\sx",
+      "instanceedit serverinstance_serverquery_flood_commands=50",
+    ]);
+  });
+
+  it("leaves out a raw setting that is not a primitive", async () => {
+    const { client, sent } = recording();
+    const fromJavaScript = { virtualserver_name: "x", virtualserver_maxclients: { n: 5 } };
+    await editServer(client, fromJavaScript as unknown as Parameters<typeof editServer>[1]);
+    expect(sent).toEqual(["serveredit virtualserver_name=x"]);
   });
 
   it("lists servers with the flags given", async () => {

@@ -73,6 +73,7 @@ export {
   ClientType,
   Codec,
   CodecEncryptionMode,
+  isValueOf,
   GroupAutoUpdateType,
   GroupNameMode,
   GroupType,

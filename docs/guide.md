@@ -181,14 +181,30 @@ while `""` sends it empty — `editChannel(client, cid, { password: "" })` clear
 a password. A key an options type does not name is never sent. The exceptions
 are `editServer` and `editInstance`, which take the raw `virtualserver_*` and
 `serverinstance_*` properties as `getServerInfo` reports them; `PropertyName` names
-the keys.
+the keys. A value there may be a string, a number or a boolean (sent as 1 or 0),
+so a table's constant goes in as it is:
+`editServer(client, { [PropertyName.VirtualServerHostBannerMode]: BannerMode.AdjustKeepAspect })`.
 
 Results are camelCase too. Timestamps are `Date`s (`undefined` where the server
 sends 0 for "never"), durations are milliseconds with an `Ms` suffix
 (`idleTimeMs`, `durationMs`), and a permission is a `Permission`, built with
 `permissionByID` or `permissionByName`. Small enumerations — `GroupType`,
 `Codec`, `PrivilegeKeyType`, `LogLevel` and the rest — are objects of named values with
-a type of the same name.
+a type of the same name. A parameter takes the type, so a typo does not compile; a
+result carries a plain `number` or `string`, since a server may send a value newer
+than the table.
+
+The values are the server's own numbers and strings, so they are what to store:
+written to JSON or a database, they read back unchanged. What reads back is a plain
+`number` or `string` to TypeScript, and `isValueOf` checks it against a table and
+narrows it before it is passed as a parameter:
+
+```ts
+import { BannerMode, editChannel, isValueOf } from "@honeybbq/teamspeak";
+
+if (!isValueOf(BannerMode, saved.bannerMode)) throw new Error("unknown banner mode");
+await editChannel(client, cid, { bannerMode: saved.bannerMode });
+```
 
 | Module       | Covers                                                         |
 | ------------ | -------------------------------------------------------------- |
