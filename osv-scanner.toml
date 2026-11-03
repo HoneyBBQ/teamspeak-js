@@ -1,0 +1,4 @@
+[[IgnoredVulns]]
+id = "GHSA-g3hv-75wg-m249"
+ignoreUntil = 2027-02-01
+reason = "minimatch 10.x is reached only through @microsoft/api-extractor and typedoc, which run at build time and are not shipped. The glob patterns they match come from this repository's own config. The fix is minimatch 11.0.1, but typedoc 0.28.20 breaks on minimatch 11 (mini.matchOne is not a function) and neither tool has released a version that uses it. Revisit when they do."
