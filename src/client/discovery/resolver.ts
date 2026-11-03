@@ -29,6 +29,18 @@ const TSDNS_TIMEOUT_MS = 3_000;
  */
 export const MAX_DISCOVERY_RESPONSE: number = 8 * 1024;
 
+/** An SRV record, as `resolveSrv` gives it. */
+export interface SrvRecord {
+  /** The target host; a trailing dot is allowed. */
+  readonly name: string;
+  /** The target's port. */
+  readonly port: number;
+  /** Lower is tried first. */
+  readonly priority: number;
+  /** Among records of one priority, the higher is tried first more often. */
+  readonly weight: number;
+}
+
 /** How the default resolver resolves. */
 export interface ResolverOptions {
   /** Look dot-less names up at named.myteamspeak.com; off by default. */
@@ -42,6 +54,23 @@ export interface ResolverOptions {
    * a TypeError.
    */
   readonly nicknameService?: string | URL | undefined;
+  /**
+   * Answers the SRV lookups, for DNS over HTTPS, another DNS server, or a
+   * test; the default is the system's `resolveSrv`. It answers every SRV
+   * lookup the resolver makes (`_ts3._udp.<host>` and `_tsdns._tcp.<domain>`),
+   * called with the full name and the resolution's signal. A rejection or an
+   * empty list means no record. One that ignores the signal cannot hold
+   * resolution up. The host names in the answers, and the TSDNS servers'
+   * names, are still looked up by the system.
+   */
+  readonly resolveSrv?:
+    | ((name: string, options: { readonly signal: AbortSignal }) => Promise<readonly SrvRecord[]>)
+    | undefined;
+  /**
+   * The `fetch` the nickname lookup uses, for a proxy or a test; the default
+   * is the global `fetch`. Used only with `nicknameLookup`.
+   */
+  readonly fetch?: typeof globalThis.fetch | undefined;
 }
 
 /**
@@ -54,8 +83,18 @@ export class Resolver implements AddrResolver {
   readonly #cache = new Map<string, ResolvedAddr[]>();
   readonly #nicknameLookup: boolean;
   readonly #nicknameService: URL;
+  readonly #resolveSrv: NonNullable<ResolverOptions["resolveSrv"]>;
+  readonly #fetch: ResolverOptions["fetch"];
 
   constructor(options: ResolverOptions = {}) {
+    if (options.resolveSrv !== undefined && typeof options.resolveSrv !== "function") {
+      throw new TypeError("resolveSrv is a function");
+    }
+    if (options.fetch !== undefined && typeof options.fetch !== "function") {
+      throw new TypeError("fetch is a function");
+    }
+    this.#resolveSrv = options.resolveSrv ?? ((name) => resolveSrv(name));
+    this.#fetch = options.fetch;
     this.#nicknameLookup = options.nicknameLookup ?? false;
     this.#nicknameService = parseNicknameService(options.nicknameService ?? NICKNAME_LOOKUP_URL);
   }
@@ -101,7 +140,7 @@ export class Resolver implements AddrResolver {
     // service can answer: asking it sends the name to a third party, so it is
     // opt-in. Otherwise the name is resolved like any host.
     if (nicknames && this.#nicknameLookup && !host.includes(".") && host !== "localhost") {
-      const nickAddr = await resolveNickname(host, this.#nicknameService, signal);
+      const nickAddr = await resolveNickname(host, this.#nicknameService, signal, this.#fetch);
       signal.throwIfAborted();
       if (nickAddr) return this.#resolve(nickAddr, signal, false);
     }
@@ -153,9 +192,19 @@ export class Resolver implements AddrResolver {
     return withExpiry;
   }
 
+  /** One SRV lookup, however it is answered, ended by the signal. */
+  async #srv(name: string, signal: AbortSignal | undefined): Promise<readonly SrvRecord[]> {
+    // The signal is always the resolution's; a custom lookup is given one too.
+    const lookup = signal ?? new AbortController().signal;
+    return abortable(
+      Promise.resolve().then(() => this.#resolveSrv(name, { signal: lookup })),
+      signal,
+    );
+  }
+
   async #resolveSRV(host: string, signal?: AbortSignal): Promise<ResolvedAddr[] | null> {
     try {
-      const srvs = await abortable(resolveSrv(`_ts3._udp.${host}`), signal);
+      const srvs = await this.#srv(`_ts3._udp.${host}`, signal);
       if (!srvs || srvs.length === 0) return null;
       return orderSrvRecords(srvs).map((srv) => ({
         addr: joinHostPort(srv.name.replace(/\.$/, ""), String(srv.port)),
@@ -174,7 +223,7 @@ export class Resolver implements AddrResolver {
   ): Promise<string[]> {
     for (const domain of domains) {
       try {
-        const srvs = await abortable(resolveSrv(`_tsdns._tcp.${domain}`), signal);
+        const srvs = await this.#srv(`_tsdns._tcp.${domain}`, signal);
         if (!srvs || srvs.length === 0) continue;
         for (const srv of orderSrvRecords(srvs)) {
           const tsdnsAddr = joinHostPort(srv.name.replace(/\.$/, ""), String(srv.port));
@@ -243,7 +292,7 @@ export function normalizeTSDNSEntries(entries: readonly string[], port: string):
 // ---- Helpers ----------------------------------------------------------------
 
 /** The part of an SRV record that decides the order they are tried in. */
-interface SrvRecord {
+interface SrvOrder {
   readonly priority: number;
   readonly weight: number;
 }
@@ -258,7 +307,7 @@ interface SrvRecord {
  * @param random Returns a number in [0, 1); injected to make the order testable.
  * @internal
  */
-export function orderSrvRecords<T extends SrvRecord>(
+export function orderSrvRecords<T extends SrvOrder>(
   records: readonly T[],
   random: () => number = Math.random,
 ): T[] {
@@ -312,12 +361,13 @@ export async function resolveNickname(
   nickname: string,
   service: URL,
   signal?: AbortSignal,
+  fetchImpl?: typeof globalThis.fetch,
 ): Promise<string | null> {
   try {
     const url = new URL(service);
     url.searchParams.set("name", nickname);
     const init: RequestInit = signal ? { signal } : {};
-    const resp = await fetch(url.toString(), init);
+    const resp = await (fetchImpl ?? globalThis.fetch)(url.toString(), init);
     if (!resp.ok) return null;
     const text = await readLimited(resp, MAX_DISCOVERY_RESPONSE);
     const line = text.split("\n")[0]?.trim();

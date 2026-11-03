@@ -37,6 +37,24 @@ describe("Resolver", () => {
     expect(looked[0]?.addr).toBe("10.0.0.1:9987");
   });
 
+  it("uses a custom fetch for the nickname lookup, not the global one", async () => {
+    const global = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("10.0.0.9:9987"));
+    const custom = vi.fn<typeof fetch>().mockResolvedValue(new Response("10.0.0.1:9987"));
+
+    const answer = await new Resolver({ nicknameLookup: true, fetch: custom }).resolve("mybox");
+
+    expect(answer[0]?.addr).toBe("10.0.0.1:9987");
+    expect(custom).toHaveBeenCalledOnce();
+    expect(custom.mock.calls[0]![0]).toBe("https://named.myteamspeak.com/lookup?name=mybox");
+    expect(global).not.toHaveBeenCalled();
+  });
+
+  it("throws a TypeError for a resolveSrv or fetch that is not a function", () => {
+    const bad = "nope" as never;
+    expect(() => new Resolver({ resolveSrv: bad })).toThrow(TypeError);
+    expect(() => new Resolver({ fetch: bad })).toThrow(TypeError);
+  });
+
   describe("nicknameService", () => {
     const http: Array<{ close(): void }> = [];
     afterEach(() => {
