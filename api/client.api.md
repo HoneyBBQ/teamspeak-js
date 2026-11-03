@@ -95,7 +95,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     downloadFileData(host: string, info: FileDownloadInfo, dest: Writable, options?: Pick<FileTransferOptions, "signal" | "trace" | "idleTimeoutMs">): Promise<void>;
     events<K extends keyof EventMap>(event: K, options?: {
         readonly signal?: AbortSignal | undefined;
-    }): AsyncIterableIterator<EventMap[K]>;
+    }): EventIterator<EventMap[K]>;
     exec(command: string, options?: CommandOptions): Promise<Record<string, string>[]>;
     execNoWait(command: string, options?: {
         readonly signal?: AbortSignal | undefined;
@@ -108,6 +108,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     sendVoice(data: Uint8Array, codec: Codec, options?: VoiceOptions): void;
     sendWhisper(data: Uint8Array, targets: WhisperTargets, codec: Codec): void;
     get serverCapabilities(): ServerCapabilities;
+    get session(): number;
     get status(): ClientStatus;
     get uid(): UID;
     uploadFileData(host: string, info: FileUploadInfo, data: Readable, options?: Pick<FileTransferOptions, "signal" | "trace" | "idleTimeoutMs">): Promise<void>;
@@ -255,6 +256,11 @@ export interface DownloadFileOptions extends FileDownloadOptions, FileTransferOp
 
 // @public
 export function downloadIcon(client: Client, id: IconID, options?: AvatarTransferOptions): Promise<Uint8Array | undefined>;
+
+// @public
+export interface EventIterator<T> extends AsyncIterableIterator<T> {
+    readonly dropped: number;
+}
 
 // @public
 export interface EventMap extends ServerEventMap, SessionEventMap {

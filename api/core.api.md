@@ -3406,6 +3406,10 @@ export interface VoiceDataEvent {
     readonly clientID: ClientID;
     readonly codec: number;
     readonly data: Uint8Array;
+    readonly receivedAt: number;
+    readonly seq: number;
+    readonly session: number;
+    readonly whisper: boolean;
 }
 
 // @public
