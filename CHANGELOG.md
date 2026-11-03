@@ -4,6 +4,14 @@ Until 1.0.0-beta.4 this package was published as `@honeybbq/teamspeak-core`, and
 `@honeybbq/teamspeak-client` was a second package. The sections below, down to
 the last version heading, are the core's history; the client's is at the bottom.
 
+## 1.0.0-beta.24
+
+### Minor Changes
+
+- [#182](https://github.com/HoneyBBQ/teamspeak-js/pull/182) [`1695e7c`](https://github.com/HoneyBBQ/teamspeak-js/commit/1695e7ce41ad4df082f0b203e7571d484840da48) - `ResolverOptions.resolveSrv` takes over the resolver's SRV lookups (`_ts3._udp.<host>` and `_tsdns._tcp.<domain>`), for DNS over HTTPS, another DNS server or a test. It is called with the full name and the resolution's signal and returns `SrvRecord`s, which is now exported from `@honeybbq/teamspeak/client`; a rejection or an empty list means no record, and one that ignores the signal cannot hold resolution up.
+
+  `ResolverOptions.fetch` replaces the global `fetch` for the nickname lookup, for a proxy or a test. A `resolveSrv` or `fetch` that is not a function throws a TypeError.
+
 ## 1.0.0-beta.23
 
 ### Minor Changes
