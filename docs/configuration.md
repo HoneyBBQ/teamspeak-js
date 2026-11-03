@@ -23,6 +23,22 @@ Address resolution — the built-in one or a custom `resolver` — has ten secon
 in all: the `signal` a resolver is given aborts then, and the client connects
 to the address as given.
 
+The built-in resolver is exported as `Resolver`, so an address can be resolved
+without a client, and `lookupTSDNS` asks one TSDNS server for a name's targets.
+An entry without a port means 9987 and the port `$PORT` means the port of the
+address being resolved; the resolver applies both, `lookupTSDNS` returns the
+entries as the server sent them.
+
+`new Resolver({ nicknameLookup: true, nicknameService })` looks dot-less names up at
+`nicknameService`, an http: or https: URL, instead of at named.myteamspeak.com.
+
+```typescript
+import { Resolver, lookupTSDNS } from "@honeybbq/teamspeak/client";
+
+const addrs = await new Resolver().resolve("ts.example.com"); // [{ addr, source }, ...]
+const targets = await lookupTSDNS("tsdns.example.com", "ts.example.com"); // ["1.2.3.4:9987"], or []
+```
+
 `commandMiddleware` wraps the typed commands: each middleware receives the
 request (its command name and parameters) with its options and returns the
 answering rows, so it can time, retry or answer a command itself. Raw `exec`
