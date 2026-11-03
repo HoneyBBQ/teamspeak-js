@@ -132,6 +132,28 @@ describe("uploadFile", () => {
     expect(Buffer.concat(received).toString()).toBe(`${KEY}${KEY}abcd`);
   });
 
+  it("reports the progress of bytes in memory as they go, not all at once", async () => {
+    const size = 700 * 1024 + 123;
+    const data = Buffer.alloc(size, 7);
+    const { received, port, ended } = await sink(size);
+    const { client } = executor(negotiated(port), held(size));
+    const progress: Array<{ bytes: number; total: number }> = [];
+
+    await uploadFile(client, cid, "/big.bin", data, {
+      host: "127.0.0.1",
+      trace: { progress: (p) => progress.push({ bytes: p.bytes, total: p.total }) },
+    });
+
+    await ended;
+    expect(Buffer.concat(received).length).toBe(KEY.length + size);
+    expect(progress.length).toBeGreaterThanOrEqual(10);
+    expect(progress[0]!.bytes).toBeLessThan(size);
+    expect(progress.at(-1)).toEqual({ bytes: size, total: size });
+    for (let i = 1; i < progress.length; i++) {
+      expect(progress[i]!.bytes).toBeGreaterThanOrEqual(progress[i - 1]!.bytes);
+    }
+  });
+
   it("resumes: asks for it, and sends only the bytes the server does not hold", async () => {
     const { received, port, ended } = await sink(2, 2);
     const { client, sent } = executor(

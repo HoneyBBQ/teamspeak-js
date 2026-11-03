@@ -77,7 +77,7 @@ const notificationNameValues = {
   ClientNameFromDBID: "notifyclientnamefromdbid",
   /** `notifyclientnamefromuid`: Reply to clientgetnamefromuid: the database id and nickname of the client with that unique id. */
   ClientNameFromUID: "notifyclientnamefromuid",
-  /** `notifyclientneededpermissions`: A command failed or a feature is unavailable because this client lacks a permission; it names the permission id and the value needed. */
+  /** `notifyclientneededpermissions`: This client's own values of a fixed set of permissions a client UI uses (permid and permvalue): the nonzero ones while it joins, then the ones that change with its groups or their permissions. Not sent when a command is refused: that is the command's error, 2568 with `failed_permid`. */
   ClientNeededPermissions: "notifyclientneededpermissions",
   /** `notifyclientpermhints`: The permissions this client holds changed; a bit set of hints tells which kinds of permission changed. */
   ClientPermHints: "notifyclientpermhints",
