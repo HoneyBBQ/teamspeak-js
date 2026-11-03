@@ -59,6 +59,7 @@ import type { BindingSubsystem, GroupAutoUpdateType, GroupType } from "../enums.
 import type { GroupDeleteOptions } from "./groups.js";
 import { parseServerGroup } from "./group-rows.js";
 import type { Permission } from "../permission.js";
+import type { PropertyName } from "../property-name.js";
 
 /** A server group as `servergrouplist` reports it. */
 export interface ServerGroup {
@@ -108,18 +109,41 @@ export async function getServerInfo(
 }
 
 /**
+ * A raw property's value: a string is sent as is, a number or bigint in
+ * decimal and a boolean as 1 or 0. So a value read back as text, or a table's
+ * constant such as `BannerMode.AdjustKeepAspect`, is written without
+ * converting it.
+ */
+export type PropertyValue = string | number | bigint | boolean;
+
+/**
+ * Raw `virtualserver_*` properties, for {@link editServer} and
+ * `createServer`. The keys `PropertyName` names are offered by an editor; any
+ * other key is sent as well, since a server may know properties the table does
+ * not. A key whose value is undefined is left out.
+ */
+export type ServerSettings = {
+  readonly [K in Extract<PropertyName, `virtualserver_${string}`>]?: PropertyValue | undefined;
+} & { readonly [key: string]: PropertyValue | undefined };
+
+/** Raw `serverinstance_*` properties, for {@link editInstance}, as {@link ServerSettings} are. */
+export type InstanceSettings = {
+  readonly [K in Extract<PropertyName, `serverinstance_${string}`>]?: PropertyValue | undefined;
+} & { readonly [key: string]: PropertyValue | undefined };
+
+/**
  * Change the virtual server's settings. Only the properties you pass are sent.
  *
  * Unlike every other options object, these are the raw `virtualserver_*`
  * wire properties from `serverinfo`, passed through as given rather than
  * enumerated: there are well over a hundred, they are version-dependent, and a
  * value read back from {@link getServerInfo} should be writable straight back.
- * The values are strings, as `getServerInfo` returns them. The editable keys
- * are marked in `PropertyName`.
+ * A value may also be a number or a boolean; see {@link PropertyValue}. The
+ * editable keys are marked in `PropertyName`.
  */
 export async function editServer(
   client: CommandExecutor,
-  settings: Readonly<Record<string, string>>,
+  settings: ServerSettings,
   options?: CommandOptions,
 ): Promise<void> {
   await exec(client, "serveredit", rawProperties(settings), options);
@@ -162,7 +186,7 @@ export async function getInstanceInfo(
  */
 export async function editInstance(
   client: CommandExecutor,
-  settings: Readonly<Record<string, string>>,
+  settings: InstanceSettings,
   options?: CommandOptions,
 ): Promise<void> {
   await exec(client, "instanceedit", rawProperties(settings), options);

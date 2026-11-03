@@ -1154,7 +1154,7 @@ export function createChannelGroup(client: CommandExecutor, name: string, type: 
 export function createDirectory(client: CommandExecutor, cid: ChannelID, dirname: string, options?: FileOptions): Promise<void>;
 
 // @public
-export function createServer(client: CommandExecutor, name: string, settings?: Readonly<Record<string, string>>, options?: CommandOptions): Promise<ServerCreated>;
+export function createServer(client: CommandExecutor, name: string, settings?: ServerSettings, options?: CommandOptions): Promise<ServerCreated>;
 
 // @public
 export function createServerGroup(client: CommandExecutor, name: string, type: GroupType, options?: CommandOptions): Promise<ServerGroupID>;
@@ -1279,10 +1279,10 @@ export function editClient(client: CommandExecutor, clid: ClientID, edit: Client
 export function editClientDatabase(client: CommandExecutor, cldbid: ClientDBID, edit: ClientDatabaseEditOptions, options?: CommandOptions): Promise<void>;
 
 // @public
-export function editInstance(client: CommandExecutor, settings: Readonly<Record<string, string>>, options?: CommandOptions): Promise<void>;
+export function editInstance(client: CommandExecutor, settings: InstanceSettings, options?: CommandOptions): Promise<void>;
 
 // @public
-export function editServer(client: CommandExecutor, settings: Readonly<Record<string, string>>, options?: CommandOptions): Promise<void>;
+export function editServer(client: CommandExecutor, settings: ServerSettings, options?: CommandOptions): Promise<void>;
 
 // Warning: (ae-forgotten-export) The symbol "errorCodeValues" needs to be exported by the entry point index.d.ts
 //
@@ -1641,7 +1641,7 @@ export function getMessage(client: CommandExecutor, messageID: MessageID, option
 export function getOwnPermission(client: CommandExecutor, permission: Permission, options?: CommandOptions): Promise<OwnPermission>;
 
 // @public
-export function getPermissionIDByName(client: CommandExecutor, name: string, options?: CommandOptions): Promise<PermissionID | undefined>;
+export function getPermissionIDByName(client: CommandExecutor, name: PermissionName | (string & {}), options?: CommandOptions): Promise<PermissionID | undefined>;
 
 // @public
 export function getPermissionOverview(client: CommandExecutor, cid: ChannelID, cldbid: ClientDBID, options?: CommandOptions): Promise<PermissionOverviewEntry[]>;
@@ -1748,11 +1748,21 @@ export function initFileDownload(client: CommandExecutor, cid: ChannelID, path: 
 export function initFileUpload(client: CommandExecutor, cid: ChannelID, path: string, size: bigint, options?: FileUploadOptions): Promise<FileUploadInfo>;
 
 // @public
+export type InstanceSettings = {
+    readonly [K in Extract<PropertyName, `serverinstance_${string}`>]?: PropertyValue | undefined;
+} & {
+    readonly [key: string]: PropertyValue | undefined;
+};
+
+// @public
 export interface Invoked {
     readonly invokerID: ClientID;
     readonly invokerName: string;
     readonly invokerUID: UID;
 }
+
+// @public
+export function isValueOf<T extends Readonly<Record<string, string | number>>>(table: T, value: unknown): value is T[keyof T];
 
 // @public
 export function iterateClientDatabase(client: CommandExecutor, options?: PagingOptions): AsyncIterable<ClientDatabaseEntry>;
@@ -2944,6 +2954,9 @@ const propertyNameValues: {
 };
 
 // @public
+export type PropertyValue = string | number | bigint | boolean;
+
+// @public
 export interface QueryLogin {
     readonly databaseID: ClientDBID;
     readonly name: string;
@@ -3192,6 +3205,13 @@ export interface ServerListOptions extends CommandOptions {
     readonly short?: boolean | undefined;
     readonly uid?: boolean | undefined;
 }
+
+// @public
+export type ServerSettings = {
+    readonly [K in Extract<PropertyName, `virtualserver_${string}`>]?: PropertyValue | undefined;
+} & {
+    readonly [key: string]: PropertyValue | undefined;
+};
 
 // @public
 export interface ServerSnapshot {

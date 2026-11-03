@@ -50,6 +50,7 @@ import { parseChannelGroup } from "./group-rows.js";
 import { PermissionTarget, PrivilegeKeyType } from "../enums.js";
 import type { GroupType } from "../enums.js";
 import type { Permission } from "../permission.js";
+import type { PermissionName } from "../permission-name.js";
 import { escape, unescape } from "../command/command.js";
 import type { CustomProperty } from "./clients.js";
 
@@ -396,7 +397,7 @@ export async function listPermissions(
  */
 export async function getPermissionIDByName(
   client: CommandExecutor,
-  name: string,
+  name: PermissionName | (string & {}),
   options?: CommandOptions,
 ): Promise<PermissionID | undefined> {
   const rows = await query(client, "permidgetbyname", [["permsid", name]], options);
