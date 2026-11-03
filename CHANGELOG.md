@@ -4,6 +4,12 @@ Until 1.0.0-beta.4 this package was published as `@honeybbq/teamspeak-core`, and
 `@honeybbq/teamspeak-client` was a second package. The sections below, down to
 the last version heading, are the core's history; the client's is at the bottom.
 
+## 1.0.0-beta.26
+
+### Patch Changes
+
+- [#189](https://github.com/HoneyBBQ/teamspeak-js/pull/189) [`201b921`](https://github.com/HoneyBBQ/teamspeak-js/commit/201b92183cbb03631bb1579e20105a42eb31dc85) - `getOwnPermissions` refuses an answer with more rows than permissions asked, as it already refused one with fewer: the rows are matched to the permissions by position, so an extra row leaves no telling which answers which. Both throw `NoDataError`, as Go's `GetOwnPermissions` does.
+
 ## 1.0.0-beta.25
 
 ### Minor Changes
