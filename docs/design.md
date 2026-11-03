@@ -164,6 +164,13 @@ client.on("notification", (n) => console.log(n.name, n.params));
 - **State.** The client updates its state, such as `client.view`, before it
   queues the event that reports the change, so a listener sees state at least as
   new as its event.
+- **Voice** is an event here, with pull semantics through `events("voiceData")`:
+  a buffer of its own for each consumer that drops its oldest frame when full
+  and counts it in `dropped`. The Go SDK has no `voiceData` event; it has a
+  `VoiceReceiver` instead, because Go delivers events from one goroutine that
+  awaits each handler, so a slow handler would hold voice up, while JavaScript
+  listeners are not awaited. The fields (`session`, `clientID`, `whisper`, `seq`,
+  `codec`, `data`, `receivedAt`) and the semantics are the same.
 - **A throw** in a listener does not stop the others. The exception is rethrown
   from a microtask, as an uncaught exception, as an EventEmitter listener's
   would be. The Go SDK recovers a panicking handler and logs it instead.

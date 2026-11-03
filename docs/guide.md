@@ -89,7 +89,7 @@ most every ten seconds) rather than queued without bound.
 
 `events(name, { signal })` is the same as an async iterator, buffering events
 that arrive while the loop body runs. The buffer is unbounded (voice excepted,
-as above), so stop iterating when you stop reading. Aborting `signal` stops
+see [Receiving voice](#receiving-voice)), so stop iterating when you stop reading. Aborting `signal` stops
 listening and makes the pending and later `next()` calls reject with the
 signal's reason, as Node's `events.on` does; `break`ing out of the loop, or a
 disconnect, ends it normally:
@@ -112,6 +112,54 @@ client.on("notification", (n) => {
   if (n.name === NotificationName.ChannelEdited) console.log(n.params);
 });
 ```
+
+## Receiving voice
+
+Take voice with the `events("voiceData")` iterator: it has a buffer of its own,
+so a slow consumer costs only its own frames, and each consumer reads at its
+own pace.
+
+```typescript
+for await (const v of client.events("voiceData", { signal })) {
+  if (v.data.length === 0) {
+    endSpeech(v.session, v.clientID, v.whisper); // the speaker stopped
+    continue;
+  }
+  jitterBuffer(v.session, v.clientID, v.whisper).push(v.seq, v.codec, v.data, v.receivedAt);
+}
+```
+
+A `VoiceDataEvent` has:
+
+- `session`: `client.session` when the packet arrived. It starts at 1 and goes
+  up with every connect and reconnect. A client id names a client only within
+  one session, so when `session` changes, start every per-speaker state over.
+- `clientID`: who is speaking.
+- `whisper`: the packet type was VoiceWhisper. A speaker's whispers and its
+  other voice count `seq` separately, and `whisper` is all a receiver learns
+  about a whisper, not who it was for.
+- `seq`: the speaker's own packet counter, which the server relays unchanged.
+  It goes up by one for each packet the speaker sends, wraps from 65535 to 0,
+  and is chosen by the speaker, so bound any wait or buffer it drives. Compare
+  two with `((a - b) << 16 >> 16)`, a signed 16-bit difference, never `a < b`.
+  The network and the server can reorder packets, and they are delivered as they
+  arrived: put them in order yourself.
+- `receivedAt`: when the datagram was read from the socket, in
+  `performance.now()` milliseconds, a monotonic clock. It is the arrival time
+  for de-jittering; the packet carries no time of its own.
+- `codec` and `data`: one encoded frame, copied. The codec can change from one
+  packet to the next. An empty `data` is the end of that speaker's speech by
+  convention; the packet can be lost like any other, so do not rely on it alone.
+
+Reorder by (`session`, `clientID`, `whisper`) and then by `seq`. A client that
+connects again gets another client id and counts `seq` from 0.
+
+The iterator buffers at most 256 frames. When it is full, each new frame drops
+the **oldest** buffered one, since live audio is worth most when it is newest,
+and `iterator.dropped` counts the frames it has dropped. A listener added with
+`on("voiceData")` that falls behind loses frames before they are built, once
+more than 256 deliveries are waiting; that is logged as a warning at most every
+ten seconds, with the number dropped since the last one.
 
 ## Commands
 
