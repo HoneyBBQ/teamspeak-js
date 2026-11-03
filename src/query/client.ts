@@ -52,12 +52,8 @@ import {
 import type { ResolvedQueryOptions, ResolvedTransport } from "./options.js";
 import { defaultShouldRetry, noteConnectFailure } from "./reconnect.js";
 
-export type {
-  QueryClientOptions,
-  QueryEventsOption,
-  QueryEventCategory,
-  QueryTransportOptions,
-} from "./options.js";
+export type { QueryClientOptions, QueryEventsOption, QueryTransportOptions } from "./options.js";
+export { QueryEventCategory } from "./options.js";
 
 /**
  * The events `QueryClient.on()` takes, and what each delivers.
@@ -81,6 +77,72 @@ export type {
  * change in a minor release.
  */
 export interface QueryEventMap extends ServerEventMap, SessionEventMap {}
+
+/** The values of the table below, before freezing. */
+const queryEventNameValues = {
+  /** A text message to this client, its channel or the server. */
+  TextMessage: "textMessage",
+  /** A client coming into view, including every client already there on connecting. */
+  ClientEnter: "clientEnter",
+  /** A client going out of view. */
+  ClientLeave: "clientLeave",
+  /** A client changing channel. */
+  ClientMoved: "clientMoved",
+  /** A channel being created. */
+  ChannelCreated: "channelCreated",
+  /** A channel's properties being edited. */
+  ChannelEdited: "channelEdited",
+  /** A channel being moved or reordered. */
+  ChannelMoved: "channelMoved",
+  /** A channel being deleted. */
+  ChannelDeleted: "channelDeleted",
+  /** A channel's description changing; the text is not in it. */
+  ChannelDescriptionChanged: "channelDescriptionChanged",
+  /** A channel's password being set, changed or removed. */
+  ChannelPasswordChanged: "channelPasswordChanged",
+  /** The server's settings being edited. */
+  ServerEdited: "serverEdited",
+  /**
+   * Every notification the server sends, modelled or not, after any event it
+   * produces; one with a typed event arrives here as well, not only there.
+   */
+  Notification: "notification",
+  /** The handshake completing, on `connect()` and on every reconnection. */
+  Connected: "connected",
+  /** The connection ending, with its cause and whether a reconnection follows. */
+  Disconnected: "disconnected",
+  /** A kick from the server or from its channel; a kick from the server also ends the connection. */
+  Kicked: "kicked",
+} as const;
+/**
+ * The names of the events `QueryClient.on()` takes, as constants.
+ * `on(QueryEventName.TextMessage, ...)` and `on("textMessage", ...)` are the
+ * same call, and both give the listener the same payload type.
+ *
+ * @experimental Part of the `@honeybbq/teamspeak/query` entry, which may
+ * change in a minor release.
+ */
+export const QueryEventName: typeof queryEventNameValues =
+  /* @__PURE__ */ Object.freeze(queryEventNameValues);
+/**
+ * One of {@link QueryEventName}, and so a key of {@link QueryEventMap}. May
+ * gain members in a minor release: a `switch` over it needs a default case.
+ *
+ * @experimental Part of the `@honeybbq/teamspeak/query` entry, which may
+ * change in a minor release.
+ */
+export type QueryEventName = (typeof QueryEventName)[keyof typeof QueryEventName];
+
+// Each direction fails to compile when `QueryEventMap` and `QueryEventName`
+// drift: an event without a name, and a name that is not an event.
+const eventNamesCoverEventMap: [Exclude<keyof QueryEventMap, QueryEventName>] extends [never]
+  ? true
+  : never = true;
+const eventMapCoversEventNames: [Exclude<QueryEventName, keyof QueryEventMap>] extends [never]
+  ? true
+  : never = true;
+void eventNamesCoverEventMap;
+void eventMapCoversEventNames;
 
 /** How long a command waits for its answer unless told otherwise. */
 const DEFAULT_COMMAND_TIMEOUT_MS = 10_000;

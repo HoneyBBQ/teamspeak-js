@@ -88,11 +88,16 @@ export { NotificationName } from "./notification-name.js";
 export { PropertyName } from "./property-name.js";
 export type { Permission } from "./permission.js";
 
-export { noopLogger, consoleLogger, ClientStatus, serverFamilyForVersion } from "./types.js";
+export {
+  noopLogger,
+  consoleLogger,
+  ClientStatus,
+  ServerFamily,
+  serverFamilyForVersion,
+} from "./types.js";
 export type {
   ClientVersion,
   Listener,
-  ServerFamily,
   Unsubscribe,
   CommandMiddleware,
   FileDownloadInfo,

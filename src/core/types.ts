@@ -141,12 +141,23 @@ export const ClientStatus: typeof clientStatusValues =
  */
 export type ClientStatus = (typeof ClientStatus)[keyof typeof ClientStatus];
 
+/** The values of the table below, before freezing. */
+const serverFamilyValues = {
+  /** TeamSpeak 3: major version 3. */
+  TS3: "ts3",
+  /** TeamSpeak 6: major version 6 or later. */
+  TS6: "ts6",
+  /** A version string that names neither generation, or has no number. */
+  Unknown: "unknown",
+} as const;
+/** The server generation a version string belongs to. */
+export const ServerFamily: typeof serverFamilyValues =
+  /* @__PURE__ */ Object.freeze(serverFamilyValues);
 /**
- * The server generation a version string belongs to. May gain members in a
- * minor release, as server generations appear: a `switch` over it needs a
- * default case.
+ * One of {@link ServerFamily}. May gain members in a minor release, as server
+ * generations appear: a `switch` over it needs a default case.
  */
-export type ServerFamily = "ts3" | "ts6" | "unknown";
+export type ServerFamily = (typeof ServerFamily)[keyof typeof ServerFamily];
 
 /**
  * Pick the server generation from a `virtualserver_version` string such as
@@ -156,8 +167,8 @@ export type ServerFamily = "ts3" | "ts6" | "unknown";
  */
 export function serverFamilyForVersion(version: string): ServerFamily {
   const major = Number.parseInt(version, 10);
-  if (Number.isNaN(major)) return "unknown";
-  if (major === 3) return "ts3";
-  if (major >= 6) return "ts6";
-  return "unknown";
+  if (Number.isNaN(major)) return ServerFamily.Unknown;
+  if (major === 3) return ServerFamily.TS3;
+  if (major >= 6) return ServerFamily.TS6;
+  return ServerFamily.Unknown;
 }

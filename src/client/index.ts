@@ -12,7 +12,8 @@
 export { Client } from "./client.js";
 export { EventName, GroupWhisperType, GroupWhisperScope } from "./types.js";
 
-export type { ServerView, ViewChangedEvent, ViewReadyEvent, ViewStatus } from "./view.js";
+export { ViewStatus } from "./view.js";
+export type { ServerView, ViewChangedEvent, ViewReadyEvent } from "./view.js";
 
 export type {
   EventMap,
@@ -47,11 +48,15 @@ export * from "./api/avatars.js";
 export * from "./api/files.js";
 
 // File transfer data
-export { dialFileTransfer, uploadFileData, downloadFileData } from "./transfer.js";
+export {
+  dialFileTransfer,
+  uploadFileData,
+  downloadFileData,
+  FileTransferStage,
+} from "./transfer.js";
 export type {
   FileTransferOptions,
   FileTransferTrace,
-  FileTransferStage,
   FileTransferDialStartInfo,
   FileTransferDialDoneInfo,
   FileTransferProgressInfo,
@@ -99,4 +104,4 @@ export {
   uidAlgorithmForVersion,
   MAX_SECURITY_LEVEL,
 } from "./crypto/index.js";
-export type { UIDAlgorithm } from "./crypto/index.js";
+export { UIDAlgorithm } from "./crypto/index.js";

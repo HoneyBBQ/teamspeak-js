@@ -21,20 +21,35 @@ import {
 import { parseIconID } from "../core/internal.js";
 import { abortReason } from "./abort.js";
 
+/** The values of the table below, before freezing. */
+const viewStatusValues = {
+  /** This client has not tried to connect. */
+  Empty: "empty",
+  /**
+   * A connection is being made and the server has not finished its welcome.
+   * The view holds what has arrived, which is not yet the tree.
+   */
+  Loading: "loading",
+  /** The welcome is complete and the connection is up. The view follows the server's notifications. */
+  Live: "live",
+  /**
+   * The connection ended. The view still holds what it last knew, which no
+   * longer changes; the next `connect()` clears it.
+   */
+  Stale: "stale",
+} as const;
 /**
  * Where a {@link ServerView} is in a connection's life.
  *
- * - `"empty"`: this client has not tried to connect.
- * - `"loading"`: a connection is being made and the server has not finished
- *   its welcome. The view holds what has arrived, which is not yet the tree.
- * - `"live"`: the welcome is complete and the connection is up. The view
- *   follows the server's notifications.
- * - `"stale"`: the connection ended. The view still holds what it last knew,
- *   which no longer changes; the next `connect()` clears it.
+ * @experimental New in 1.x and may change in a minor release.
+ */
+export const ViewStatus: typeof viewStatusValues = /* @__PURE__ */ Object.freeze(viewStatusValues);
+/**
+ * One of {@link ViewStatus}.
  *
  * @experimental New in 1.x and may change in a minor release.
  */
-export type ViewStatus = "empty" | "loading" | "live" | "stale";
+export type ViewStatus = (typeof ViewStatus)[keyof typeof ViewStatus];
 
 /**
  * What `viewReady` delivers.
@@ -322,7 +337,7 @@ export class ViewStore {
 
   #logger: Logger;
   #selfID: () => number;
-  #status: ViewStatus = "empty";
+  #status: ViewStatus = ViewStatus.Empty;
   #revision = 0;
   #tree = ChannelTree.from([]);
   /** The `channellist` rows of the welcome in progress, in arrival order. */

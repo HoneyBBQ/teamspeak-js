@@ -70,6 +70,23 @@ export type QueryTransportOptions =
       readonly open: (signal?: AbortSignal) => Promise<QueryTransport>;
     };
 
+/** The values of the table below, before freezing. */
+const queryEventCategoryValues = {
+  /** Server-wide events, such as clients joining and leaving. */
+  Server: "server",
+  /** Events of the channels, such as one being created or edited. */
+  Channel: "channel",
+  /** Text messages to the server. */
+  TextServer: "textserver",
+  /** Text messages to a channel. */
+  TextChannel: "textchannel",
+  /** Private text messages to this client. */
+  TextPrivate: "textprivate",
+  /** Ban list changes. */
+  Bans: "bans",
+  /** A privilege key being used. */
+  TokenUsed: "tokenused",
+} as const;
 /**
  * One category of notifications to register for: the `event` parameter of
  * `servernotifyregister`.
@@ -80,14 +97,10 @@ export type QueryTransportOptions =
  * then send `notifytokenused`, which carries a privilege key and has no typed
  * event, so it reaches `notification` only.
  */
-export type QueryEventCategory =
-  | "server"
-  | "channel"
-  | "textserver"
-  | "textchannel"
-  | "textprivate"
-  | "bans"
-  | "tokenused";
+export const QueryEventCategory: typeof queryEventCategoryValues =
+  /* @__PURE__ */ Object.freeze(queryEventCategoryValues);
+/** One of {@link QueryEventCategory}. */
+export type QueryEventCategory = (typeof QueryEventCategory)[keyof typeof QueryEventCategory];
 
 /**
  * Which notification categories to register for.
@@ -184,11 +197,11 @@ export interface QueryClientOptions {
 
 /** The five categories both raw TCP on TS3 and SSH on TS6 accept. */
 export const DEFAULT_EVENT_CATEGORIES: readonly QueryEventCategory[] = Object.freeze([
-  "server",
-  "channel",
-  "textserver",
-  "textchannel",
-  "textprivate",
+  QueryEventCategory.Server,
+  QueryEventCategory.Channel,
+  QueryEventCategory.TextServer,
+  QueryEventCategory.TextChannel,
+  QueryEventCategory.TextPrivate,
 ]);
 
 const CATEGORIES: ReadonlySet<string> = new Set([

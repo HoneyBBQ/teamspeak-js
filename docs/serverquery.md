@@ -65,7 +65,7 @@ sitting silent. `connected` and `disconnected` work on every transport, since
 they come from the client itself.
 
 ```typescript
-import { QueryClient } from "@honeybbq/teamspeak/query";
+import { QueryClient, QueryEventName } from "@honeybbq/teamspeak/query";
 import { listChannels } from "@honeybbq/teamspeak";
 
 const client = new QueryClient({
@@ -80,7 +80,10 @@ const client = new QueryClient({
   reconnect: { backoff: { initialDelayMs: 1_000 } },
 });
 
-client.on("textMessage", (message) => console.log(message.invokerName, message.message));
+client.on(QueryEventName.TextMessage, (message) =>
+  console.log(message.invokerName, message.message),
+);
+client.on("textMessage", (message) => console.log(message.invokerName, message.message)); // the same
 
 await client.connect();
 
