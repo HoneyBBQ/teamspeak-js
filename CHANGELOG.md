@@ -4,6 +4,14 @@ Until 1.0.0-beta.4 this package was published as `@honeybbq/teamspeak-core`, and
 `@honeybbq/teamspeak-client` was a second package. The sections below, down to
 the last version heading, are the core's history; the client's is at the bottom.
 
+## 1.0.0-beta.28
+
+### Patch Changes
+
+- [#194](https://github.com/HoneyBBQ/teamspeak-js/pull/194) [`e95e0f4`](https://github.com/HoneyBBQ/teamspeak-js/commit/e95e0f4c52f193a978dd1029441a2ddb2bc9f8ee) - Docs: the package description, its keywords, the README and the `client` entry point's doc comment present the SDK as a complete TeamSpeak client, with voice, ServerQuery and screen share, instead of calling it independent; the README's disclaimer keeps saying it is an independent implementation. The guide gains a section on sending voice and whispers, the streams page is reorganised with an overview of its events and errors and a section on running WebRTC in Node and Electron, and `examples/` gains `voice-echo.ts` and `stream-watch.ts`.
+
+- [#195](https://github.com/HoneyBBQ/teamspeak-js/pull/195) [`a8ce30c`](https://github.com/HoneyBBQ/teamspeak-js/commit/a8ce30c9a811fa7aa965d0d2517e4a77b02cc9e0) - Docs: the API reference gains a page for `@honeybbq/teamspeak/versions`, with its client versions on one page, and names the ServerQuery entry `@honeybbq/teamspeak/query`. The long-form pages are brought up to date with the code: the architecture tree, the guide's event table and `disconnected` payload, the client options, the errors of the query entry, the ServerQuery guest login, the differences from the Go SDK, the migration guide's entry points, whispers, events and records, and the response reference pages.
+
 ## 1.0.0-beta.27
 
 ### Minor Changes
