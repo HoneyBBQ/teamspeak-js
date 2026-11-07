@@ -1,6 +1,6 @@
 /**
- * An independent TeamSpeak client: it connects over the voice protocol, the way
- * the TeamSpeak application does.
+ * A TeamSpeak client: it connects over the voice protocol, the way the
+ * TeamSpeak application does, and sends and receives voice.
  *
  * Only what belongs to the voice protocol is exported here. The typed commands,
  * ids and errors every client shares come from `@honeybbq/teamspeak`.

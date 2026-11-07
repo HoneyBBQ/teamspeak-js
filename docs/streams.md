@@ -19,8 +19,10 @@ allows. `StreamInfo.transport` says how a stream's media travels: `"p2p"`, or th
 number for another mode. `watch` refuses a stream in another mode with a
 `StreamTransportUnsupportedError`, before sending anything.
 
-Watching: find a stream in `streams.list()` or wait for `started`, ask to watch it, and
-give the publisher's offer to a peer connection. The viewer's connection is receive-only.
+## Watching a stream
+
+Find a stream in `streams.list()` or wait for `started`, ask to watch it, and give the
+publisher's offer to a peer connection. The viewer's connection is receive-only.
 
 ```ts
 import { Streams } from "@honeybbq/teamspeak/stream";
@@ -52,8 +54,10 @@ constant are the same: `streams.on(StreamsEventName.Started, ...)` is
 `streams.on("started", ...)`, and `StreamSource.Screen` is `"screen"`. Import them from
 `@honeybbq/teamspeak/stream`.
 
-Publishing: the publisher makes the offer, one peer connection for each viewer. The server
-relays every request to watch, from any channel, and enforces neither `viewerLimit` nor
+## Publishing a stream
+
+The publisher makes the offer, one peer connection for each viewer. The server relays
+every request to watch, from any channel, and enforces neither `viewerLimit` nor
 `accessibility`: deciding who is let in is the publisher's job, and `request` is emitted
 for each one, with nothing accepted for you.
 
@@ -87,6 +91,84 @@ A request that nobody has answered can end: the viewer withdraws it or goes out 
 the stream ends. `request.on("closed", ({ cause }) => …)` fires then, with `"withdrawn"` or
 `"ended"`, so a UI can drop the request without polling `request.state`; `accept` and `deny`
 then throw. It is not emitted for a request that was accepted or denied.
+
+## API at a glance
+
+`Streams` is made from a connected `Client`: `new Streams(client, options)`, where the one
+option is `rememberDenied`. `list()` and `get(id)` return what it knows of, `publish`
+returns a `PublishedStream`, `watch` returns a `StreamView`, and `dispose()` stops what it
+published and leaves what it watched.
+The events below are the names in `StreamsEventName`, `PublishedStreamEventName`,
+`JoinRequestEventName` and `PeerEventName`.
+
+| Object                                 | Event          | Meaning                                                                                           |
+| -------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------- |
+| `Streams`                              | `started`      | A stream became known: it started in view, or discovery found it.                                 |
+|                                        | `updated`      | What is known of a stream changed.                                                                |
+|                                        | `stopped`      | A stream ended; `cause` is `"server"`, `"stopped"` or `"gone"`.                                   |
+|                                        | `viewerJoined` | A viewer was accepted into a stream.                                                              |
+|                                        | `viewerLeft`   | A viewer left a stream.                                                                           |
+|                                        | `error`        | A failure nobody awaits, such as a discovery request the server refused.                          |
+|                                        | `warning`      | Something the SDK noticed and let through, such as `"offer-without-audio"`.                       |
+| `PublishedStream`                      | `request`      | A client asks to watch: a `JoinRequest`.                                                          |
+|                                        | `ended`        | The stream ended; `cause` is `"stopped"`, `"server"`, `"gone"`, `"disconnected"` or `"disposed"`. |
+| `JoinRequest`                          | `closed`       | A request nobody had answered ended: `cause` is `"withdrawn"` or `"ended"`.                       |
+| `StreamView` (viewer) and `ViewerPeer` | `offer`        | A renegotiation offer from the publisher.                                                         |
+|                                        | `answer`       | The viewer's SDP answer.                                                                          |
+|                                        | `candidate`    | An ICE candidate from the other end.                                                              |
+|                                        | `signal`       | A signalling message that is none of the above, as a `RawSignal`.                                 |
+|                                        | `closed`       | The peer closed; `cause` is `"closed"`, `"left"`, `"stopped"`, `"disconnected"` or `"disposed"`.  |
+
+`StreamView` and `ViewerPeer` are both a `Peer`: `sendCandidate`, `sendSignal` and `close`.
+`StreamView` adds `offer`, `answer` and `leave`; `ViewerPeer` adds `sendOffer`. An event that
+happens before a listener is added is kept for the first listener, up to 256 of each.
+
+| Error                             | Thrown                                                                                                                                    |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `StreamsUnsupportedError`         | By `publish` and `watch` when the server does not name `STREAM_P2P`.                                                                      |
+| `StreamTransportUnsupportedError` | By `watch` for a stream whose media is not peer to peer.                                                                                  |
+| `StreamPayloadTooLargeError`      | By a stream command, before sending, when its line exceeds the server's limit; `accept` keeps the request.                                |
+| `StreamJoinDeniedError`           | By `watch` when the publisher denied the request.                                                                                         |
+| `StreamEndedError`                | By `watch` for an unknown id or a stream that ends before the publisher answers, and by a signalling call when the stream ended under it. |
+
+## Running WebRTC
+
+`Streams` carries strings and has no WebRTC stack of its own. Which one you use depends on
+where the code runs.
+
+`Client` speaks UDP through `node:dgram`, so it runs in Node only, and so does `Streams`
+with it. A browser cannot hold a `Client`; a page that wants a stream needs a Node process
+that holds the `Client` and does the signalling for it.
+
+**Node.** [werift](https://github.com/shinyoshiaki/werift-webrtc) is a WebRTC stack in
+TypeScript. `src/stream/webrtc.integration.test.ts` runs a publisher and a viewer over it
+against a live TeamSpeak 6 server: ICE connects and RTP flows, with `Streams` doing all of
+the signalling. It is the reference for publishing from
+Node. werift differs from the browser API: events are subscribed to
+(`pc.onIceCandidate.subscribe(...)`, `pc.onTrack.subscribe(...)`,
+`track.onReceiveRtp.subscribe(...)`), and its candidate class has to be turned into an
+`IceCandidate` before `sendCandidate`:
+
+```ts
+const toInit = (c: RTCIceCandidate): IceCandidate => ({
+  candidate: c.candidate,
+  sdpMid: c.sdpMid ?? null,
+  sdpMLineIndex: c.sdpMLineIndex ?? null,
+});
+```
+
+`examples/stream-watch.ts` is a complete viewer: it connects, takes the first stream it sees,
+answers its offer with werift and logs the tracks and an RTP packet count until it is
+interrupted. Run it with `TEAMSPEAK_ADDR=127.0.0.1:9988 pnpm tsx examples/stream-watch.ts`.
+
+**Electron.** The `Client` and the `Streams` live in the main process, because of the UDP
+socket. `RTCPeerConnection` lives in the renderer. The two sides pass the strings over IPC:
+the offer or answer SDP, and each candidate as an `IceCandidate` object. In the main process
+the `request` or `watch` handlers forward them to the renderer, and the renderer's replies
+go to `answer`, `accept` and `sendCandidate`.
+
+**Browser.** The same split, with your own channel (a WebSocket, say) between the page and
+the Node process in place of IPC.
 
 ## Interop with the TeamSpeak 6 client
 
@@ -122,7 +204,7 @@ TeamSpeak 6 server 6.0.0-beta13.1.
 streams.on("warning", (w) => console.warn(`${w.code}: ${w.message}`));
 ```
 
-Things to know:
+## Things to know
 
 - A client may run several streams, so every stream is known by its id. `list()` is what
   this client has heard of. A stream that ends while its publisher is out of the channel is

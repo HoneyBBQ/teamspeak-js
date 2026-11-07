@@ -8,8 +8,8 @@
 </p>
 
 <p align="center">
-  <strong>An independent TeamSpeak client protocol library written in pure TypeScript.</strong><br>
-  Works with TeamSpeak 3 and TeamSpeak 6 servers. No proprietary SDK or code.
+  <strong>A complete TeamSpeak client in pure TypeScript: voice, ServerQuery and screen share.</strong><br>
+  For TeamSpeak 3 and 6 servers. No native addons, no proprietary SDK.
 </p>
 
 <p align="center">
@@ -30,11 +30,11 @@
 
 ## Why this library
 
-- **The voice protocol, end to end.** ECDH key exchange, the RSA puzzle, EAX-encrypted transport, and Opus voice (codecs 4 and 5), in TypeScript with no native addons.
-- **ServerQuery too.** The same typed commands run over raw TCP, SSH (with host-key verification) or WebQuery, so an administration script and a voice bot share one vocabulary.
+- **Voice, both ways.** Send and receive Opus voice (codecs 4 and 5), whisper to clients, channels or groups, and get each frame with its speaker and sequence number for your own jitter buffer. The whole voice protocol is here: ECDH key exchange, the RSA puzzle and EAX-encrypted transport, in TypeScript with no native addons.
+- **ServerQuery.** The same typed commands run over raw TCP, SSH (with host-key verification) or WebQuery, so an administration script and a voice bot share one vocabulary.
+- **TeamSpeak 6 screen share.** Find, publish and watch the streams of a TeamSpeak 6 server, interoperable with the TeamSpeak 6 client. SDP and ICE are plain strings for any WebRTC stack: a browser, Electron, or werift in Node.
 - **Typed commands and events.** Every command the voice protocol answers is a typed function, and the server's notifications arrive as typed events with pluggable middleware.
 - **File transfers.** Upload, download and delete files on the server, with avatars and icons covered.
-- **TeamSpeak 6 screen-share signalling.** Find, publish and watch streams, with SDP and ICE as plain strings for any WebRTC stack.
 - **Built for long-running bots.** Opt-in reconnection tuned for TeamSpeak's antiflood ban, and a line middleware seam for pacing commands, with recipes for a token bucket, resending a refused command and keeping a query session open.
 - **Identities and server facts.** Generate, import, export and upgrade identities; read the server version, its uid hash (SHA-1 on TS3, SHA-256 on TS6) and its name, icon and banner.
 - **TeamSpeak 3 and 6, ESM with types.** Pure TypeScript, zero native dependencies, full declarations, and a custom-transport hook for proxies and tests.
@@ -84,14 +84,15 @@ process.on("SIGINT", () => void client.disconnect());
 
 The full API reference is at [honeybbq.github.io/teamspeak-js](https://honeybbq.github.io/teamspeak-js/). The pages below are the long-form guides.
 
-- [Guide](https://honeybbq.github.io/teamspeak-js/documents/guide.html): connecting, events, commands, file transfers and identities.
+- [Guide](https://honeybbq.github.io/teamspeak-js/documents/guide.html): connecting, events, sending and receiving voice, commands, file transfers and identities.
 - [Configuration](https://honeybbq.github.io/teamspeak-js/documents/configuration.html): options, client version, tracing, diagnostics, reconnection, custom transports and server capabilities.
-- [Streams](https://honeybbq.github.io/teamspeak-js/documents/streams.html): TeamSpeak 6 screen-share signalling, and interop with the TeamSpeak 6 client.
+- [Streams](https://honeybbq.github.io/teamspeak-js/documents/streams.html): watching and publishing TeamSpeak 6 screen shares, running WebRTC in Node and Electron, and interop with the TeamSpeak 6 client.
 - [ServerQuery](https://honeybbq.github.io/teamspeak-js/documents/serverquery.html): the query client and its SSH host-key policy.
 - [Flood control](https://honeybbq.github.io/teamspeak-js/documents/flood-control.html): what the server counts, what each command costs, and line middleware recipes for pacing, resending and keeping a query session open.
 - [Design](https://honeybbq.github.io/teamspeak-js/documents/design.html): errors, ids, absent values, events, stability, and the server behaviour the SDK works around.
 - [Compatibility](https://honeybbq.github.io/teamspeak-js/documents/compatibility.html): supported environments and the differences from the Go SDK.
 - [Architecture](https://honeybbq.github.io/teamspeak-js/documents/architecture.html): source layout and entry points.
+- [Examples](https://github.com/HoneyBBQ/teamspeak-js/tree/main/examples): connecting, a voice echo bot, watching a screen share from Node, pacing commands, and ServerQuery events and keepalive.
 - [Migrating to 1.0](https://honeybbq.github.io/teamspeak-js/documents/migrating-to-1.0.html), [voice protocol responses](https://honeybbq.github.io/teamspeak-js/documents/voice-protocol-responses.html) and [ServerQuery responses](https://honeybbq.github.io/teamspeak-js/documents/serverquery-responses.html): reference material.
 
 ## Compatibility
