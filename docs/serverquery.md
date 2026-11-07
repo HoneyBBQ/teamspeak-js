@@ -102,6 +102,12 @@ holds an SSH client, can supply it. `ssh2` is an optional peer dependency:
 without it the other two transports still work, and an `ssh` transport throws
 a `MissingDependencyError` naming the package.
 
+A query client registers for no events unless `events` names categories, and
+fetches no roster then. It sends nothing of its own while idle, resends no
+command and paces none: the server closes a raw TCP or SSH session after 300
+seconds without a command, and the answers to flooding are yours, as
+[flood control](flood-control.md) describes, through `lineMiddleware`.
+
 A query client delivers the events its categories carry: `serverEdited` comes
 under `server`; the channel events, `clientEnter`, `clientLeave` and
 `clientMoved` under `channel`; and `textMessage` under the three text

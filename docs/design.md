@@ -176,7 +176,8 @@ client.on("notification", (n) => console.log(n.name, n.params));
   would be. The Go SDK recovers a panicking handler and logs it instead.
 - **Middleware.** `eventMiddleware` sees each server event before the listeners
   and may pass it on, replace it or drop it; `connected`, `disconnected`,
-  `kicked` and the view events bypass it. `commandMiddleware` wraps the typed commands. Both are
+  `kicked` and the view events bypass it. `commandMiddleware` wraps the typed commands, and `lineMiddleware` every command line the
+  client sends, which is where pacing belongs ([flood control](flood-control.md)). All are
   described above.
 
 ## Stability

@@ -300,7 +300,7 @@ Guest Server Query group's permissions. Measured on 6.0.0-beta13.1.
   answer, and `serverinfo`, `serverlist`, `clientlist` and `instanceinfo` answer
   2568 with `failed_permid` 26, 3, 30 and 2. `servernotifyregister` for
   `textprivate` answers 2568 (`failed_permid=48`), so a guest that is not given
-  that permission connects with `events: false`. A guest may `login` as another
+  that permission names no `events`. A guest may `login` as another
   account over the session. The switch is `--query-ssh-allow-guest` (default
   1. or `TSSERVER_QUERY_SSH_ALLOW_GUEST`.
 - **WebQuery.** A request with no `x-api-key` header, with an empty one, or with

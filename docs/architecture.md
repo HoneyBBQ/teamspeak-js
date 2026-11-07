@@ -14,7 +14,6 @@ src/
 │   ├── notifications.ts   # Server notification parsing and dispatch
 │   ├── handshake.ts       # Protocol handshake orchestration
 │   ├── transfer.ts        # File transfer data connections
-│   ├── throttle.ts        # Token-bucket rate limiter
 │   ├── crypto/            # ECDH, EAX encryption, identity management
 │   ├── handshake/         # Crypto handshake and license verification
 │   ├── transport/         # UDP packet framing, ACK, compression
@@ -22,7 +21,10 @@ src/
 ├── stream/            # TeamSpeak 6 streams (@honeybbq/teamspeak/stream)
 └── query/             # The ServerQuery client (@honeybbq/teamspeak/query)
 examples/
-└── connect.ts  # Minimal connection example
+├── connect.ts          # Minimal connection example
+├── flood-control.ts    # Line middleware recipes: pacing and resending
+├── query-keepalive.ts  # Keeping a ServerQuery session open
+└── query-events.ts     # Registering for ServerQuery events
 ```
 
 ## Entry points
