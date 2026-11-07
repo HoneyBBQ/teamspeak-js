@@ -406,4 +406,6 @@ export class WebQueryTransport implements QueryTransport {
     readonly supportsNotifications = false;
 }
 
+// (No @packageDocumentation comment for this package)
+
 ```
