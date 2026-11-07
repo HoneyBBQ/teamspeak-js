@@ -11,10 +11,13 @@ import {
   noopLogger,
   type ClientEntry,
   type CommandExecutor,
+  type CommandLine,
   type CommandMiddleware,
   type CommandOptions,
   type CommandRequest,
   type KickedEvent,
+  type LineOptions,
+  type LineSender,
   type Listener,
   type Logger,
   type ReconnectOptions,
@@ -27,11 +30,9 @@ import {
 } from "@honeybbq/teamspeak";
 import {
   buildCommandChain,
+  buildLineChain,
   buildCommandOrdered,
   encodeRequest,
-  floodHoldMs,
-  FLOOD_RETRIES,
-  floodRetryDelayMs,
   handleNotification,
   parseCommand,
   parseServerError,
@@ -150,7 +151,7 @@ const DEFAULT_COMMAND_TIMEOUT_MS = 10_000;
 /**
  * Over SSH, how long a command waits for its answer before the client writes an
  * empty line to release a reply the server may be holding, and how often it
- * writes one after that. See `#execNow`, and "Server behaviour the SDK works around" in `docs/serverquery-responses.md`.
+ * writes one after that. See `#execOnce`, and "Server behaviour the SDK works around" in `docs/serverquery-responses.md`.
  */
 const SSH_NUDGE_AFTER_MS = 2_000;
 const SSH_NUDGE_EVERY_MS = 1_000;
@@ -188,8 +189,10 @@ interface Pending {
  *
  * ServerQuery answers one command at a time, in order: data lines, then an
  * `error` line that ends the answer. So commands are queued and sent one after
- * another, which also keeps the server's flood protection from seeing a burst.
- * Notifications (`notify…`) can arrive at any point and are not part of an
+ * another; a {@link QueryClientOptions.lineMiddleware} that waits holds every
+ * command behind it. The client never paces its commands, resends a refused one
+ * or keeps an idle session open: the server's flood limit and idle timeout are
+ * the caller's to meet (see `docs/flood-control.md`). Notifications (`notify…`) can arrive at any point and are not part of an
  * answer.
  *
  * The transport is given as a {@link QueryClientOptions.transport} description
@@ -220,9 +223,12 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
    * rather than taken for the next command's.
    */
   #abandoned = 0;
-  /** When a command was last sent, which is what the server counts idleness from. */
-  #lastSent = 0;
-  #keepAlive: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * Aborted when this connection ends, by `disconnect()` or a drop, which is
+   * what a command still inside a line middleware sees as its signal. A new
+   * one for each connection.
+   */
+  #down = new AbortController();
   #queue: Promise<unknown> = Promise.resolve();
   /** Connected with no `server`, so the `events` are registered by the first `use()`. */
   #eventsPending = false;
@@ -282,6 +288,9 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
 
   #listeners = new Map<keyof QueryEventMap, Subscription[]>();
   #send: CommandExecutor["send"];
+  #line: LineSender;
+  /** The `onSent` of the commands in the line chain, by their signal and their line; it fires at the first write. */
+  #sent = new WeakMap<object, { fire: (() => void) | undefined }>();
 
   constructor(options: QueryClientOptions) {
     this.#options = normalizeQueryOptions(options);
@@ -298,6 +307,9 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
         encodeRequest(request, (password) => password),
         commandOptions,
       ),
+    );
+    this.#line = buildLineChain(this.#options.lineMiddleware ?? [], (line, lineOptions) =>
+      this.#execOnce(line, lineOptions),
     );
   }
 
@@ -479,6 +491,7 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
 
     this.#transport = transport;
     this.#closed = false;
+    this.#down = new AbortController();
     this.#abandoned = 0;
     this.#pending = null;
     this.#strayKey = undefined;
@@ -516,11 +529,10 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     // with 1024 (invalid serverID). So a client with no `server` connects for
     // the instance-level commands, and does this on its first `use()`.
     this.#eventsPending = false;
-    if (this.#notifications) {
+    if (this.#notifications && this.#options.eventCategories.length > 0) {
       if (server === undefined) this.#eventsPending = true;
       else await this.#registerEvents(signal);
     }
-    this.#startKeepAlive(transport);
   }
 
   /**
@@ -536,36 +548,6 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     // Only worth listing when there is something to fill: the groups and the
     // invoker of a message this client would otherwise not know.
     if (this.#options.eventCategories.length > 0) await this.#learnClients(signal);
-  }
-
-  /**
-   * Keep a raw TCP or SSH session from idling out: the server closes one that
-   * has sent no command for 300 seconds (see `QueryClientOptions.keepAliveMs`),
-   * so `version` goes out once none has for that long. Only commands count, as
-   * the server counts them; what the server sends does not.
-   */
-  #startKeepAlive(transport: QueryTransport): void {
-    const every = this.#options.keepAliveMs;
-    const kind = this.#options.transport.kind;
-    if (every === 0 || (kind !== "tcp" && kind !== "ssh")) return;
-    const tick = (): void => {
-      if (this.#transport !== transport || this.#closed) return;
-      const idle = Date.now() - this.#lastSent;
-      if (idle >= every) {
-        this.#logger.debug("keeping the idle session open", { idleMs: idle });
-        // A failure is the connection dropping, which its own close reports.
-        this.exec("version").catch(() => {});
-        this.#keepAlive = setTimeout(tick, every);
-      } else {
-        this.#keepAlive = setTimeout(tick, every - idle);
-      }
-      // The socket keeps the process alive; this timer must not.
-      this.#keepAlive.unref();
-    };
-    clearTimeout(this.#keepAlive);
-    this.#lastSent = Date.now();
-    this.#keepAlive = setTimeout(tick, every);
-    this.#keepAlive.unref();
   }
 
   /**
@@ -602,7 +584,6 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     this.#logger.info("disconnecting from query server");
     const transport = this.#transport;
     this.#transport = null;
-    clearTimeout(this.#keepAlive);
     // Set before the transport is closed, so the close it reports is not read
     // as the connection dropping.
     this.#closed = true;
@@ -632,7 +613,12 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     return this.#send(request, options);
   }
 
-  /** Send a raw command line and return the rows that answer it. */
+  /**
+   * Send a raw command line and return the rows that answer it. The line is
+   * sent as given, so its values must already be escaped. It passes the
+   * `lineMiddleware`, if any, and waits for its turn behind the commands sent
+   * before it; `timeoutMs` counts from that turn.
+   */
   exec(line: string, options: CommandOptions = {}): Promise<Array<Record<string, string>>> {
     const run = this.#queue.then(() => this.#execNow(line, options));
     // The queue moves on whatever this command's outcome.
@@ -1030,64 +1016,62 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
   }
 
   /**
-   * Run a command, and run it again when the server refuses it as flooding
-   * with a time to wait that the command can afford. The server did not run a
-   * refused command, and the next command waits behind this one in the queue,
-   * so nothing is sent while the pause lasts.
-   *
-   * Measured on TeamSpeak 3 3.13.8 (raw TCP) and TeamSpeak 6 6.0.0 (SSH): the
-   * refusal is `error id=524 ... extra_msg=please\swait\s1\sseconds`, the
-   * connection stays open, and sending again before the pause is over only
-   * prolongs it. WebQuery has no such answer; see {@link floodRetryDelayMs}.
+   * Run a command through the line middleware. The timeout and the caller's
+   * signal bound the whole chain, the waits of a middleware included, and so
+   * does the end of the connection: each aborts the signal the middleware is
+   * given, and the command rejects with its reason.
    */
   async #execNow(line: string, options: CommandOptions): Promise<Array<Record<string, string>>> {
-    const { signal, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS } = options;
-    const deadline = performance.now() + timeoutMs;
-    for (let refused = 0; ; refused++) {
-      try {
-        return await this.#execOnce(line, {
-          ...options,
-          timeoutMs: Math.max(deadline - performance.now(), 0),
-        });
-      } catch (error) {
-        const wait = error instanceof Error ? floodRetryDelayMs(error) : undefined;
-        const hold = wait === undefined ? undefined : floodHoldMs(wait);
-        if (
-          wait === undefined ||
-          hold === undefined ||
-          refused >= FLOOD_RETRIES ||
-          hold >= deadline - performance.now() ||
-          this.#closed
-        ) {
-          throw error;
-        }
-        this.#logger.debug("the server asked for a pause", {
-          command: parseCommand(line)?.name,
-          waitMs: wait,
-        });
-        await sleep(hold, signal);
-        signal?.throwIfAborted();
-      }
+    const { signal, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS, onSent } = options;
+    signal?.throwIfAborted();
+    if (this.#closed || this.#transport === null) throw new NotConnectedError();
+    const name = parseCommand(line)?.name ?? "";
+
+    const abort = new AbortController();
+    const down = this.#down.signal;
+    const stop = (reason: unknown): void => abort.abort(reason);
+    const timer = setTimeout(() => stop(new CommandTimeoutError(name)), timeoutMs);
+    const onCaller = (): void => stop(signal!.reason);
+    const onDown = (): void => stop(down.reason);
+    signal?.addEventListener("abort", onCaller, { once: true });
+    down.addEventListener("abort", onDown, { once: true });
+    if (down.aborted) onDown();
+    // A middleware that ignores its signal must not hold the call past it.
+    const gaveUp = new Promise<never>((_, reject) => {
+      abort.signal.addEventListener("abort", () => reject(abort.signal.reason), { once: true });
+    });
+    gaveUp.catch(() => {});
+    const commandLine: CommandLine = { name, text: line };
+    const once = { fire: onSent };
+    this.#sent.set(abort.signal, once);
+    this.#sent.set(commandLine, once);
+    try {
+      return await Promise.race([this.#line(commandLine, { signal: abort.signal }), gaveUp]);
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onCaller);
+      down.removeEventListener("abort", onDown);
     }
   }
 
-  async #execOnce(line: string, options: CommandOptions): Promise<Array<Record<string, string>>> {
-    const { signal, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS } = options;
-    signal?.throwIfAborted();
+  /**
+   * The base of the line chain: write the line and read its answer. Looks at
+   * the connection again, as a middleware may have waited, and ends when the
+   * signal does.
+   */
+  async #execOnce(line: CommandLine, options: LineOptions): Promise<Array<Record<string, string>>> {
+    const { signal } = options;
+    signal.throwIfAborted();
     if (this.#closed || this.#transport === null) throw new NotConnectedError();
+    const text = line.text;
 
-    let timer: ReturnType<typeof setTimeout> | undefined;
     let nudger: ReturnType<typeof setTimeout> | undefined;
     let nudgerStopped = false;
     let onAbort: (() => void) | undefined;
     const answered = new Promise<Array<Record<string, string>>>((resolve, reject) => {
-      this.#pending = { command: parseCommand(line)?.name ?? "", rows: [], resolve, reject };
-      timer = setTimeout(
-        () => reject(new CommandTimeoutError(parseCommand(line)?.name ?? "")),
-        timeoutMs,
-      );
-      onAbort = () => reject(signal!.reason);
-      signal?.addEventListener("abort", onAbort, { once: true });
+      this.#pending = { command: line.name, rows: [], resolve, reject };
+      onAbort = () => reject(signal.reason);
+      signal.addEventListener("abort", onAbort, { once: true });
     });
     // The answer may settle while the transport is still sending, as it does
     // when a send carries the whole round trip (WebQuery); a failure of the
@@ -1096,13 +1080,18 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     const sending = { failed: false };
     let abandonedByUs = false;
     const transport = this.#transport;
-    this.#lastSent = Date.now();
     const nudges = this.#options.transport.kind === "ssh";
     // Ended with the command, so that a request nobody waits for any more is
     // not left running to answer the next command; see `QueryTransport.send`.
     const sendAbort = new AbortController();
-    const send = transport.send(line, { signal: sendAbort.signal }).then(
+    const once = this.#sent.get(signal) ?? this.#sent.get(line);
+    const send = transport.send(text, { signal: sendAbort.signal }).then(
       () => {
+        // Handed to the connection; the first write only, as a resend is the
+        // same command.
+        const fire = once?.fire;
+        if (once !== undefined) once.fire = undefined;
+        fire?.();
         // On TeamSpeak 6 over SSH the server may hold back the last line of a
         // reply, usually `error id=0 msg=ok`, until the client writes again;
         // an empty line releases it and gets no answer of its own. This was
@@ -1132,11 +1121,10 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
       await Promise.race([send, answered]);
       return await answered;
     } finally {
-      clearTimeout(timer);
       sendAbort.abort();
       nudgerStopped = true;
       clearTimeout(nudger);
-      if (onAbort) signal?.removeEventListener("abort", onAbort);
+      if (onAbort) signal.removeEventListener("abort", onAbort);
       if (this.#pending !== null) {
         const gone = this.#pending;
         this.#pending = null;
@@ -1342,6 +1330,8 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
   }
 
   #fail(error: unknown): void {
+    // The connection is over: a command still inside a line middleware stops.
+    this.#down.abort(new NotConnectedError());
     const pending = this.#pending;
     this.#pending = null;
     pending?.reject(error);
@@ -1350,7 +1340,6 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
   #handleClose(error: Error | undefined): void {
     if (this.#status === ClientStatus.Disconnected) return;
     this.#transport = null;
-    clearTimeout(this.#keepAlive);
     this.#closed = true;
     this.#fail(new NotConnectedError(error ? { cause: error } : undefined));
     const wasConnected = this.#status === ClientStatus.Connected;
@@ -1393,7 +1382,6 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     this.#fail(error);
     const transport = this.#transport;
     this.#transport = null;
-    clearTimeout(this.#keepAlive);
     void transport?.close().catch(() => {});
     if (!this.#reconnecting) return;
     const cause =

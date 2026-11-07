@@ -61,6 +61,7 @@ export {
   NotConnectedError,
   NoDataError,
   AlreadyConnectedError,
+  floodWaitMs,
 } from "./errors.js";
 export { ErrorCode } from "./errorcode.js";
 export { Reason } from "./reason.js";
@@ -105,6 +106,10 @@ export type {
   Listener,
   Unsubscribe,
   CommandMiddleware,
+  CommandLine,
+  LineMiddleware,
+  LineOptions,
+  LineSender,
   FileDownloadInfo,
   FileUploadInfo,
   Logger,

@@ -36,9 +36,9 @@ interface PendingCommand {
  * with `error … return_code=N`, so every row seen since the previous `error`
  * belongs to command N. Rows are therefore held, tagged with where they came
  * from, until that `error` says whose they are — attributing them on arrival
- * would mean guessing which in-flight command the server is answering, and a
- * command can be registered here well before it is sent (it first waits on the
- * throttle and the middleware chain).
+ * would mean guessing which in-flight command the server is answering. A
+ * command is registered as its line is written, after any line middleware, so
+ * a line that waits there holds no return code.
  *
  * A nameless row always belongs to the command. A notification row belongs to
  * it only if the command declared that notification as its answer (see

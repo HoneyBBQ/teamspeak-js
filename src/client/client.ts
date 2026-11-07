@@ -49,10 +49,8 @@ import { CommandTracker, appendReturnCode } from "./commands.js";
 import {
   buildCommand,
   buildCommandChain,
+  buildLineChain,
   encodeRequest,
-  floodHoldMs,
-  FLOOD_RETRIES,
-  floodRetryDelayMs,
   parseServerError,
   resolveBackoffPolicy,
 } from "../core/internal.js";
@@ -67,7 +65,14 @@ import {
   handleInitServer,
   prepareClientPassword,
 } from "./handshake.js";
-import type { ClientVersion, CommandExecutor, CommandRequest } from "@honeybbq/teamspeak";
+import type {
+  ClientVersion,
+  CommandExecutor,
+  CommandLine,
+  CommandRequest,
+  LineOptions,
+  LineSender,
+} from "@honeybbq/teamspeak";
 import { handleNotification } from "../core/internal.js";
 import type { NotificationResult } from "../core/internal.js";
 import {
@@ -77,9 +82,7 @@ import {
   parseServerGroup,
   parseUint16,
 } from "../core/internal.js";
-import { CommandThrottle } from "./throttle.js";
 import { splitCommandRows, sleep } from "../core/internal.js";
-import { isAutoNicknameMatch } from "./helpers.js";
 import type { FileUploadInfo, FileDownloadInfo } from "@honeybbq/teamspeak";
 import { CommandTimeoutError, NotConnectedError } from "@honeybbq/teamspeak";
 import { responseSpec } from "../core/internal.js";
@@ -172,11 +175,6 @@ export interface ClientInternals {
    * `serverPublicKey` is the server's `omega`, as it sent it.
    */
   markHandshakeDone(serverPublicKey?: string): void;
-  /**
-   * Send a command line without waiting for an answer, on the handshake's
-   * own path: it needs an open socket, not a connected session.
-   */
-  execNoWait(command: string): Promise<void>;
   /** Handle a packet as if the current handler had received it. */
   handlePacket(packet: Packet): void;
 }
@@ -352,6 +350,17 @@ const VOICE_DROP_WARN_INTERVAL_MS = 10_000;
 /** The only commands handled before crypto init completes. */
 const PRE_INIT_COMMANDS: ReadonlySet<string> = new Set(["clientinitiv", "initivexpand2", "error"]);
 
+/** What the base of the line chain needs to know about the call a line belongs to. */
+interface LineCall {
+  readonly onSent: (() => void) | undefined;
+  /** Whether `onSent` has been called: it fires at the first write only. */
+  sent: boolean;
+  /** The goodbye of a disconnect, which may go out while the status says Disconnected. */
+  readonly goodbye: boolean;
+  /** A line the server answers with nothing: resolves once written. */
+  readonly noWait: boolean;
+}
+
 interface Subscription {
   readonly listener: (payload: unknown) => void;
   removed: boolean;
@@ -447,7 +456,15 @@ export class Client implements CommandExecutor, AsyncDisposable {
   /** Cuts short the reconnect loop's wait, on disconnect(). */
   #stopReconnecting: AbortController | undefined;
   #status: ClientStatus = ClientStatus.Disconnected;
-  #throttle = new CommandThrottle();
+  /**
+   * Aborted when the session ends, by `disconnect()` or a drop: what a command
+   * still inside a line middleware sees as its signal. A new one for each
+   * connection attempt.
+   */
+  #down = new AbortController();
+  /** The per-call state of the commands in the line chain, by their signal and their line. */
+  #calls = new WeakMap<object, LineCall>();
+  #line: LineSender;
   #cmdTrack = new CommandTracker(() => this.#clid);
   #viewStore: ViewStore;
   #clients: Map<number, ClientEntry>;
@@ -533,7 +550,6 @@ export class Client implements CommandExecutor, AsyncDisposable {
       },
       markConnected: (initServer) => this.#markConnected(initServer),
       markHandshakeDone: (serverPublicKey) => this.#markHandshakeDone(serverPublicKey),
-      execNoWait: (command) => this.#execNoWait(command, undefined, true),
       handlePacket: (packet) => this.#handlePacket(packet),
     };
 
@@ -542,7 +558,10 @@ export class Client implements CommandExecutor, AsyncDisposable {
     const cmdMiddlewares: readonly CommandMiddleware[] = options.commandMiddleware ?? [];
     this.#eventMiddlewares = options.eventMiddleware ?? [];
     this.#send = buildCommandChain(cmdMiddlewares, (request, commandOptions = {}) =>
-      this.#exec(encodeRequest(request, prepareClientPassword), commandOptions, false),
+      this.#exec(encodeRequest(request, prepareClientPassword), commandOptions),
+    );
+    this.#line = buildLineChain(options.lineMiddleware ?? [], (line, lineOptions) =>
+      this.#writeLine(line, lineOptions),
     );
     this.#eventChain = buildEventChain([...this.#eventMiddlewares], (event) =>
       this.#deliver(event.name, event.payload),
@@ -729,9 +748,9 @@ export class Client implements CommandExecutor, AsyncDisposable {
    *
    * Says goodbye first, waiting for the server's acknowledgement for a second
    * at most, or less if `signal` aborts sooner. The goodbye is sent at once,
-   * past the flood throttle, and also by a client still connecting whose
-   * clientinit is out; commands still waiting for their turn reject with a
-   * NotConnectedError and are never sent. The connection is closed
+   * past the line middleware, and also by a client still connecting whose
+   * clientinit is out; commands still inside a line middleware have their
+   * signal aborted, and reject with a NotConnectedError without being sent. The connection is closed
    * either way. A `connect()` still waiting for its handshake rejects with a
    * NotConnectedError, and so do the commands still waiting for an answer.
    * Resolves once `disconnected` has been delivered to the listeners, so one
@@ -769,9 +788,9 @@ export class Client implements CommandExecutor, AsyncDisposable {
       this.#status === ClientStatus.Connected ||
       (this.#status === ClientStatus.Connecting && this.#crypt.cryptoInitComplete);
     this.#status = ClientStatus.Disconnected;
-    // Whatever still waits for its turn is rejected and never sent; the
-    // goodbye does not wait for one.
-    this.#throttle.rejectAll(new NotConnectedError());
+    // Whatever still waits in a line middleware is aborted and never sent; the
+    // goodbye does not pass one.
+    this.#down.abort(new NotConnectedError());
     let left!: () => void;
     this.#attempt.rejectAfter(new NotConnectedError(), new Promise<void>((r) => (left = r)));
 
@@ -813,7 +832,6 @@ export class Client implements CommandExecutor, AsyncDisposable {
         }),
         { signal, timeoutMs: DISCONNECT_TIMEOUT_MS },
         true,
-        true,
       ).then(
         () => true,
         () => false,
@@ -850,14 +868,13 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * Rejects with a NotConnectedError unless the client is connected: while it
    * is still connecting, the session's keys may not exist yet.
    *
-   * A command the server refuses as flooding (`ErrorCode.ClientIsFlooding`)
-   * with a time to wait is sent again after it, and every other command waits
-   * too, up to three times and while its timeout allows; the refusal that
-   * remains rejects as it is.
+   * The line passes the `lineMiddleware`, if any. A command the server refuses
+   * as flooding (`ErrorCode.ClientIsFlooding`) rejects like any server error;
+   * `floodWaitMs` reads the wait it names.
    */
   // oxlint-disable-next-line typescript/array-type -- the public API report spells this `[]`; respelling it changes the report
   exec(command: string, options: CommandOptions = {}): Promise<Record<string, string>[]> {
-    return this.#exec(command, options, false);
+    return this.#exec(command, options);
   }
 
   /**
@@ -865,37 +882,35 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * commands the server answers with nothing at all. `CommandName` lists
    * the command names.
    *
-   * Commands are paced by a flood throttle; aborting `signal` while this waits
-   * for its turn rejects with the signal's reason and sends nothing. Rejects
-   * with a NotConnectedError unless the client is connected.
+   * The line passes the `lineMiddleware`, if any; aborting `signal` while it
+   * waits there rejects with the signal's reason and sends nothing. Resolves
+   * once the line has been handed to the connection. Rejects with a
+   * NotConnectedError unless the client is connected.
    */
   execNoWait(
     command: string,
     options: { readonly signal?: AbortSignal | undefined } = {},
   ): Promise<void> {
-    return this.#execNoWait(command, options.signal, false);
+    return this.#execNoWait(command, options.signal);
   }
 
   /**
-   * Whether a command may go out now. The handshake's own commands (`internal`)
-   * need only an open socket; everything else needs a connected session, so
-   * nothing a caller sends can go out under the public dummy key, or after
+   * Whether a command may go out now. The goodbye (`internal`) needs only an
+   * open socket; everything else needs a connected session, so nothing a
+   * caller sends can go out under the public dummy key, or after
    * disconnect() has begun saying goodbye.
    */
   #canSend(internal: boolean): boolean {
     return this.#handler.isOpen && (internal || this.#status === ClientStatus.Connected);
   }
 
-  async #execNoWait(
-    command: string,
-    signal: AbortSignal | undefined,
-    internal: boolean,
-  ): Promise<void> {
+  async #execNoWait(command: string, signal: AbortSignal | undefined): Promise<void> {
     signal?.throwIfAborted();
-    if (!this.#canSend(internal)) throw new NotConnectedError();
-    await this.#throttle.wait(signal);
-    if (!this.#canSend(internal)) throw new NotConnectedError();
-    this.#sendLine(command);
+    if (!this.#canSend(false)) throw new NotConnectedError();
+    const name = parseCommand(command)?.name ?? "";
+    // No timeout, as ever for a command nobody waits an answer for: the line
+    // middleware and the caller's signal are what can hold it.
+    await this.#runLine(name, command, { signal, noWait: true });
   }
 
   /**
@@ -920,102 +935,136 @@ export class Client implements CommandExecutor, AsyncDisposable {
   #exec(
     command: string,
     options: CommandOptions,
-    internal: boolean,
     goodbye = false,
   ): Promise<Array<Record<string, string>>> {
     if (!commandChannel.hasSubscribers) {
-      return this.#execUntraced(command, options, internal, goodbye);
+      return this.#execUntraced(command, options, goodbye);
     }
     const trace: CommandTrace = {
       command: parseCommand(command)?.name ?? "",
       client: this,
     };
-    return commandChannel.tracePromise(
-      () => this.#execUntraced(command, options, internal, goodbye),
-      trace,
-    );
+    return commandChannel.tracePromise(() => this.#execUntraced(command, options, goodbye), trace);
   }
 
   async #execUntraced(
     command: string,
     options: CommandOptions,
-    internal: boolean,
     goodbye: boolean,
   ): Promise<Array<Record<string, string>>> {
     const { signal, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS, onSent } = options;
     signal?.throwIfAborted();
     // A command sent on no socket used to vanish and surface 10 seconds later
     // as a timeout, which reads like a slow server rather than a usage error.
-    if (!this.#canSend(internal)) throw new NotConnectedError();
+    if (!this.#canSend(goodbye)) throw new NotConnectedError();
+    const name = parseCommand(command)?.name ?? "";
+    return this.#runLine(name, command, { signal, timeoutMs, onSent, goodbye });
+  }
+
+  /**
+   * Run one line through the line middleware, or straight to the connection
+   * for the goodbye. The timeout, the caller's signal and the end of the
+   * session each abort the signal the middleware is given, and the call
+   * rejects with the reason: the timeout bounds the whole chain, the waits of
+   * a middleware included.
+   */
+  async #runLine(
+    name: string,
+    text: string,
+    call: {
+      readonly signal: AbortSignal | undefined;
+      readonly timeoutMs?: number | undefined;
+      readonly onSent?: (() => void) | undefined;
+      readonly goodbye?: boolean;
+      readonly noWait?: boolean;
+    },
+  ): Promise<Array<Record<string, string>>> {
+    const { signal, timeoutMs, goodbye = false } = call;
+    const abort = new AbortController();
+    const down = this.#down.signal;
+    const stop = (reason: unknown): void => abort.abort(reason);
+    const timer =
+      timeoutMs === undefined
+        ? undefined
+        : setTimeout(() => stop(new CommandTimeoutError(name)), timeoutMs);
+    const onCaller = (): void => stop(abortReason(signal!));
+    // The goodbye leaves as the session ends, which is what aborts `down`.
+    const onDown = (): void => stop(down.reason);
+    signal?.addEventListener("abort", onCaller, { once: true });
+    if (!goodbye) down.addEventListener("abort", onDown, { once: true });
+    if (!goodbye && down.aborted) onDown();
+    // A middleware that ignores its signal must not hold the call past it.
+    const gaveUp = new Promise<never>((_, reject) => {
+      abort.signal.addEventListener("abort", () => reject(abortReason(abort.signal)), {
+        once: true,
+      });
+    });
+    gaveUp.catch(() => {});
+    const line: CommandLine = { name, text };
+    const state: LineCall = {
+      onSent: call.onSent,
+      sent: false,
+      goodbye,
+      noWait: call.noWait === true,
+    };
+    this.#calls.set(abort.signal, state);
+    this.#calls.set(line, state);
+    try {
+      const send: LineSender = goodbye ? (l, o) => this.#writeLine(l, o) : this.#line;
+      return await Promise.race([send(line, { signal: abort.signal }), gaveUp]);
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onCaller);
+      down.removeEventListener("abort", onDown);
+    }
+  }
+
+  /**
+   * The base of the line chain: write the line, with a return code of its own
+   * each time it is called, and read its answer. Looks at the connection once
+   * more, as a middleware may have waited, and ends when the signal does.
+   */
+  async #writeLine(
+    line: CommandLine,
+    options: LineOptions,
+  ): Promise<Array<Record<string, string>>> {
+    const { signal } = options;
+    const call = this.#calls.get(signal) ?? this.#calls.get(line);
+    signal.throwIfAborted();
+    if (!this.#canSend(call?.goodbye === true)) throw new NotConnectedError();
+    const sent = (): void => {
+      if (call === undefined || call.sent) return;
+      call.sent = true;
+      call.onSent?.();
+    };
+    if (call?.noWait === true) {
+      this.#sendLine(line.text);
+      sent();
+      return [];
+    }
 
     // Which notifications answer this command, and — for answers that arrive
     // after the `error` — the request field they echo back.
-    const parsed = parseCommand(command);
-    const spec = responseSpec(parsed?.name ?? "");
+    const parsed = parseCommand(line.text);
+    const spec = responseSpec(line.name);
     const key = spec?.correlated?.key;
     const correlation = key === undefined ? undefined : parsed?.params[key];
     const echo = spec?.echoKey === undefined ? undefined : parsed?.params[spec.echoKey];
 
-    let [rc, answered] = this.#cmdTrack.register(spec, correlation, echo);
-    const deadline = performance.now() + timeoutMs;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let onAbort: (() => void) | undefined;
-    // Started before the throttle: the timeout bounds the whole command, its
-    // wait for a turn included, and so does the signal.
-    const givenUp = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new CommandTimeoutError(parsed?.name ?? "")), timeoutMs);
-      onAbort = () => reject(abortReason(signal!));
-      signal?.addEventListener("abort", onAbort, { once: true });
-    });
-    givenUp.catch(() => {});
-    const throttleAbort = new AbortController();
+    const [rc, answered] = this.#cmdTrack.register(spec, correlation, echo);
+    answered.catch(() => {});
     try {
-      for (let refused = 0; ; refused++) {
-        const withRc = appendReturnCode(command, rc);
-        // The goodbye of a disconnect goes out at once: queued behind other
-        // commands it would not leave in time, and the server would keep the
-        // session.
-        if (!goodbye) await Promise.race([this.#throttle.wait(throttleAbort.signal), givenUp]);
-        if (!this.#canSend(internal)) throw new NotConnectedError();
-        this.#sendLine(withRc);
-        if (refused === 0) onSent?.();
-
-        const result = await Promise.race([answered, givenUp]);
-        // Refused as flooding with a time to wait, which the command can
-        // afford: nothing is sent until then, and the command, which the
-        // server did not run, goes out again.
-        const wait = result.err ? floodRetryDelayMs(result.err) : undefined;
-        const hold = wait === undefined ? undefined : floodHoldMs(wait);
-        if (
-          hold !== undefined &&
-          !goodbye &&
-          refused < FLOOD_RETRIES &&
-          hold < deadline - performance.now()
-        ) {
-          this.#logger.debug("the server asked for a pause", {
-            command: parsed?.name,
-            waitMs: wait,
-          });
-          this.#throttle.hold(hold);
-          this.#cmdTrack.unregister(rc);
-          [rc, answered] = this.#cmdTrack.register(spec, correlation, echo);
-          continue;
-        }
-        if (result.err) throw result.err;
-        // The server took the rename, so it is what this client now asks for.
-        if (!internal && parsed?.name === "clientupdate") {
-          const renamed = parsed.params["client_nickname"];
-          if (renamed !== undefined) this.#requestedNickname = renamed;
-        }
-        return result.data;
+      this.#sendLine(appendReturnCode(line.text, rc));
+      sent();
+      const result = await abortable(answered, signal);
+      if (result.err) throw result.err;
+      // The server took the rename, so it is what this client now asks for.
+      if (call?.goodbye !== true && line.name === "clientupdate") {
+        const renamed = parsed?.params["client_nickname"];
+        if (renamed !== undefined) this.#requestedNickname = renamed;
       }
+      return result.data;
     } finally {
-      // A command given up while it waited for its turn gives the turn back.
-      throttleAbort.abort();
-      // Cleared, not left to fire: a pending timer keeps the process alive for
-      // the full timeout after the last command has long been answered.
-      clearTimeout(timer);
-      if (onAbort) signal?.removeEventListener("abort", onAbort);
       this.#cmdTrack.unregister(rc);
     }
   }
@@ -1478,6 +1527,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
     this.#handler = this.#newHandler();
     this.#attempt = newConnectAttempt();
     this.#cmdTrack.reset(new NotConnectedError());
+    this.#down.abort(new NotConnectedError());
+    this.#down = new AbortController();
     this.#viewStore.reset();
     this.#clid = 0;
     this.#capabilities = unknownServerCapabilities();
@@ -1793,7 +1844,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
    */
   #answerConnectionInfoRequest(): void {
     const line = buildSetConnectionInfo(this.#handler.trafficSnapshot(), this.#handler.roundTrip);
-    this.#execNoWait(line, undefined, false).catch((error: unknown) => {
+    this.#execNoWait(line, undefined).catch((error: unknown) => {
       this.#logger.debug("could not answer a connection info request", {
         error: String(error),
       });
@@ -1833,12 +1884,12 @@ export class Client implements CommandExecutor, AsyncDisposable {
     switch (result.kind) {
       case "clientEnter": {
         const info = result.info;
-        // Identify self by the clid initserver already assigned rather than by
-        // nickname: any other client whose nickname happens to be "<our
-        // nick><digits>" — which is how the server renames a client whose
-        // nickname was taken — would otherwise be mistaken for us, poisoning
-        // every outgoing packet header with a foreign clientID until the server
-        // drops the connection for command-resend timeout.
+        // Identify self by the clid initserver assigned, never by nickname: any
+        // other client whose nickname happens to be "<our nick><digits>" — which
+        // is how the server renames a client whose nickname was taken — would
+        // otherwise be mistaken for us, poisoning every outgoing packet header
+        // with a foreign clientID until the server drops the connection for
+        // command-resend timeout.
         //
         // This no longer marks the end of the welcome sequence: the server
         // sends more welcome data after it, and `channellistfinished` is the
@@ -1846,16 +1897,6 @@ export class Client implements CommandExecutor, AsyncDisposable {
         if (info.id === this.#clid) {
           // Carries the rename the server applied if our nickname was taken;
           // the nickname asked for stays as it was.
-          this.#nickname = info.nickname;
-        } else if (
-          this.#clid === 0 &&
-          isAutoNicknameMatch(this.#requestedNickname, info.nickname)
-        ) {
-          // initserver carried no aclid, so the welcome enter is the only way
-          // to learn our clid. Gated on clid still being unknown so a later
-          // lookalike can never hijack an established session.
-          this.#clid = info.id;
-          this.#handler.setClientID(info.id);
           this.#nickname = info.nickname;
         }
         this.#emitServerEvent({ name: "clientEnter", payload: info });
@@ -2114,6 +2155,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     // Nothing in flight can be answered any more; failing it now, with the
     // reason, beats every caller timing out one by one.
     this.#cmdTrack.reset(new NotConnectedError(err ? { cause: err } : undefined));
+    this.#down.abort(new NotConnectedError(err ? { cause: err } : undefined));
     if (this.#status !== ClientStatus.Connected) {
       // The socket closed before the handshake finished, so this is a failed
       // connection attempt rather than a disconnect of a live session.

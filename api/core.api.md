@@ -892,6 +892,12 @@ export interface CommandExecutor {
 }
 
 // @public
+export interface CommandLine {
+    readonly name: string;
+    readonly text: string;
+}
+
+// @public
 export type CommandMiddleware = (next: CommandExecutor["send"]) => CommandExecutor["send"];
 
 // Warning: (ae-forgotten-export) The symbol "commandNameValues" needs to be exported by the entry point index.d.ts
@@ -1593,6 +1599,9 @@ export function findCustomProperty(client: CommandExecutor, ident: string, patte
 export function findPermission(client: CommandExecutor, permission: Permission, options?: CommandOptions): Promise<PermissionLocation[]>;
 
 // @public
+export function floodWaitMs(error: unknown): number | undefined;
+
+// @public
 export function getChannelInfo(client: CommandExecutor, cid: ChannelID, options?: CommandOptions): Promise<Channel>;
 
 // @public
@@ -1787,6 +1796,17 @@ export interface KickedEvent {
 
 // @public
 export type KickReason = typeof Reason.KickChannel | typeof Reason.KickServer;
+
+// @public
+export type LineMiddleware = (next: LineSender) => LineSender;
+
+// @public
+export interface LineOptions {
+    readonly signal: AbortSignal;
+}
+
+// @public
+export type LineSender = (line: CommandLine, options: LineOptions) => Promise<Array<Record<string, string>>>;
 
 // @public
 export function listActiveTransfers(client: CommandExecutor, options?: CommandOptions): Promise<ActiveTransfer[]>;

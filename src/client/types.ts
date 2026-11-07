@@ -13,6 +13,7 @@ import type {
   ClientUpdatedEvent,
   ClientVersion,
   CommandMiddleware,
+  LineMiddleware,
   Logger,
   PluginCommandEvent,
   PokeEvent,
@@ -499,6 +500,21 @@ export interface ClientOptions {
    * the client's life.
    */
   readonly commandMiddleware?: readonly CommandMiddleware[] | undefined;
+  /**
+   * Wraps every command line the client sends, outermost first; see
+   * `LineMiddleware`. That is the typed commands once encoded, the raw lines
+   * of `exec` and `execNoWait`, and the client's own: `setconnectioninfo` and
+   * what streams, avatars and file transfers send. Not passed: the handshake's
+   * own lines (`clientinitiv`, `clientek`, `clientinit`), which go out before
+   * a session exists, and the `clientdisconnect` of `disconnect()`, which must
+   * leave at once or the server keeps a ghost session (measured: error 521
+   * for the next connection). Fixed for the client's life.
+   *
+   * The client never paces, resends or holds a command itself: a bot that
+   * would trip the server's antiflood paces its commands here. A command's
+   * `timeoutMs` includes the wait. See `docs/flood-control.md`.
+   */
+  readonly lineMiddleware?: readonly LineMiddleware[] | undefined;
   /** Wraps the delivery of every server event, outermost first. Fixed for the client's life. */
   readonly eventMiddleware?: readonly EventMiddleware[] | undefined;
   /**

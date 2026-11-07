@@ -35,10 +35,71 @@ export interface ClientVersion {
  *
  * Only the typed commands, which reach the client through `send`, pass
  * through it. Raw lines sent with `exec` or `execNoWait` and the client's own
- * handshake-time commands do not. A request's parameters can hold passwords
+ * commands do not; those pass a {@link LineMiddleware} instead. A request's parameters can hold passwords
  * and privilege keys, so a middleware must not log them whole.
  */
 export type CommandMiddleware = (next: CommandExecutor["send"]) => CommandExecutor["send"];
+
+/** One command line on its way to the server. */
+export interface CommandLine {
+  /** The command's name, such as `clientupdate`. */
+  readonly name: string;
+  /**
+   * The line as it goes on the wire, escaped, without the `return_code` the
+   * client adds. It can carry secrets (channel password hashes, privilege
+   * keys, a ServerQuery login): do not log it.
+   */
+  readonly text: string;
+}
+
+/** What a line middleware is told about the command it passes on. */
+export interface LineOptions {
+  /**
+   * Aborts when the caller's own signal does, when the command's timeout
+   * runs out, and when the client disconnects or the connection drops. A
+   * middleware that waits must stop waiting then; the call rejects with the
+   * signal's reason either way.
+   */
+  readonly signal: AbortSignal;
+}
+
+/**
+ * Sends one command line and returns the rows that answer it, or throws.
+ * The base of a chain writes the line to the connection; each
+ * {@link LineMiddleware} wraps the next.
+ */
+export type LineSender = (
+  line: CommandLine,
+  options: LineOptions,
+) => Promise<Array<Record<string, string>>>;
+
+/**
+ * Wraps the sending of every command line, so it can hold a line back, send
+ * it more than once, or watch it go. This is where a bot paces its commands
+ * against the server's flood limit: the client never does so itself. See
+ * `docs/flood-control.md`.
+ *
+ * It sits closest to the wire. A typed command passes the command middleware
+ * and has its channel passwords encoded first; a raw line from `exec` enters
+ * here directly, and so do the client's own commands (on the voice client
+ * `setconnectioninfo` and what streams, avatars and file transfers send; on
+ * ServerQuery `login`, `use`, `version` and the rest of `connect()`). Not
+ * passed: the voice handshake's own lines (`clientinit`, `clientinitiv`,
+ * `clientek`), which go out before a session exists, and the goodbye of
+ * `disconnect()` (`clientdisconnect`, or the ServerQuery `quit`), which must
+ * leave at once or the server keeps the session (measured: error 521 for the
+ * next connection).
+ *
+ * `next` may be called more than once: each call is a new command to the
+ * server, with a return code of its own, so a middleware can send a refused
+ * line again. A command's `timeoutMs` bounds the whole chain, the waits of a
+ * middleware included. After the chain, the client looks at the connection
+ * once more and fails with a NotConnectedError, writing nothing, if a
+ * disconnect has begun meanwhile.
+ *
+ * `line.text` can carry secrets, so do not log it whole.
+ */
+export type LineMiddleware = (next: LineSender) => LineSender;
 
 // ---- Logger interface --------------------------------------------------------
 
