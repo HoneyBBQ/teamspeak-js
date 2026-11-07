@@ -46,7 +46,7 @@ const BANNER = "TS3\n\rWelcome.\n\r";
 
 /** Real timers until the handshake commands are done, then fake ones. */
 async function connected(transport: QueryTransportOptions, channel: Channel): Promise<QueryClient> {
-  const client = new QueryClient({ transport, events: false });
+  const client = new QueryClient({ transport });
   const connecting = client.connect();
   const sent = async (n: number): Promise<void> => {
     while (channel.writes.length < n) await new Promise((r) => setTimeout(r, 2));

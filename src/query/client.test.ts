@@ -1,5 +1,5 @@
 import { Duplex } from "node:stream";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { QueryClient } from "./index.js";
 import type {
   QueryClientOptions,
@@ -16,6 +16,9 @@ import {
   ServerError,
   TeamspeakError,
   asClientDBID,
+  floodWaitMs,
+  type CommandLine,
+  type LineMiddleware,
   createChannel,
   iterateClientDatabase,
   listBans,
@@ -152,7 +155,7 @@ async function connected(options: Partial<QueryClientOptions> = {}): Promise<{
 }> {
   const transport = new FakeTransport();
   autoOk(transport);
-  const client = clientOn(transport, { events: false, ...options });
+  const client = clientOn(transport, { ...options });
   await client.connect();
   transport.auto = undefined;
   return { client, transport, baseline: transport.sent.length };
@@ -325,12 +328,13 @@ describe("QueryClient options", () => {
   // made rather than leaving a listener that never runs.
   it("refuses `events` on the WebQuery transport, at construction", () => {
     const web = { kind: "web", url: "http://h", apiKey: "k" } as const;
-    expect(() => new QueryClient({ transport: web, events: true })).toThrow(TypeError);
-    expect(() => new QueryClient({ transport: web, events: false })).toThrow(TypeError);
+    expect(() => new QueryClient({ transport: web, events: { categories: ["server"] } })).toThrow(
+      TypeError,
+    );
     expect(() => new QueryClient({ transport: web })).not.toThrow();
     // With a custom transport the capability is only known once it is opened.
     const offline = new FakeTransport(false);
-    expect(() => clientOn(offline, { events: true })).not.toThrow();
+    expect(() => clientOn(offline, { events: { categories: ["server"] } })).not.toThrow();
   });
 
   // The entry point's own default: no transport is no client.
@@ -346,7 +350,11 @@ describe("QueryClient lifecycle", () => {
     const client = tcpClientOn(
       transport,
       { name: "serveradmin", password: "pw" },
-      { server: { id: 1 }, nickname: "bot" },
+      {
+        server: { id: 1 },
+        nickname: "bot",
+        events: { categories: ["server", "channel", "textserver", "textchannel", "textprivate"] },
+      },
     );
 
     await client.connect();
@@ -367,7 +375,7 @@ describe("QueryClient lifecycle", () => {
     expect(client.serverFamily).toBe("ts3");
   });
 
-  it("asks for the categories it was given, and for none when told so", async () => {
+  it("asks for the categories it was given, and for none when none are named", async () => {
     const transport = new FakeTransport();
     autoOk(transport);
     const client = clientOn(transport, {
@@ -385,10 +393,12 @@ describe("QueryClient lifecycle", () => {
 
     const quiet = new FakeTransport();
     autoOk(quiet);
-    const silent = clientOn(quiet, { events: false });
+    const silent = clientOn(quiet, { server: { id: 1 } });
     await silent.connect();
-    expect(quiet.sent.filter((l) => l.startsWith("servernotifyregister"))).toEqual([]);
-    expect(quiet.sent).not.toContain("clientlist -uid -groups -away -voice");
+    expect(quiet.sent).toEqual(["use sid=1", "version", "whoami"]);
+
+    // Naming none is a mistake, not a way to ask for none.
+    expect(() => clientOn(quiet, { events: { categories: [] } })).toThrow(TypeError);
   });
 
   // Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 6.0.0 (raw TCP and SSH):
@@ -414,31 +424,6 @@ describe("QueryClient lifecycle", () => {
     transport.sent.length = 0;
     await client.use({ id: 2 });
     expect(transport.sent).toEqual(["use sid=2", "whoami", "clientlist -uid -groups -away -voice"]);
-  });
-
-  it("waits out a flood refusal while connecting", async () => {
-    vi.useFakeTimers();
-    try {
-      const transport = new FakeTransport();
-      autoOk(transport);
-      let refused = false;
-      const answer = transport.auto!;
-      transport.auto = (line) => {
-        if (line === "whoami" && !refused) {
-          refused = true;
-          return [FLOODED];
-        }
-        return answer(line);
-      };
-      const client = clientOn(transport, { events: false });
-      const connecting = client.connect();
-      await vi.advanceTimersByTimeAsync(4_100);
-      await connecting;
-      expect(client.status).toBe("connected");
-      expect(transport.sent).toEqual(["version", "whoami", "whoami"]);
-    } finally {
-      vi.useRealTimers();
-    }
   });
 
   it("reads the family from the server's version", async () => {
@@ -751,7 +736,7 @@ describe("QueryClient commands", () => {
       }
     }
     const transport = new SlowTransport();
-    const client = clientOn(transport, { events: false });
+    const client = clientOn(transport);
     await client.connect();
 
     await expect(client.exec("slow", { timeoutMs: 5 })).rejects.toBeInstanceOf(CommandTimeoutError);
@@ -782,7 +767,7 @@ describe("QueryClient commands", () => {
       }
     }
     const transport = new FailingTransport();
-    const client = clientOn(transport, { events: false });
+    const client = clientOn(transport);
     await client.connect();
 
     await expect(client.exec("a")).rejects.toThrow("http 502");
@@ -820,114 +805,218 @@ describe("QueryClient commands", () => {
 const FLOODED = "error id=524 msg=client\\sis\\sflooding extra_msg=please\\swait\\s2\\sseconds";
 
 describe("QueryClient flood refusals", () => {
-  afterEach(() => vi.useRealTimers());
-
-  it("waits out the pause the server asks for and sends the command again", async () => {
+  it("rejects with the server's error and sends nothing more", async () => {
     const { client, transport, baseline } = await connected();
     vi.useFakeTimers();
+    try {
+      const failure = client.exec("whoami").catch((error: unknown) => error);
+      await transport.sentCount(baseline + 1);
+      transport.receive(FLOODED);
+      const error = await failure;
+      expect(error).toBeInstanceOf(ServerError);
+      expect((error as ServerError).code).toBe(ErrorCode.ClientIsFlooding);
+      expect(floodWaitMs(error)).toBe(2_000);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(transport.sent).toHaveLength(baseline + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
+  it("fails a connect that is refused while connecting", async () => {
+    const transport = new FakeTransport();
+    autoOk(transport);
+    const answer = transport.auto!;
+    transport.auto = (line) => (line === "whoami" ? [FLOODED] : answer(line));
+    const client = clientOn(transport);
+    await expect(client.connect()).rejects.toMatchObject({ code: ErrorCode.ClientIsFlooding });
+    expect(transport.sent).toEqual(["version", "whoami"]);
+  });
+});
+
+describe("QueryClient line middleware", () => {
+  const seenBy =
+    (seen: CommandLine[]): LineMiddleware =>
+    (next) =>
+    (line, options) => {
+      seen.push(line);
+      return next(line, options);
+    };
+
+  it("passes typed, raw and the client's own lines, in the order given", async () => {
+    const seen: CommandLine[] = [];
+    const order: string[] = [];
+    const tag =
+      (name: string): LineMiddleware =>
+      (next) =>
+      (line, options) => {
+        order.push(`${name}:${line.name}`);
+        return next(line, options);
+      };
+    const transport = new FakeTransport();
+    autoOk(transport);
+    const client = tcpClientOn(
+      transport,
+      { name: "u", password: "p w" },
+      {
+        server: { id: 1 },
+        events: { categories: ["server"] },
+        lineMiddleware: [tag("outer"), tag("inner"), seenBy(seen)],
+      },
+    );
+    await client.connect();
+    // Login, use, version, whoami and the registrations are the client's own.
+    expect(seen.map((l) => l.name)).toEqual([
+      "login",
+      "use",
+      "version",
+      "whoami",
+      "servernotifyregister",
+      "clientlist",
+    ]);
+    expect(order.slice(0, 2)).toEqual(["outer:login", "inner:login"]);
+    // The line as written, escaped.
+    expect(seen[0]!.text).toBe("login client_login_name=u client_login_password=p\\sw");
+
+    seen.length = 0;
+    await client.exec("whoami");
+    await client.send({ command: "clientinfo", params: [["clid", 4]] });
+    expect(seen.map((l) => l.text)).toEqual(["whoami", "clientinfo clid=4"]);
+    await client.disconnect();
+  });
+
+  it("does not pass the quit that close() says", async () => {
+    const seen: CommandLine[] = [];
+    const transport = new FakeTransport();
+    autoOk(transport);
+    const client = tcpClientOn(
+      transport,
+      { name: "u", password: "p" },
+      {
+        lineMiddleware: [seenBy(seen)],
+      },
+    );
+    await client.connect();
+    await client.disconnect();
+    expect(transport.sent).toContain("quit");
+    expect(seen.map((l) => l.name)).not.toContain("quit");
+  });
+
+  it("holds every later command behind a middleware that waits, in order", async () => {
+    let release: (() => void) | undefined;
+    const holding: LineMiddleware = (next) => async (line, options) => {
+      if (line.name === "first") await new Promise<void>((resolve) => (release = resolve));
+      return next(line, options);
+    };
+    const { client, transport, baseline } = await connected({ lineMiddleware: [holding] });
+    const first = client.exec("first");
+    const second = client.exec("second");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(transport.sent).toHaveLength(baseline);
+    release?.();
+    await transport.sentCount(baseline + 1);
+    expect(transport.sent.slice(baseline)).toEqual(["first"]);
+    transport.receive("a=1", "error id=0 msg=ok");
+    await first;
+    await transport.sentCount(baseline + 2);
+    transport.receive("b=2", "error id=0 msg=ok");
+    expect(await second).toEqual([{ b: "2" }]);
+    expect(transport.sent.slice(baseline)).toEqual(["first", "second"]);
+  });
+
+  it("starts the timeout at the command's turn, and bounds the middleware's wait", async () => {
+    const hung: LineMiddleware = (next) => (line, options) =>
+      line.name === "held" ? new Promise(() => {}) : next(line, options);
+    const { client } = await connected({ lineMiddleware: [hung] });
+    const started = Date.now();
+    await expect(client.exec("held", { timeoutMs: 30 })).rejects.toBeInstanceOf(
+      CommandTimeoutError,
+    );
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
+  it("aborts the signal of a line it holds when the caller aborts", async () => {
+    let signal: AbortSignal | undefined;
+    const holding: LineMiddleware = (next) => (line, options) => {
+      if (line.name !== "held") return next(line, options);
+      signal = options.signal;
+      return new Promise(() => {});
+    };
+    const { client } = await connected({ lineMiddleware: [holding] });
+    const reason = new Error("stop");
+    const caller = new AbortController();
+    const failed = expect(client.exec("held", { signal: caller.signal })).rejects.toBe(reason);
+    await new Promise((r) => setTimeout(r, 5));
+    expect(signal?.aborted).toBe(false);
+    caller.abort(reason);
+    await failed;
+    expect(signal?.aborted).toBe(true);
+    expect(signal?.reason).toBe(reason);
+  });
+
+  it("aborts a held line on disconnect, rejects it with NotConnectedError, and never writes it", async () => {
+    let signal: AbortSignal | undefined;
+    const holding: LineMiddleware = (next) => async (line, options) => {
+      if (line.name !== "held") return next(line, options);
+      signal = options.signal;
+      await new Promise<void>((resolve) =>
+        options.signal.addEventListener("abort", () => resolve()),
+      );
+      return next(line, options);
+    };
+    const { client, transport, baseline } = await connected({ lineMiddleware: [holding] });
+    const held = expect(client.exec("held")).rejects.toBeInstanceOf(NotConnectedError);
+    const queued = expect(client.exec("second")).rejects.toBeInstanceOf(NotConnectedError);
+    await new Promise((r) => setTimeout(r, 5));
+    await client.disconnect();
+    await held;
+    await queued;
+    expect(signal?.aborted).toBe(true);
+    expect(transport.sent.slice(baseline)).toEqual([]);
+  });
+
+  it("sends again with a call of next, which a refusal does not stop", async () => {
+    const twice: LineMiddleware = (next) => async (line, options) => {
+      try {
+        return await next(line, options);
+      } catch {
+        return next(line, options);
+      }
+    };
+    const { client, transport, baseline } = await connected({ lineMiddleware: [twice] });
     const answered = client.exec("whoami");
     await transport.sentCount(baseline + 1);
     transport.receive(FLOODED);
-    // Twice the 2 seconds the server named: still held at 3.9 seconds.
-    await vi.advanceTimersByTimeAsync(3_900);
-    expect(transport.sent).toHaveLength(baseline + 1);
-    await vi.advanceTimersByTimeAsync(120);
     await transport.sentCount(baseline + 2);
     transport.receive("client_id=1", "error id=0 msg=ok");
-
     expect(await answered).toEqual([{ client_id: "1" }]);
     expect(transport.sent.slice(baseline)).toEqual(["whoami", "whoami"]);
   });
 
-  it("holds the commands queued behind it until the pause is over", async () => {
-    const { client, transport, baseline } = await connected();
-    vi.useFakeTimers();
-
-    const first = client.exec("first");
-    const second = client.exec("second");
+  it("fires onSent when the line is handed to the connection, once", async () => {
+    let release: (() => void) | undefined;
+    let waiting = false;
+    const twice: LineMiddleware = (next) => async (line, options) => {
+      if (waiting) await new Promise<void>((resolve) => (release = resolve));
+      try {
+        return await next(line, options);
+      } catch {
+        return next(line, options);
+      }
+    };
+    const { client, transport, baseline } = await connected({ lineMiddleware: [twice] });
+    let sent = 0;
+    waiting = true;
+    const answered = client.exec("whoami", { onSent: () => sent++ });
+    await new Promise((r) => setTimeout(r, 5));
+    expect(sent).toBe(0);
+    release?.();
     await transport.sentCount(baseline + 1);
-    transport.receive(FLOODED);
-    await vi.advanceTimersByTimeAsync(3_900);
-    expect(transport.sent.slice(baseline)).toEqual(["first"]);
-    await vi.advanceTimersByTimeAsync(120);
+    transport.receive("error id=1 msg=x");
     await transport.sentCount(baseline + 2);
-    transport.receive("a=1", "error id=0 msg=ok");
-    await first;
-    await transport.sentCount(baseline + 3);
-    transport.receive("b=2", "error id=0 msg=ok");
-
-    expect(await second).toEqual([{ b: "2" }]);
-    expect(transport.sent.slice(baseline)).toEqual(["first", "first", "second"]);
-  });
-
-  it("sends the command again at most three times", async () => {
-    const { client, transport, baseline } = await connected();
-    vi.useFakeTimers();
-
-    const answered = client.exec("whoami", { timeoutMs: 60_000 });
-    const failure = answered.catch((error: unknown) => error);
-    for (let sent = 1; sent <= 4; sent++) {
-      await transport.sentCount(baseline + sent);
-      transport.receive(FLOODED);
-      await vi.advanceTimersByTimeAsync(4_020);
-    }
-
-    const error = await failure;
-    expect(error).toBeInstanceOf(ServerError);
-    expect((error as ServerError).code).toBe(ErrorCode.ClientIsFlooding);
-    expect(transport.sent).toHaveLength(baseline + 4);
-  });
-
-  it("does not wait for a pause longer than the command has left", async () => {
-    const { client, transport, baseline } = await connected();
-    vi.useFakeTimers();
-
-    const answered = client.exec("whoami", { timeoutMs: 1_500 });
-    const failure = answered.catch((error: unknown) => error);
-    await transport.sentCount(baseline + 1);
-    transport.receive(FLOODED);
-
-    // Refused at once, not after a timeout: the pause does not fit.
-    expect(await failure).toBeInstanceOf(ServerError);
-    await vi.advanceTimersByTimeAsync(5_000);
-    expect(transport.sent).toHaveLength(baseline + 1);
-  });
-
-  it("gives up when the caller aborts during the pause", async () => {
-    const { client, transport, baseline } = await connected();
-    vi.useFakeTimers();
-
-    const abort = new AbortController();
-    const answered = client.exec("whoami", { signal: abort.signal });
-    const failure = answered.catch((error: unknown) => error);
-    await transport.sentCount(baseline + 1);
-    transport.receive(FLOODED);
-    await vi.advanceTimersByTimeAsync(500);
-    abort.abort(new Error("stop"));
-
-    expect(await failure).toEqual(new Error("stop"));
-    await vi.advanceTimersByTimeAsync(5_000);
-    expect(transport.sent).toHaveLength(baseline + 1);
-  });
-
-  it("does not send a command again for a refusal that names no pause, or is not this one", async () => {
-    const { client, transport, baseline } = await connected();
-    vi.useFakeTimers();
-
-    for (const line of [
-      "error id=524 msg=client\\sis\\sflooding",
-      "error id=3329 msg=flood\\sban extra_msg=please\\swait\\s2\\sseconds",
-    ]) {
-      const sent = transport.sent.length;
-      const failure = client.exec("whoami").catch((error: unknown) => error);
-      await transport.sentCount(sent + 1);
-      transport.receive(line);
-      expect(await failure).toBeInstanceOf(ServerError);
-      await vi.advanceTimersByTimeAsync(5_000);
-      expect(transport.sent).toHaveLength(sent + 1);
-    }
-    expect(transport.sent).toHaveLength(baseline + 2);
+    transport.receive("error id=0 msg=ok");
+    await answered;
+    expect(sent).toBe(1);
   });
 });
 
@@ -945,7 +1034,6 @@ describe("QueryClient transport seams", () => {
           return stream;
         },
       },
-      events: false,
     });
 
     expect(client.transport).toBeUndefined();
@@ -979,7 +1067,6 @@ describe("QueryClient transport seams", () => {
         host: "ts.example.com",
         connection: fakeSsh(channel, opened),
       },
-      events: false,
     });
 
     const connecting = client.connect();
@@ -1017,7 +1104,6 @@ describe("QueryClient transport seams", () => {
           return fakeSsh(channel, []);
         },
       },
-      events: false,
     });
 
     const connecting = client.connect();
@@ -1099,7 +1185,7 @@ describe("QueryClient reconnection", () => {
     const client = tcpClientOn(
       transport,
       { name: "u", password: "wrong" },
-      { events: false, reconnect: { backoff: { initialDelayMs: 1 } } },
+      { reconnect: { backoff: { initialDelayMs: 1 } } },
     );
 
     await expect(client.connect()).rejects.toBeInstanceOf(ServerError);
@@ -1128,7 +1214,7 @@ describe("QueryClient reconnection", () => {
     const client = tcpClientOn(
       transport,
       { name: "u", password: "pw" },
-      { events: false, reconnect: { backoff: { initialDelayMs: 1, jitter: 0 } } },
+      { reconnect: { backoff: { initialDelayMs: 1, jitter: 0 } } },
     );
     const seen: Array<{ error: Error | undefined; willReconnect: boolean }> = [];
     client.on("disconnected", (e) => seen.push(e));
@@ -1165,7 +1251,6 @@ describe("QueryClient reconnection", () => {
       transport,
       { name: "u", password: "pw" },
       {
-        events: false,
         server: { id: 1 },
         reconnect: { backoff: { initialDelayMs: 1, maxDelayMs: 1, jitter: 0, maxAttempts: 4 } },
       },
@@ -1185,7 +1270,6 @@ describe("QueryClient reconnection", () => {
     const transport = new FakeTransport();
     autoOk(transport);
     const client = clientOn(transport, {
-      events: false,
       reconnect: { backoff: { initialDelayMs: 1, jitter: 0 } },
     });
     const reconnects: boolean[] = [];
@@ -1206,7 +1290,6 @@ describe("QueryClient reconnection", () => {
     const transport = new FakeTransport();
     autoOk(transport);
     const client = clientOn(transport, {
-      events: false,
       reconnect: { backoff: { initialDelayMs: 1, jitter: 0 } },
     });
     await client.connect();
@@ -1220,87 +1303,32 @@ describe("QueryClient reconnection", () => {
   });
 });
 
-describe("QueryClient keepalive", () => {
-  // Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 6.0.0-beta13.1: the server
-  // closes a raw TCP or SSH session that sent no command for 300 seconds.
-  function versionsSent(fake: FakeTransport): number {
-    return fake.sent.filter((line) => line === "version").length;
-  }
-  function autoAnswering(fake: FakeTransport): void {
-    fake.auto = (line) =>
-      line.startsWith("version")
-        ? ["version=3.13.8 build=1 platform=Linux", "error id=0 msg=ok"]
-        : ["error id=0 msg=ok"];
-  }
-
-  it("sends `version` once the session has been idle for the interval", async () => {
+describe("QueryClient idle sessions", () => {
+  // The server closes a raw TCP or SSH session that sent no command for 300
+  // seconds (measured, TeamSpeak 3 3.13.8 and TeamSpeak 6 6.0.0-beta13.1). The
+  // client leaves that to the caller: see docs/flood-control.md.
+  it("sends nothing of its own while idle", async () => {
     const fake = new FakeTransport();
-    autoAnswering(fake);
-    const client = tcpClientOn(
-      fake,
-      { name: "u", password: "p" },
-      { events: false, keepAliveMs: 40 },
-    );
+    autoOk(fake);
+    const client = tcpClientOn(fake, { name: "u", password: "p" });
     await client.connect();
-    expect(versionsSent(fake)).toBe(1);
-    await new Promise((r) => setTimeout(r, 200));
-    expect(versionsSent(fake)).toBeGreaterThanOrEqual(3);
-    await client.disconnect();
-    const after = versionsSent(fake);
-    await new Promise((r) => setTimeout(r, 120));
-    expect(versionsSent(fake)).toBe(after);
-  });
-
-  it("sends nothing extra while the client is busy", async () => {
-    const fake = new FakeTransport();
-    autoAnswering(fake);
-    const client = tcpClientOn(
-      fake,
-      { name: "u", password: "p" },
-      { events: false, keepAliveMs: 80 },
-    );
-    await client.connect();
-    for (let i = 0; i < 12; i++) {
-      await client.exec("whoami");
-      await new Promise((r) => setTimeout(r, 20));
+    const sent = fake.sent.length;
+    vi.useFakeTimers();
+    try {
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      expect(fake.sent).toHaveLength(sent);
+    } finally {
+      vi.useRealTimers();
     }
-    expect(versionsSent(fake)).toBe(1);
     await client.disconnect();
   });
 
-  it("is off with 0, and for a custom transport", async () => {
-    const off = new FakeTransport();
-    autoAnswering(off);
-    const stopped = tcpClientOn(
-      off,
-      { name: "u", password: "p" },
-      { events: false, keepAliveMs: 0 },
-    );
-    await stopped.connect();
-    const ownTransport = new FakeTransport();
-    autoAnswering(ownTransport);
-    const own = new QueryClient({
-      transport: { kind: "custom", open: async () => ownTransport },
-      events: false,
-      keepAliveMs: 20,
-    });
-    await own.connect();
-    await new Promise((r) => setTimeout(r, 150));
-    expect(versionsSent(off)).toBe(1);
-    expect(versionsSent(ownTransport)).toBe(1);
-    await stopped.disconnect();
-    await own.disconnect();
-  });
-
-  it("refuses an interval that is not a non-negative integer", () => {
-    for (const keepAliveMs of [-1, 1.5, Number.NaN]) {
-      expect(
-        () =>
-          new QueryClient({
-            transport: { kind: "custom", open: async () => new FakeTransport() },
-            keepAliveMs,
-          }),
-      ).toThrow(RangeError);
-    }
+  it("no longer takes keepAliveMs", () => {
+    const options = {
+      transport: { kind: "custom", open: async () => new FakeTransport() },
+      keepAliveMs: 1,
+    } as const;
+    // The option is gone from the type, and a stale caller is not told to change.
+    expect(() => new QueryClient(options as unknown as QueryClientOptions)).not.toThrow();
   });
 });

@@ -189,6 +189,11 @@ async function probeSshKey(): Promise<SshHostKey> {
   return presented;
 }
 
+/** What a client that follows the server registers for: the categories raw TCP and SSH both accept. */
+const EVENTS = {
+  categories: ["server", "channel", "textserver", "textchannel", "textprivate"],
+} as const satisfies QueryClientOptions["events"];
+
 /** The options for one transport kind. */
 function optionsFor(kind: Kind): QueryClientOptions {
   switch (kind) {
@@ -202,6 +207,7 @@ function optionsFor(kind: Kind): QueryClientOptions {
         },
         server: { id: 1 },
         nickname: "ts-js-query",
+        events: EVENTS,
       };
     case "web":
       return {
@@ -220,6 +226,7 @@ function optionsFor(kind: Kind): QueryClientOptions {
         },
         server: { id: 1 },
         nickname: "ts-js-query",
+        events: EVENTS,
       };
     default:
       // Every kind is handled; a name from the environment that is not one of
@@ -1162,7 +1169,6 @@ describe.skipIf(SKIP || !GUEST)("Integration — guest ServerQuery", () => {
       server: { id: 1 },
       // The Guest Server Query group decides whether a guest may register for
       // notifications; a client that does not need them does not ask.
-      events: kind === "ssh" ? false : undefined,
     };
   }
 
@@ -1305,7 +1311,6 @@ describe.skipIf(SKIP || GUEST)("Integration — a server with no guest access", 
       const error = await refusal({
         transport: { kind: "ssh", host: SSH_HOST, port: SSH_PORT, guest: true, knownHosts },
         server: { id: 1 },
-        events: false,
       });
       expect(error).toBeInstanceOf(GuestAccessError);
       expect((error as GuestAccessError).cause).toBeInstanceOf(QueryAuthError);

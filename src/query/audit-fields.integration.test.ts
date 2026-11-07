@@ -197,7 +197,11 @@ describe.skipIf(SKIP)("Audit fields and events — live", () => {
   beforeAll(async () => {
     admin = new QueryClient(adminOptions());
     await admin.connect({ signal: AbortSignal.timeout(15_000) });
-    events = new QueryClient(await eventOptions(scratch, true));
+    events = new QueryClient(
+      await eventOptions(scratch, {
+        categories: ["server", "channel", "textserver", "textchannel", "textprivate"],
+      }),
+    );
     await events.connect({ signal: AbortSignal.timeout(15_000) });
     const group = (await listServerGroups(admin)).find(
       (g) => g.name === "Server Admin" && g.type === GroupType.Regular,

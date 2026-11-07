@@ -461,7 +461,6 @@ describe("closing the transport", () => {
         password: PASSWORD,
         hostKey: () => {},
       },
-      events: false,
     });
     const connecting = client.connect();
     await vi.waitFor(() => expect(fake.FakeClient.instances.at(-1)?.config).toBeDefined());

@@ -222,7 +222,6 @@ describe("connectSsh over a real handshake", () => {
         guest: true,
         insecureIgnoreHostKey: true,
       },
-      events: false,
     });
     const failure = await client.connect().then(
       () => undefined,

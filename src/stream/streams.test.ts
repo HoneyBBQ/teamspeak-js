@@ -2216,7 +2216,7 @@ describe("stream lifecycle", () => {
     expect(errors).toHaveLength(1);
   });
 
-  it("withdraws nothing for a request that never left the throttle", async () => {
+  it("withdraws nothing for a request that never left the line middleware", async () => {
     const { client, streams } = setup();
     client.notify("notifystreamstarted", started());
     client.holdSends = true;
@@ -2319,7 +2319,7 @@ describe("stream lifecycle", () => {
       expect(seen).toEqual(["a", "b", "c"]);
     });
 
-    it("bounds the lookups out at once", async () => {
+    it("starts every lookup as the request comes, and still announces in order", async () => {
       const { client, streams } = setup();
       const release = lookups(client);
       const pub = await publishOne(client, streams);
@@ -2327,12 +2327,10 @@ describe("stream lifecycle", () => {
       pub.on("request", (r) => seen.push(r.viewer.uid ?? ""));
       for (let clid = 40; clid < 60; clid++) ask(client, pub.id, clid);
       await settle();
-      expect(release.length).toBeLessThan(20);
-      while (seen.length < 20) {
-        release.at(seen.length)?.(`u${seen.length}`);
-        await settle();
-      }
-      expect(seen).toHaveLength(20);
+      expect(release).toHaveLength(20);
+      for (let n = 19; n >= 0; n--) release[n]!(`u${n}`);
+      await settle();
+      expect(seen).toEqual(Array.from({ length: 20 }, (_, n) => `u${n}`));
     });
   });
 });
