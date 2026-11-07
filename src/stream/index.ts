@@ -2,9 +2,9 @@
  * TeamSpeak 6 streams, the screen share: finding the streams of the clients in
  * view, publishing one, and watching one.
  *
- * TeamSpeak does not document the protocol. It was verified against the
- * TeamSpeak 6 server 6.0.0-beta13.1 and the TeamSpeak 6 client 6.0.0-beta5, and
- * a TeamSpeak update may break it.
+ * TeamSpeak does not document the protocol. The live tests run it against the
+ * TeamSpeak 6 server 6.0.0-beta13.1, interop with the TeamSpeak 6 client
+ * 6.0.0-beta5 was observed by hand, and a TeamSpeak update may break it.
  *
  * Only the signalling is in this package. The video itself travels over WebRTC
  * between the publisher and each viewer, which the application brings: SDP and

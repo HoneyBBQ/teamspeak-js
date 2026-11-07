@@ -19,7 +19,7 @@
  * `QueryClient` API, its options and its event map are all still settling.
  * Pin a version and read the changelog if you depend on it.
  *
- * @packageDocumentation
+ * @module @honeybbq/teamspeak/query
  */
 
 export { QueryClient, QueryEventCategory, QueryEventName } from "./client.js";

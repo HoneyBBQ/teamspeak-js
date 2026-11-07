@@ -1,9 +1,10 @@
 {
   "$schema": "https://typedoc.org/schema.json",
   // One module per entry point users import: `@honeybbq/teamspeak` (the core),
-  // `@honeybbq/teamspeak/client`, `@honeybbq/teamspeak/query` and
-  // `@honeybbq/teamspeak/stream`, each named
-  // by an `@module` tag in its entry file. The client's and query's
+  // `@honeybbq/teamspeak/client`, `@honeybbq/teamspeak/query`,
+  // `@honeybbq/teamspeak/stream` and `@honeybbq/teamspeak/versions`, each named
+  // by an `@module` tag in its entry file; scripts/check-site.mts fails when
+  // one is missing. The client's and query's
   // declarations refer to the core through the package's own name, which
   // resolves to the sources, so {@link}s between the entries work and no
   // build is needed before running typedoc.
@@ -13,6 +14,7 @@
     "src/client/index.ts",
     "src/query/index.ts",
     "src/stream/index.ts",
+    "src/versions/index.ts",
   ],
   "tsconfig": "tsconfig.typedoc.json",
   "readme": "README.md",
@@ -101,7 +103,9 @@
   // The Material 3 theme loads as a plugin and layers its own stylesheet over
   // the default theme; it registers no theme, so there is no `theme` option.
   // `themeColor` is the source colour the palette is derived from.
-  "plugin": ["typedoc-material-theme"],
+  // scripts/typedoc-router.mjs keeps the versions table on one page.
+  "plugin": ["typedoc-material-theme", "./scripts/typedoc-router.mjs"],
+  "router": "teamspeak",
   "themeColor": "#2580e8",
   "treatWarningsAsErrors": true,
 }

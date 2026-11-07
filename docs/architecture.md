@@ -3,25 +3,50 @@
 ```
 src/
 ├── core/              # Shared (@honeybbq/teamspeak): command language, ids, errors, typed commands
-├── versions/          # Client versions (@honeybbq/teamspeak/versions)
+│   ├── command/           # Escaping, parsing and building command lines; ids
+│   ├── api/               # The typed commands, run on any executor
+│   ├── notifications.ts   # The notifications a server pushes, read as events
+│   ├── events.ts          # The event types every client receives
+│   ├── middleware.ts      # Command and line middleware, and the chain they make
+│   ├── channel-tree.ts    # The channels of a server as an ordered tree
+│   ├── reconnect.ts       # The reconnection policy and its backoff
+│   ├── errors.ts          # TeamspeakError, ServerError and the shared errors
+│   └── *-name.ts          # Command, notification, permission and property names
 ├── client/            # The voice client (@honeybbq/teamspeak/client)
-│   ├── client.ts          # Client lifecycle, connection management
-│   ├── commands.ts        # Command sending and response tracking
-│   ├── api/voice.ts       # Commands only the voice protocol has
-│   ├── capabilities.ts    # Server version and uid hash detection
-│   ├── reconnect.ts       # Backoff policy and permanent-failure detection
-│   ├── events.ts          # Event handler registration and middleware
-│   ├── notifications.ts   # Server notification parsing and dispatch
-│   ├── handshake.ts       # Protocol handshake orchestration
+│   ├── client.ts          # The Client: lifecycle, events, commands, voice, file transfers
+│   ├── commands.ts        # Matching the server's answers to the commands that asked
+│   ├── events.ts          # The event middleware chain
+│   ├── view.ts            # The server view: its channels and clients, kept current
+│   ├── handshake.ts       # The handshake's command steps, clientinitiv to clientinit
+│   ├── capabilities.ts    # What the connected server is: family, version, uid hash
+│   ├── reconnect.ts       # Server errors where retrying cannot help
 │   ├── transfer.ts        # File transfer data connections
-│   ├── crypto/            # ECDH, EAX encryption, identity management
+│   ├── connection-info.ts # Answering the server's connection-info requests
+│   ├── trace.ts           # The connect phases and trace hooks
+│   ├── diagnostics.ts     # The diagnostics_channel tracing points
+│   ├── types.ts           # Options, the event map, voice and whisper types
+│   ├── api/               # Commands only the voice protocol has; file, avatar and icon helpers
+│   ├── crypto/            # ECDH, EAX encryption, identities
 │   ├── handshake/         # Crypto handshake and license verification
-│   ├── transport/         # UDP packet framing, ACK, compression
-│   └── discovery/         # SRV / TSDNS / direct address resolution
+│   ├── transport/         # UDP packets, acks, generation windows, QuickLZ, traffic counters
+│   ├── discovery/         # SRV / TSDNS / direct address resolution
+│   └── testing/           # A fake server for the tests; not published
+├── query/             # The ServerQuery client (@honeybbq/teamspeak/query)
+│   ├── client.ts          # The QueryClient: login, commands, events, reconnection
+│   ├── tcp.ts             # Raw TCP transport
+│   ├── ssh.ts             # SSH transport, with knownhosts.ts for host-key checks
+│   ├── web.ts             # WebQuery transport over HTTP
+│   └── lines.ts           # Splitting a byte stream into query lines
 ├── stream/            # TeamSpeak 6 streams (@honeybbq/teamspeak/stream)
-└── query/             # The ServerQuery client (@honeybbq/teamspeak/query)
+│   ├── streams.ts         # Streams: discovery, publishing, watching
+│   ├── published.ts       # A published stream and its join requests
+│   ├── peer.ts            # The signalling peers: a view and a viewer
+│   └── wire.ts            # The value tables and signalling messages on the wire
+└── versions/          # Client versions (@honeybbq/teamspeak/versions)
 examples/
 ├── connect.ts          # Minimal connection example
+├── voice-echo.ts       # Sending back every voice frame heard in the channel
+├── stream-watch.ts     # Watching a TeamSpeak 6 screen share from Node, with werift
 ├── flood-control.ts    # Line middleware recipes: pacing and resending
 ├── query-keepalive.ts  # Keeping a ServerQuery session open
 └── query-events.ts     # Registering for ServerQuery events

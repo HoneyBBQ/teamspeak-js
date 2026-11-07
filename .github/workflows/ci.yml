@@ -133,8 +133,9 @@ jobs:
       # The Material theme loads as a TypeDoc plugin and falls back to the
       # default theme, without an error, when it does not load. It builds that
       # way, so only the output shows it: this builds the reference and checks
-      # the theme is in it.
-      - run: pnpm check:theme
+      # the theme is in it, that every entry point has its module page, and
+      # that every page in docs/ is rendered.
+      - run: pnpm check:site
       # A changeset written straight into .changeset/pre/ is skipped by
       # `changeset version` and drops out of the changelog; only the release
       # commit writes there. Also catches a wrong package name or bump.

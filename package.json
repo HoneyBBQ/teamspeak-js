@@ -101,7 +101,7 @@
     "version-packages": "GITHUB_TOKEN=${GITHUB_TOKEN:-$(gh auth token)} changeset version && pnpm install --lockfile-only",
     "check:changesets": "node scripts/check-changesets.mts",
     "check:docs": "node scripts/check-docs.mts",
-    "check:theme": "pnpm docs:build && node scripts/check-theme.mts",
+    "check:site": "pnpm docs:build && node scripts/check-theme.mts && node scripts/check-site.mts",
     "api:report": "pnpm build && api-extractor run --local -c api-extractor.core.json && api-extractor run --local -c api-extractor.client.jsonc && api-extractor run --local -c api-extractor.query.jsonc && api-extractor run --local -c api-extractor.stream.jsonc",
     "api:check": "pnpm build && node scripts/api-check.mts",
     "docs:build": "typedoc",

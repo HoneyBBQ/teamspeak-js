@@ -41,3 +41,19 @@ with the same semantics, apart from what the languages make differ:
   Error, and keeps delivering.
 - Durations are milliseconds with an `Ms` suffix here, `time.Duration` in Go;
   `listClients`' `uid` flag (on by default) is Go's `OmitUID`.
+- `disconnect()` resolves after its `disconnected` has been delivered, which is
+  safe here: a listener that awaits it yields to the delivery loop. Go's
+  `Disconnect` returns once the event is queued and guarantees the order
+  instead, the old session's `disconnected` before the new session's
+  `connected`, since a Go handler that blocks on its own delivery would
+  deadlock.
+- `connected`: both deliver it once `connect()` has succeeded. A listener added
+  right after `connect()` resolves still hears it here; Go's event goroutine may
+  run first, so register `OnConnected` before `Connect`.
+- Streams: a `signal` and `timeoutMs` where Go has a `context.Context`;
+  `dispose()`, which reports to the `error` event, where Go has `Close(ctx)`,
+  which returns what failed; one `watch` that takes the id or the `StreamInfo`
+  where Go has `Watch(ctx, id, opts)` and `WatchOptions.ClientID`; and string
+  unions where Go has numeric `Source` and `Accessibility` types.
+- A listener for a server event on a `QueryClient` over WebQuery throws a
+  `TypeError`; Go's `On…` methods are inert there and log one warning.
