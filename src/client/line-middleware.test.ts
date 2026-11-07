@@ -340,13 +340,18 @@ describe("the resend recipe of docs/flood-control.md", () => {
     const other = client.exec("clientlist");
     await new Promise((r) => setTimeout(r, 120));
     expect(sent).toHaveLength(1);
-    await until(() => sent.length >= 2);
-    expect(times[1]! - times[0]!).toBeGreaterThanOrEqual(190);
-    expect(sent[1]).toMatch(/^whoami /);
-    answer(client, sent[1]!, "0");
-    await expect(first).resolves.toEqual([]);
+    // Nothing goes out until the pause is over. The bucket is not a queue, so
+    // the resend and the held command may then go in either order.
     await until(() => sent.length >= 3);
-    answer(client, sent[2]!, "0");
+    expect(times[1]! - times[0]!).toBeGreaterThanOrEqual(190);
+    expect(times[2]! - times[0]!).toBeGreaterThanOrEqual(190);
+    const resent = sent.slice(1).find((text) => text.startsWith("whoami "))!;
+    const held = sent.slice(1).find((text) => text.startsWith("clientlist "))!;
+    expect(resent).toBeDefined();
+    expect(held).toBeDefined();
+    answer(client, resent, "0");
+    answer(client, held, "0");
+    await expect(first).resolves.toEqual([]);
     await expect(other).resolves.toEqual([]);
     await client.disconnect({ signal: AbortSignal.timeout(1) });
   });
