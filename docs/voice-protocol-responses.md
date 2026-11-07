@@ -40,11 +40,13 @@ one of them can therefore receive a row meant for someone else: measured on both
 servers, a `clientgetvariables clid=<other>` sent while a third client changed
 its mute state came back with that client's row in front of the answer.
 
-The answer echoes the key the request carried, so the table names it (`echoKey`)
-and a row that carries the key with another value is not an answer. This
-applies to `clientgetvariables` and `getconnectioninfo` (`clid`) and to
-`channelgetdescription` (`cid`). A row without the key is taken, and so is every
-row when the request did not carry it. The other entries are either not sent
+The answer echoes the key the request carried, so the table names it and a row
+that carries the key with another value is not an answer. For
+`channelgetdescription` (`cid`) that is the `echoKey`: a row without the key is
+taken, and so is every row when the request did not carry it. For
+`clientgetvariables` and `getconnectioninfo` (`clid`) the row is matched on the
+key wherever it falls against the command's `error`, as the servers may send the
+`error` first (TeamSpeak 6, with other commands in flight). The other entries are either not sent
 unprompted, or send no key the request could echo: `servergetvariables`,
 `serverrequestconnectioninfo` and the group lists answer with rows that name no
 request value.

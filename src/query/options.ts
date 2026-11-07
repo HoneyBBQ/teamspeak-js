@@ -1,4 +1,10 @@
-import type { CommandMiddleware, Logger, ReconnectOptions, ServerID } from "@honeybbq/teamspeak";
+import type {
+  CommandMiddleware,
+  LineMiddleware,
+  Logger,
+  ReconnectOptions,
+  ServerID,
+} from "@honeybbq/teamspeak";
 import type { QueryTransport } from "./transport.js";
 import type { TcpConnector } from "./tcp.js";
 import { hostKeyDecision } from "./ssh.js";
@@ -91,9 +97,9 @@ const queryEventCategoryValues = {
  * One category of notifications to register for: the `event` parameter of
  * `servernotifyregister`.
  *
- * `bans` is not registered by default: TeamSpeak 3 refuses it with 1539,
- * which would fail the registration of every category after it. `tokenused`
- * is not registered by default either: both servers accept it (measured) and
+ * `bans`: TeamSpeak 3 refuses it with 1539 (measured), which fails the
+ * registration of every category after it, so name it last or only for a
+ * server that accepts it. `tokenused`: both servers accept it (measured) and
  * then send `notifytokenused`, which carries a privilege key and has no typed
  * event, so it reaches `notification` only.
  */
@@ -103,10 +109,9 @@ export const QueryEventCategory: typeof queryEventCategoryValues =
 export type QueryEventCategory = (typeof QueryEventCategory)[keyof typeof QueryEventCategory];
 
 /**
- * Which notification categories to register for.
- *
- * `true` (the default) registers the ones raw TCP and SSH both accept;
- * `{ categories }` names them; `false` registers nothing. This says nothing
+ * Which notification categories to register for: the categories to name,
+ * one `servernotifyregister` each. Left unset, the client registers nothing
+ * and lists no clients. This says nothing
  * about whether the transport can deliver notifications — a transport
  * declares that itself, see {@link QueryTransport.supportsNotifications} — so
  * asking for categories on one that cannot is an error rather than a silent
@@ -128,7 +133,14 @@ export type QueryEventCategory = (typeof QueryEventCategory)[keyof typeof QueryE
  * group changes, subscriptions, plugin commands and typing are not sent to a
  * ServerQuery connection by either server, so this client does not offer them.
  */
-export type QueryEventsOption = boolean | { readonly categories?: readonly QueryEventCategory[] };
+export interface QueryEventsOption {
+  /**
+   * The categories to register for, at least one. Raw TCP on TeamSpeak 3 and
+   * SSH on TeamSpeak 6 both accept `server`, `channel`, `textserver`,
+   * `textchannel` and `textprivate`; `bans` is accepted by TeamSpeak 6 only.
+   */
+  readonly categories: readonly QueryEventCategory[];
+}
 
 /** How a `QueryClient` connects, logs and behaves. */
 export interface QueryClientOptions {
@@ -148,9 +160,9 @@ export interface QueryClientOptions {
   /** The query client's nickname on the server (`client_nickname` of `use`). */
   readonly nickname?: string | undefined;
   /**
-   * Register for server notifications: `true` (the default) for the five
-   * categories raw TCP and SSH both accept, `{ categories }` to name them, or
-   * `false` for none. See {@link QueryEventsOption}.
+   * Register for server notifications, by naming the categories:
+   * `{ categories }`. Unset, the default, registers none and fetches no
+   * roster. See {@link QueryEventsOption}.
    *
    * Registering for anything on a transport that cannot deliver notifications
    * throws a `TypeError`, at construction when the `transport` kind says so
@@ -172,37 +184,28 @@ export interface QueryClientOptions {
    */
   readonly reconnect?: ReconnectOptions | undefined;
   /**
-   * How long a raw TCP or SSH session may sit idle before the client sends
-   * `version` to keep it open, in milliseconds. 120000 (two minutes) by default;
-   * `0` turns it off.
-   *
-   * Measured on TeamSpeak 3 3.13.8 (raw TCP and SSH) and TeamSpeak 6
-   * 6.0.0-beta13.1 (SSH): the server closes a query session that has sent no
-   * command for 300 seconds, and a session that sends one every 200 seconds
-   * stays open. Notifications arriving do not count: a raw TCP session on
-   * TeamSpeak 3 that received nine and sent nothing was closed at 300 seconds
-   * all the same. The command is sent only when none has been
-   * for this long, so a busy client sends nothing extra. WebQuery has no session
-   * to keep, and a `custom` transport is left to its own owner.
-   */
-  readonly keepAliveMs?: number | undefined;
-  /**
    * Wraps every typed command, outermost first; see `CommandMiddleware`. Raw
    * lines sent with `exec` do not pass through it. Fixed for the client's life.
    */
   readonly commandMiddleware?: readonly CommandMiddleware[] | undefined;
+  /**
+   * Wraps every command line the client sends, outermost first; see
+   * `LineMiddleware`. That is the typed commands once encoded, the raw lines
+   * of `exec`, and the client's own: `login`, `use`, `version`, `whoami`,
+   * `servernotifyregister` and `clientlist` while connecting. The `quit` that
+   * `disconnect()` says does not pass: it must leave at once, or the server
+   * keeps the session. Fixed for the client's life.
+   *
+   * The client sends one command at a time, so a middleware that waits holds
+   * every command behind it, in order. A command's `timeoutMs` counts from
+   * its turn and includes the wait. This is the place to pace commands against
+   * the server's flood limit; the client itself never paces, resends or keeps
+   * an idle session open. See `docs/flood-control.md`.
+   */
+  readonly lineMiddleware?: readonly LineMiddleware[] | undefined;
   /** Where the client logs. Silent unless set. */
   readonly logger?: Logger | undefined;
 }
-
-/** The five categories both raw TCP on TS3 and SSH on TS6 accept. */
-export const DEFAULT_EVENT_CATEGORIES: readonly QueryEventCategory[] = Object.freeze([
-  QueryEventCategory.Server,
-  QueryEventCategory.Channel,
-  QueryEventCategory.TextServer,
-  QueryEventCategory.TextChannel,
-  QueryEventCategory.TextPrivate,
-]);
 
 const CATEGORIES: ReadonlySet<string> = new Set([
   "server",
@@ -242,7 +245,7 @@ export interface ResolvedQueryOptions {
   readonly transport: ResolvedTransport;
   readonly server: { readonly id: ServerID | number } | { readonly port: number } | undefined;
   readonly nickname: string | undefined;
-  /** The categories the caller asked to register for; `events: false` leaves this empty. */
+  /** The categories the caller asked to register for; empty when `events` is unset. */
   readonly eventCategories: readonly QueryEventCategory[];
   /**
    * Whether the transport the options name can deliver notifications. False
@@ -258,12 +261,9 @@ export interface ResolvedQueryOptions {
   readonly eventsRequested: boolean;
   readonly reconnect: ReconnectOptions | undefined;
   readonly commandMiddleware: readonly CommandMiddleware[] | undefined;
-  readonly keepAliveMs: number;
+  readonly lineMiddleware: readonly LineMiddleware[] | undefined;
   readonly logger: Logger | undefined;
 }
-
-/** How long a session may be idle before the client keeps it open; the server drops one at 300 s. */
-export const DEFAULT_KEEP_ALIVE_MS = 120_000;
 
 function nonEmpty(value: unknown, name: string): string {
   if (typeof value !== "string" || value === "") {
@@ -433,13 +433,15 @@ function transportOptions(transport: unknown): ResolvedTransport {
  * {@link assertEventsSupported}.
  */
 function eventCategories(events: QueryEventsOption | undefined): readonly QueryEventCategory[] {
-  if (events === false) return [];
-  if (events === undefined || events === true) return DEFAULT_EVENT_CATEGORIES;
+  if (events === undefined) return [];
   if (typeof events !== "object" || events === null) {
-    throw new TypeError("events is a boolean or { categories }");
+    throw new TypeError("events is { categories }");
   }
-  const categories = events.categories ?? DEFAULT_EVENT_CATEGORIES;
+  const categories: unknown = events.categories;
   if (!Array.isArray(categories)) throw new TypeError("events.categories is an array");
+  if (categories.length === 0) {
+    throw new TypeError("events.categories names at least one category; leave events out for none");
+  }
   for (const category of categories) {
     if (typeof category !== "string" || !CATEGORIES.has(category)) {
       throw new TypeError(`events.categories has an unknown category ${JSON.stringify(category)}`);
@@ -454,8 +456,8 @@ function eventCategories(events: QueryEventsOption | undefined): readonly QueryE
  *
  * WebQuery refuses `servernotifyregister` with 5120, and a listener that can
  * never run is worse than an error: the caller would be left believing the
- * server had nothing to say. Naming `events` at all is the mistake, even as
- * `false`, since it says the caller read the option as a capability.
+ * server had nothing to say. Naming `events` at all is the mistake: it says the
+ * caller expects notifications.
  */
 export function assertEventsSupported(resolved: ResolvedQueryOptions): void {
   if (resolved.notificationsSupported !== false || !resolved.eventsRequested) return;
@@ -493,15 +495,15 @@ export function normalizeQueryOptions(options: QueryClientOptions): ResolvedQuer
       throw new RangeError("server.port is an integer from 1 to 65535");
     }
   }
-  const keepAliveMs = options.keepAliveMs ?? DEFAULT_KEEP_ALIVE_MS;
-  if (!Number.isInteger(keepAliveMs) || keepAliveMs < 0) {
-    throw new RangeError("keepAliveMs is a non-negative integer, 0 to turn it off");
-  }
   const nickname = options.nickname;
   if (nickname !== undefined) nonEmpty(nickname, "nickname");
   const commandMiddleware = options.commandMiddleware;
   if (commandMiddleware !== undefined && !Array.isArray(commandMiddleware)) {
     throw new TypeError("commandMiddleware is an array");
+  }
+  const lineMiddleware = options.lineMiddleware;
+  if (lineMiddleware !== undefined && !Array.isArray(lineMiddleware)) {
+    throw new TypeError("lineMiddleware is an array");
   }
   const resolved: ResolvedQueryOptions = {
     transport,
@@ -513,7 +515,7 @@ export function normalizeQueryOptions(options: QueryClientOptions): ResolvedQuer
     eventsRequested: options.events !== undefined,
     reconnect: options.reconnect,
     commandMiddleware,
-    keepAliveMs,
+    lineMiddleware,
     logger: options.logger,
   };
   assertEventsSupported(resolved);

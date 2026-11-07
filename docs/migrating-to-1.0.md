@@ -396,6 +396,23 @@ const timing: CommandMiddleware = (next) => async (request, options) => {
 Raw lines sent with `exec` and `execNoWait`, and the handshake's own commands,
 do not pass through it.
 
+## Flood control, and what the SDK no longer does
+
+The SDK no longer paces or resends commands, keeps a ServerQuery session open,
+or registers for query events you did not name. Each is now yours to choose, and
+`lineMiddleware` is the seam, on `Client` and on `QueryClient`; the
+[flood control](flood-control.md) page has the recipes, and `examples/` the code.
+
+| Before                                                                                           | Now                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A token bucket held voice commands back (4 a second, burst 8)                                    | Nothing is held. Add `paced(new Pacer())` from `examples/flood-control.ts`                                                                                                         |
+| A command refused with 524 was sent again, up to 3 times                                         | It rejects with the `ServerError`. `floodWaitMs(error)` reads the wait; recipe `resendOnFlood`                                                                                     |
+| `QueryClientOptions.keepAliveMs` sent `version` when idle                                        | Gone. `keepAlive` in `examples/query-keepalive.ts`                                                                                                                                 |
+| A query client registered for five categories unless `events: false`                             | Unset `events` registers nothing and fetches no roster. Name `events: { categories }`; `true`, `false` and `DEFAULT_EVENT_CATEGORIES` are gone, and no categories is a `TypeError` |
+| A voice client sent `clientupdate client_input_muted=0 client_output_muted=0` after `initserver` | It sends nothing. Send it yourself if you want it                                                                                                                                  |
+| A missing `aclid` in `initserver` was replaced by a nickname match                               | The attempt fails with a `HandshakeError`                                                                                                                                          |
+| At most 8 stream viewer lookups ran at once                                                      | They run as the requests come; pace them with `lineMiddleware`                                                                                                                     |
+
 ## Options
 
 Every field of `ClientOptions`, `ReconnectOptions` and `FileTransferOptions`

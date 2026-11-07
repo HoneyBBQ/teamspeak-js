@@ -251,27 +251,6 @@ export function parseErrorCode(raw: string | undefined): number {
 }
 
 /**
- * How many times a command refused as flooding is sent again after the pause
- * the server asked for. On the voice protocol the first resend is usually
- * refused once more with a shorter wait, and the second goes through (measured
- * on TeamSpeak 3 and 6); on ServerQuery a refusal can be answered with a
- * longer wait, which the caller's timeout then decides whether to sit out.
- */
-export const FLOOD_RETRIES = 3;
-/**
- * How long to pause for a refusal that asked for `waitMs`. The wait is a floor:
- * on the voice protocol a resend after exactly the wait is refused again, and
- * one after half as long again goes through; on ServerQuery a resend after
- * exactly 1 second was refused 2 times in 5, and one after 2.2 seconds went
- * through 5 times in 5 (TeamSpeak 3 3.13.8 and TeamSpeak 6 6.0.0). Every
- * refusal costs a retry and lengthens the server's pause, so the pause is
- * twice the wait.
- */
-export function floodHoldMs(waitMs: number): number {
-  return waitMs * 2;
-}
-
-/**
  * How long the server asks a client it refused as flooding to wait, in
  * milliseconds. Undefined for any other error, or one that names no wait.
  *
@@ -294,8 +273,10 @@ export function floodHoldMs(waitMs: number): number {
  * 4), while waiting out the pause and asking once got through. The wait is a
  * floor here too: about one resend in three after exactly the wait was refused
  * again, with the ban time.
+ *
+ * @param error - Whatever a command rejected with.
  */
-export function floodRetryDelayMs(error: Error): number | undefined {
+export function floodWaitMs(error: unknown): number | undefined {
   if (!(error instanceof ServerError) || error.code !== ErrorCode.ClientIsFlooding)
     return undefined;
   const extra = error.extraMessage ?? "";

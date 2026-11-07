@@ -192,7 +192,7 @@ describe("QueryClient events for channels and the server", () => {
       "clid=5 cid=1 client_nickname=Alice client_unique_identifier=u client_type=0 client_away=1 client_input_muted=1",
       "error id=0 msg=ok",
     ];
-    const client = clientOn(transport);
+    const client = clientOn(transport, { events: { categories: ["textserver"] } });
     await client.connect();
     const seen: TextMessageEvent[] = [];
     client.on("textMessage", (e) => seen.push(e));
@@ -491,7 +491,7 @@ describe("QueryClient events", () => {
   // client cannot refuse earlier than that.
   it("refuses `events` on a custom transport that reports no notifications", async () => {
     const offline = new FakeTransport(false);
-    const client = clientOn(offline, { events: true });
+    const client = clientOn(offline, { events: { categories: ["server"] } });
     await expect(client.connect()).rejects.toBeInstanceOf(TypeError);
     expect(client.status).toBe("disconnected");
   });
@@ -511,7 +511,11 @@ describe("QueryClient: what it knows of the server it is on", () => {
     const transport = new FakeTransport();
     transport.whoami = ["client_id=4 client_nickname=bot", ok];
     transport.clientList = roster(4, 5);
-    const client = clientOn(transport, { events: true, server: { id: 1 }, nickname: "bot" });
+    const client = clientOn(transport, {
+      events: { categories: ["server", "channel", "textserver", "textchannel", "textprivate"] },
+      server: { id: 1 },
+      nickname: "bot",
+    });
     await client.connect();
     return { client, transport };
   }
@@ -565,7 +569,7 @@ describe("QueryClient: what it knows of the server it is on", () => {
   it("lists no clients after use when no event is registered for", async () => {
     const transport = new FakeTransport();
     transport.whoami = ["client_id=4", ok];
-    const client = clientOn(transport, { events: false, server: { id: 1 } });
+    const client = clientOn(transport, { server: { id: 1 } });
     await client.connect();
     transport.sent.length = 0;
     await client.use({ id: 2 });

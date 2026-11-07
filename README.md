@@ -35,7 +35,7 @@
 - **Typed commands and events.** Every command the voice protocol answers is a typed function, and the server's notifications arrive as typed events with pluggable middleware.
 - **File transfers.** Upload, download and delete files on the server, with avatars and icons covered.
 - **TeamSpeak 6 screen-share signalling.** Find, publish and watch streams, with SDP and ICE as plain strings for any WebRTC stack.
-- **Built for long-running bots.** Opt-in reconnection tuned for TeamSpeak's antiflood ban, and a token-bucket rate limiter that keeps you clear of flood kicks.
+- **Built for long-running bots.** Opt-in reconnection tuned for TeamSpeak's antiflood ban, and a line middleware seam for pacing commands, with recipes for a token bucket, resending a refused command and keeping a query session open.
 - **Identities and server facts.** Generate, import, export and upgrade identities; read the server version, its uid hash (SHA-1 on TS3, SHA-256 on TS6) and its name, icon and banner.
 - **TeamSpeak 3 and 6, ESM with types.** Pure TypeScript, zero native dependencies, full declarations, and a custom-transport hook for proxies and tests.
 
@@ -88,6 +88,7 @@ The full API reference is at [honeybbq.github.io/teamspeak-js](https://honeybbq.
 - [Configuration](https://honeybbq.github.io/teamspeak-js/documents/configuration.html): options, client version, tracing, diagnostics, reconnection, custom transports and server capabilities.
 - [Streams](https://honeybbq.github.io/teamspeak-js/documents/streams.html): TeamSpeak 6 screen-share signalling, and interop with the TeamSpeak 6 client.
 - [ServerQuery](https://honeybbq.github.io/teamspeak-js/documents/serverquery.html): the query client and its SSH host-key policy.
+- [Flood control](https://honeybbq.github.io/teamspeak-js/documents/flood-control.html): what the server counts, what each command costs, and line middleware recipes for pacing, resending and keeping a query session open.
 - [Design](https://honeybbq.github.io/teamspeak-js/documents/design.html): errors, ids, absent values, events, stability, and the server behaviour the SDK works around.
 - [Compatibility](https://honeybbq.github.io/teamspeak-js/documents/compatibility.html): supported environments and the differences from the Go SDK.
 - [Architecture](https://honeybbq.github.io/teamspeak-js/documents/architecture.html): source layout and entry points.

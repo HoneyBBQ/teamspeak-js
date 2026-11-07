@@ -59,6 +59,22 @@ const timing: CommandMiddleware = (next) => async (request, options) => {
 };
 ```
 
+`lineMiddleware` wraps every command line the client sends, closest to the
+wire: the typed commands once encoded, raw `exec` and `execNoWait` lines, and
+the client's own. It is where to pace commands against the server's antiflood or
+send a refused one again; the client does neither itself. The handshake's own
+lines and the goodbye of `disconnect()` do not pass. See
+[flood control](flood-control.md).
+
+```typescript
+import type { LineMiddleware } from "@honeybbq/teamspeak";
+
+const logNames: LineMiddleware = (next) => (line, options) => {
+  console.log(line.name); // not line.text, which can carry secrets
+  return next(line, options);
+};
+```
+
 Connection auth options:
 
 - `serverPassword`: plain-text server password; sent as the TeamSpeak protocol hash during `clientinit`

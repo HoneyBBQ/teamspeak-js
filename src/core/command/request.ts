@@ -41,9 +41,10 @@ export interface CommandOptions {
   /** Milliseconds to wait for the answer before failing with a CommandTimeoutError. */
   readonly timeoutMs?: number | undefined;
   /**
-   * Called once, when the command has left the flood throttle and was handed to
-   * the connection. A command that fails without it was never sent; one that
-   * fails after it may have been carried out.
+   * Called once, when the line was handed to the connection, after the line
+   * middleware; a middleware that sends it again does not call it again. A
+   * command that fails without it was never sent; one that fails after it may
+   * have been carried out.
    */
   readonly onSent?: (() => void) | undefined;
 }

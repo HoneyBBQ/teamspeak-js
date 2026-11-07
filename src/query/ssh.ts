@@ -250,7 +250,7 @@ export interface SshDialTarget {
  * What a guest may do is the server's to say. On beta13.1, `version` and
  * `whoami` answer, `serverinfo` and the like are refused with 2568, and
  * `servernotifyregister` is the Guest group's permission to give or withhold,
- * so pass `events: false` to a `QueryClient` that should not register for any.
+ * so a `QueryClient` that names no `events` registers for none.
  * A server that offers no guest access (TeamSpeak 3 has none, and TeamSpeak 6
  * can be started with `--query-ssh-allow-guest=0`) fails the login, which a
  * `QueryClient` reports as a `GuestAccessError` whose `cause` is the

@@ -52,7 +52,6 @@ describe.skipIf(QUERY_KIND !== "tcp")("reconnect — live", () => {
         },
       },
       server: { id: 1 },
-      events: false,
       reconnect: { backoff: { initialDelayMs: 200, maxDelayMs: 300, jitter: 0, maxAttempts: 6 } },
     });
     const verdicts: Array<{ error: Error | undefined; willReconnect: boolean }> = [];

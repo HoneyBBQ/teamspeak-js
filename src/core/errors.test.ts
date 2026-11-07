@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ErrorCode } from "./errorcode.js";
 import fc from "fast-check";
-import { ServerError, floodRetryDelayMs, parseErrorCode, parseServerError } from "./errors.js";
+import { ServerError, floodWaitMs, parseErrorCode, parseServerError } from "./errors.js";
 
 describe("parseServerError", () => {
   it("reads a permission named by WebQuery apart from an id", () => {
@@ -208,31 +208,33 @@ describe("reading an error line's numbers", () => {
   });
 });
 
-describe("floodRetryDelayMs", () => {
+describe("floodWaitMs", () => {
   const refusal = (id: string, extra?: string) =>
     parseServerError({ id, msg: "client is flooding", ...(extra ? { extra_msg: extra } : {}) })
       .err!;
 
   it("reads the wait of error 524", () => {
-    expect(floodRetryDelayMs(refusal("524", "retry in 1985ms"))).toBe(1985);
-    expect(floodRetryDelayMs(refusal("524", "retry in 0ms"))).toBe(0);
+    expect(floodWaitMs(refusal("524", "retry in 1985ms"))).toBe(1985);
+    expect(floodWaitMs(refusal("524", "retry in 0ms"))).toBe(0);
   });
 
   it("reads the wait a ServerQuery client is given, in whole seconds", () => {
-    expect(floodRetryDelayMs(refusal("524", "please wait 1 seconds"))).toBe(1000);
-    expect(floodRetryDelayMs(refusal("524", "please wait 600 seconds"))).toBe(600_000);
-    expect(floodRetryDelayMs(refusal("524", "please wait 0 seconds"))).toBe(0);
+    expect(floodWaitMs(refusal("524", "please wait 1 seconds"))).toBe(1000);
+    expect(floodWaitMs(refusal("524", "please wait 600 seconds"))).toBe(600_000);
+    expect(floodWaitMs(refusal("524", "please wait 0 seconds"))).toBe(0);
   });
 
   it("is undefined for anything else", () => {
-    expect(floodRetryDelayMs(refusal("524"))).toBeUndefined();
-    expect(floodRetryDelayMs(refusal("524", "retry in 5 seconds"))).toBeUndefined();
-    expect(floodRetryDelayMs(refusal("524", "retry in 99999999999ms"))).toBeUndefined();
-    expect(floodRetryDelayMs(refusal("524", "please wait 1.5 seconds"))).toBeUndefined();
-    expect(floodRetryDelayMs(refusal("524", "please wait seconds"))).toBeUndefined();
-    expect(floodRetryDelayMs(refusal("524", "please wait 1 seconds now"))).toBeUndefined();
-    expect(floodRetryDelayMs(refusal("3329", "please wait 5 seconds"))).toBeUndefined();
-    expect(floodRetryDelayMs(refusal("1024", "retry in 10ms"))).toBeUndefined();
-    expect(floodRetryDelayMs(new Error("retry in 10ms"))).toBeUndefined();
+    expect(floodWaitMs(refusal("524"))).toBeUndefined();
+    expect(floodWaitMs(refusal("524", "retry in 5 seconds"))).toBeUndefined();
+    expect(floodWaitMs(refusal("524", "retry in 99999999999ms"))).toBeUndefined();
+    expect(floodWaitMs(refusal("524", "please wait 1.5 seconds"))).toBeUndefined();
+    expect(floodWaitMs(refusal("524", "please wait seconds"))).toBeUndefined();
+    expect(floodWaitMs(refusal("524", "please wait 1 seconds now"))).toBeUndefined();
+    expect(floodWaitMs(refusal("3329", "please wait 5 seconds"))).toBeUndefined();
+    expect(floodWaitMs(refusal("1024", "retry in 10ms"))).toBeUndefined();
+    expect(floodWaitMs(new Error("retry in 10ms"))).toBeUndefined();
+    expect(floodWaitMs("retry in 10ms")).toBeUndefined();
+    expect(floodWaitMs(undefined)).toBeUndefined();
   });
 });

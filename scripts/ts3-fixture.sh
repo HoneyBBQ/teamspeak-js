@@ -291,8 +291,13 @@ run_commands() {
 # Note this is a *different* limit from the virtual-server antiflood set further
 # down: that one rate-limits the voice clients the tests connect as, this one
 # rate-limits this script.
+#
+# The same command lifts the number of query sessions one address may hold,
+# 5 by default on both servers (`serverinstance_serverquery_max_connections_per_ip`):
+# the idle test alone holds more than that at once, and on TS3 the sixth is
+# dropped before its handshake.
 run_commands <<'PROBE'
-instanceedit serverinstance_serverquery_flood_commands=1000 serverinstance_serverquery_flood_time=1 serverinstance_serverquery_ban_time=1
+instanceedit serverinstance_serverquery_flood_commands=1000 serverinstance_serverquery_flood_time=1 serverinstance_serverquery_ban_time=1 serverinstance_serverquery_max_connections_per_ip=100
 PROBE
 
 # A TS3 server prints no WebQuery api key, so one is made over the raw session.

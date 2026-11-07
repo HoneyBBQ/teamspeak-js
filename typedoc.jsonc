@@ -21,6 +21,7 @@
     "docs/configuration.md",
     "docs/streams.md",
     "docs/serverquery.md",
+    "docs/flood-control.md",
     "docs/design.md",
     "docs/compatibility.md",
     "docs/architecture.md",

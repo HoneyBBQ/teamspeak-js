@@ -69,35 +69,21 @@ describe("Client self identification on notifycliententerview", () => {
     expect(clientInternals(client).nickname).toBe("Bot2");
   });
 
-  it("still learns its clid from the welcome enter when initserver carried no aclid", () => {
+  it("never learns its clid from a nickname match", () => {
+    // initserver names the clid (aclid); a welcome enter that happens to match
+    // the nickname asked for is another client's, or a lookalike, until then.
     const client = new Client(generateIdentitySync(0), "127.0.0.1:9987", "Bot");
     completeCryptoInit(clientInternals(client).crypt);
 
     clientInternals(client).handler.onPacket?.(
       commandPacket("notifycliententerview clid=7 ctid=1 client_nickname=Bot"),
     );
-
-    expect(clientInternals(client).clid).toBe(7);
-    expect(clientInternals(client).nickname).toBe("Bot");
-  });
-
-  it("adopts the first suffix match while the clid is still unknown, then locks it in", () => {
-    // While initserver has given us no clid, a nickname match is the only
-    // signal available, so the first one wins. The clid is then known, which
-    // is what stops any later lookalike from taking over.
-    const client = new Client(generateIdentitySync(0), "127.0.0.1:9987", "Bot");
-    completeCryptoInit(clientInternals(client).crypt);
-    completeCryptoInit(clientInternals(client).crypt);
-
     clientInternals(client).handler.onPacket?.(
       commandPacket("notifycliententerview clid=9 ctid=1 client_nickname=Bot3"),
     );
-    expect(clientInternals(client).clid).toBe(9);
 
-    clientInternals(client).handler.onPacket?.(
-      commandPacket("notifycliententerview clid=7 ctid=1 client_nickname=Bot"),
-    );
-    expect(clientInternals(client).clid).toBe(9);
+    expect(clientInternals(client).clid).toBe(0);
+    expect(clientInternals(client).nickname).toBe("Bot");
   });
 });
 
@@ -869,14 +855,6 @@ describe("the nickname a reconnect asks for", () => {
     await feed(client, "notifycliententerview clid=5 ctid=1 client_nickname=bot1");
 
     expect(clientInternals(client).nickname).toBe("bot1");
-    expect(clientInitNickname(client)).toBe("bot");
-  });
-
-  it("recognises itself by the requested name, not the one it was given", async () => {
-    const client = new Client(generateIdentitySync(0), "127.0.0.1:9987", "bot");
-    completeCryptoInit(clientInternals(client).crypt);
-    await feed(client, "notifycliententerview clid=7 ctid=1 client_nickname=bot1");
-    expect(clientInternals(client).clid).toBe(7);
     expect(clientInitNickname(client)).toBe("bot");
   });
 

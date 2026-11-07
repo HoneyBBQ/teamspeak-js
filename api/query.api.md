@@ -10,6 +10,7 @@ import type { CommandMiddleware } from '@honeybbq/teamspeak';
 import { CommandOptions } from '@honeybbq/teamspeak';
 import { CommandRequest } from '@honeybbq/teamspeak';
 import type { Duplex } from 'node:stream';
+import type { LineMiddleware } from '@honeybbq/teamspeak';
 import { Listener } from '@honeybbq/teamspeak';
 import type { Logger } from '@honeybbq/teamspeak';
 import type { ReconnectOptions } from '@honeybbq/teamspeak';
@@ -99,7 +100,7 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
 export interface QueryClientOptions {
     readonly commandMiddleware?: readonly CommandMiddleware[] | undefined;
     readonly events?: QueryEventsOption | undefined;
-    readonly keepAliveMs?: number | undefined;
+    readonly lineMiddleware?: readonly LineMiddleware[] | undefined;
     readonly logger?: Logger | undefined;
     readonly nickname?: string | undefined;
     readonly reconnect?: ReconnectOptions | undefined;
@@ -162,9 +163,9 @@ const queryEventNameValues: {
 };
 
 // @public
-export type QueryEventsOption = boolean | {
-    readonly categories?: readonly QueryEventCategory[];
-};
+export interface QueryEventsOption {
+    readonly categories: readonly QueryEventCategory[];
+}
 
 // @public
 export interface QueryStream {

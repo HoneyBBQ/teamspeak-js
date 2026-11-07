@@ -654,14 +654,14 @@ describe.skipIf(SKIP)("Streams — live", { timeout: 30_000 }, () => {
   it("delivers a burst of candidates in order", async (ctx) => {
     ts6(ctx);
     const { peer, view } = await connectedPair();
-    // The client's throttle paces them, about five a second as measured here.
+    // The fixture relaxes the antiflood, so they go out as fast as they are issued.
     const got = collect<string>(
       "candidates",
       40,
       (l) => peer.on("candidate", (c) => l(c.candidate)),
       25_000,
     );
-    // Issued together, so they queue in the client's throttle and stay in order.
+    // Issued together: the connection keeps the order they were sent in.
     await Promise.all(Array.from({ length: 40 }, (_, n) => view.sendCandidate(candidate(n))));
     expect(await got).toEqual(Array.from({ length: 40 }, (_, n) => candidate(n).candidate));
   });

@@ -257,7 +257,7 @@ export class Streams {
    * abort, the command is kept open for five seconds after that moment, and
    * the stream it announces within is stopped; one announced later cannot be
    * told from any other of this client's, and is left to `list()`. The command
-   * is sent even if the call is aborted before it leaves the throttle, and
+   * is sent even if the call is aborted while a line middleware still holds it, and
    * then stopped the same way, so other clients may see the stream start and
    * stop.
    *
@@ -421,7 +421,7 @@ export class Streams {
     };
     this.#watching.set(id, watch);
     this.#closedViews.delete(id);
-    // Whether the join request left the flood throttle: only then may it be answered.
+    // Whether the join request was handed to the connection, past any line middleware: only then may it be answered.
     let sent = false;
     try {
       await this.#send(joinRequest(id, streamer, options.message ?? "", false), id, {

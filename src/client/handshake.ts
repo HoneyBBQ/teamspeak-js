@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
-import { buildCommandOrdered, buildCommand } from "../core/internal.js";
+import { buildCommandOrdered } from "../core/internal.js";
 import { sign, generateTemporaryKey } from "./crypto/primitives.js";
 import { identityPrivateKey } from "./crypto/identity.js";
 import { parseServerCapabilities } from "./capabilities.js";
 import { cryptoInit2 } from "./handshake/crypt-init2.js";
 import { PacketType } from "./transport/packet.js";
 import type { ClientVersion } from "@honeybbq/teamspeak";
+import { HandshakeError } from "./errors.js";
 import type { ClientInternals } from "./client.js";
 
 /** Handle the `clientinitiv` message (P-256 based crypto path). */
@@ -45,13 +46,15 @@ export function handleHandshakeExpand2(
 
 /** Handle `initserver` — marks the client as connected. */
 export function handleInitServer(client: ClientInternals, params: Record<string, string>): void {
-  const idStr = params["aclid"] ?? params["clid"] ?? "";
-  const clid = idStr ? parseInt(idStr, 10) : 0;
-
-  if (clid > 0) {
-    client.clid = clid;
-    client.handler.setClientID(clid);
+  // The server names the client's id here, in `aclid`: measured on TeamSpeak 3
+  // 3.13.8 and TeamSpeak 6 6.0.0-beta13.1, both send it. Without it every
+  // packet would carry a wrong client id, so the attempt fails instead.
+  const clid = Number(params["aclid"]);
+  if (!Number.isInteger(clid) || clid <= 0 || clid > 0xffff) {
+    throw new HandshakeError("initserver names no valid client id (aclid)");
   }
+  client.clid = clid;
+  client.handler.setClientID(clid);
 
   // initserver is the only place the server names itself, and it determines how
   // the server hashes our public key into client_unique_identifier: SHA-1 on
@@ -61,15 +64,6 @@ export function handleInitServer(client: ClientInternals, params: Record<string,
 
   client.logger.info("connected to server", { selfId: client.clid });
   client.markConnected(params);
-
-  // Inform the server about mute state
-  setImmediate(() => {
-    const updateCmd = buildCommand("clientupdate", {
-      client_input_muted: "0",
-      client_output_muted: "0",
-    });
-    client.execNoWait(updateCmd).catch(() => {});
-  });
 }
 
 function sendClientEkPacket(client: ClientInternals, beta: string): Uint8Array {

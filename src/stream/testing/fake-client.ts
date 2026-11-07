@@ -57,7 +57,7 @@ export class FakeClient implements StreamsClient {
     readonly resolve: (rows: Array<Record<string, string>>) => void;
     readonly reject: (error: unknown) => void;
   }> = [];
-  /** While set, a command waits for its turn on the flood throttle: it is not sent, and gives up when its signal aborts. */
+  /** While set, a command waits in a line middleware: it is not sent, and gives up when its signal aborts. */
   holdSends = false;
   #listeners = new Map<string, Handler[]>();
   #returnCode = 0;

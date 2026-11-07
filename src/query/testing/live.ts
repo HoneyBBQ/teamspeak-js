@@ -24,7 +24,7 @@ import {
 import { Client } from "../../client/client.js";
 import { generateIdentitySync } from "../../client/crypto/identity.js";
 import { QueryClient } from "../client.js";
-import type { QueryClientOptions } from "../options.js";
+import type { QueryClientOptions, QueryEventCategory } from "../options.js";
 import { connectSsh } from "../ssh.js";
 import type { SshHostKey } from "../ssh.js";
 
@@ -108,6 +108,11 @@ export function stamp(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
 }
 
+/** What a client that follows the server registers for: the categories raw TCP and SSH both accept. */
+export const EVENTS: { readonly categories: readonly QueryEventCategory[] } = {
+  categories: ["server", "channel", "textserver", "textchannel", "textprivate"],
+};
+
 /** The options for one transport kind; `knownHosts` is the file SSH verifies against. */
 export function optionsFor(
   kind: Kind,
@@ -125,6 +130,7 @@ export function optionsFor(
         },
         server: { id: 1 },
         nickname,
+        events: EVENTS,
       };
     case "web":
       return {
@@ -143,6 +149,7 @@ export function optionsFor(
         },
         server: { id: 1 },
         nickname,
+        events: EVENTS,
       };
     default:
       throw new TypeError(`unknown query transport ${String(kind)}`);

@@ -6,7 +6,7 @@
  */
 
 import type { CommandExecutor } from "./command/request.js";
-import type { CommandMiddleware } from "./types.js";
+import type { CommandMiddleware, LineMiddleware, LineSender } from "./types.js";
 
 /**
  * Compose a chain of middlewares around a base handler.
@@ -16,6 +16,18 @@ export function buildCommandChain(
   middlewares: readonly CommandMiddleware[],
   base: CommandExecutor["send"],
 ): CommandExecutor["send"] {
+  let handler = base;
+  for (let i = middlewares.length - 1; i >= 0; i--) {
+    handler = middlewares[i]!(handler);
+  }
+  return handler;
+}
+
+/** Compose line middleware around the base sender, outermost first. */
+export function buildLineChain(
+  middlewares: readonly LineMiddleware[],
+  base: LineSender,
+): LineSender {
   let handler = base;
   for (let i = middlewares.length - 1; i >= 0; i--) {
     handler = middlewares[i]!(handler);

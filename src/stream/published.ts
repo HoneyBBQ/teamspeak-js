@@ -43,9 +43,6 @@ export interface PublishHost {
   stopped(streamId: string, reason: number): void;
 }
 
-/** How many identity lookups of one stream run at once. */
-const MAX_LOOKUPS = 8;
-
 /**
  * A request waiting to be announced. The slot itself is the request's token: a
  * lookup answers for the slot it was made for, not for whatever request the
@@ -152,7 +149,6 @@ export class PublishedImpl implements PublishedStream {
   #resolving = new Map<ClientID, Slot>();
   /** Requests are announced in the order they came, whatever the lookups take; the lookups run side by side. */
   #slots: Slot[] = [];
-  #lookups = 0;
   /** Viewers whose peer is over: what they still send is not worth a report. */
   #closedViewers = new Set<ClientID>();
 
@@ -232,22 +228,19 @@ export class PublishedImpl implements PublishedStream {
     this.#advance();
   }
 
-  /** Start the lookups that may start, then announce the requests whose turn it is. */
+  /** Start the lookups of the requests that have none, as they come, then announce the requests whose turn it is. */
   #advance(): void {
     for (const slot of this.#slots) {
       if (slot.identity !== undefined || slot.looking) continue;
       if (this.#resolving.get(slot.clientId) !== slot) continue;
-      if (this.#lookups >= MAX_LOOKUPS) break;
       const identity = this.host.identity(slot.clientId);
       if (!(identity instanceof Promise)) {
         slot.identity = identity;
         continue;
       }
       slot.looking = true;
-      this.#lookups++;
       void identity.then((viewer) => {
         slot.looking = false;
-        this.#lookups--;
         slot.identity = viewer;
         this.#advance();
       });
@@ -276,7 +269,7 @@ export class PublishedImpl implements PublishedStream {
     const slot = this.#resolving.get(clientId);
     if (slot !== undefined) {
       this.#resolving.delete(clientId);
-      // One whose lookup is out stays until it answers, which counts it.
+      // One whose lookup is out stays until it answers.
       if (!slot.looking) this.#slots.splice(this.#slots.indexOf(slot), 1);
       this.#advance();
     }

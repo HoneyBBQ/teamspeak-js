@@ -1244,7 +1244,11 @@ describe.skipIf(SKIP)("Integration — channel, server and plugin events", () =>
       alphaID = channels.find((c) => c.name === DEFAULT_CHANNEL)?.id ?? channels[0]!.id;
     }
     if (QUERY_KIND === "tcp") {
-      rawObserver = new QueryClient({ ...adminOptions(), nickname: "ts-js-live-observer" });
+      rawObserver = new QueryClient({
+        ...adminOptions(),
+        nickname: "ts-js-live-observer",
+        events: { categories: ["server", "channel"] },
+      });
       await rawObserver.connect({ signal: AbortSignal.timeout(15_000) });
     }
   }, 60_000);

@@ -33,6 +33,7 @@ import type { FileUploadInfo } from '@honeybbq/teamspeak';
 import type { FileUploadOptions } from '@honeybbq/teamspeak';
 import { HostMessageMode } from '@honeybbq/teamspeak';
 import { IconID } from '@honeybbq/teamspeak';
+import type { LineMiddleware } from '@honeybbq/teamspeak';
 import { Listener } from '@honeybbq/teamspeak';
 import type { Logger } from '@honeybbq/teamspeak';
 import type { PluginCommandEvent } from '@honeybbq/teamspeak';
@@ -123,6 +124,7 @@ export interface ClientOptions {
     readonly defaultChannelPassword?: string | undefined;
     readonly eventMiddleware?: readonly EventMiddleware[] | undefined;
     readonly fileTransferSocketFactory?: FileTransferSocketFactory | undefined;
+    readonly lineMiddleware?: readonly LineMiddleware[] | undefined;
     readonly logger?: Logger | undefined;
     readonly metaData?: string | undefined;
     readonly nicknameLookup?: boolean | undefined;
