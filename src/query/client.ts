@@ -1084,7 +1084,7 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     // Ended with the command, so that a request nobody waits for any more is
     // not left running to answer the next command; see `QueryTransport.send`.
     const sendAbort = new AbortController();
-    const once = this.#sent.get(signal) ?? this.#sent.get(line);
+    const once = this.#sent.get(line) ?? this.#sent.get(signal);
     const send = transport.send(text, { signal: sendAbort.signal }).then(
       () => {
         // Handed to the connection; the first write only, as a resend is the

@@ -5,7 +5,7 @@
  * command every 200 seconds stays open. The client keeps no session alive
  * itself, so this is what a caller has to know.
  *
- * Each transport takes about six minutes, one after the other. A is idle with
+ * The transports run together, so the file takes about six minutes. Per transport, A is idle with
  * events registered while C, a voice client, says something to the server
  * every 60 seconds; B sends `version` every 200 seconds.
  *
@@ -29,50 +29,51 @@ describe.skipIf(SKIP || IDLE_KINDS.length === 0)("ServerQuery idle timeout — l
     await session.close();
   });
 
-  it.each(IDLE_KINDS)(
-    "closes an idle session between 290 and 330 seconds over %s, and keeps one that sends a command every 200",
-    async (kind) => {
-      const idle = await session.connectNew(kind, stamp("ts-js-idle-a"));
-      const busy = await session.connectNew(kind, stamp("ts-js-idle-b"));
-      const talker = await session.voice(stamp("ts-js-idle-c"));
-      let heard = 0;
-      idle.on("textMessage", () => heard++);
+  /** One transport's three sessions, all at once with the other transports'. */
+  async function measure(kind: (typeof IDLE_KINDS)[number]): Promise<void> {
+    const idle = await session.connectNew(kind, stamp("ts-js-idle-a"));
+    const busy = await session.connectNew(kind, stamp("ts-js-idle-b"));
+    const talker = await session.voice(stamp(`ts-js-idle-c-${kind}`));
+    let heard = 0;
+    idle.on("textMessage", () => heard++);
 
-      let closedAt: number | undefined;
-      const started = performance.now();
-      idle.on("disconnected", () => {
-        closedAt ??= (performance.now() - started) / 1000;
-      });
-      const timers = [
-        setInterval(() => {
-          sendServerMessage(talker, "idle test").catch(() => {});
-        }, 60_000),
-        setInterval(() => {
-          busy.exec("version").catch(() => {});
-        }, 200_000),
-      ];
-      try {
-        // B, at 320 seconds: it last sent a command at 200.
-        await sleep(320_000 - (performance.now() - started));
-        expect(busy.status).toBe("connected");
-        expect((await busy.exec("version"))[0]?.["version"]).toBeDefined();
+    let closedAt: number | undefined;
+    const started = performance.now();
+    idle.on("disconnected", () => {
+      closedAt ??= (performance.now() - started) / 1000;
+    });
+    const timers = [
+      setInterval(() => {
+        sendServerMessage(talker, "idle test").catch(() => {});
+      }, 60_000),
+      setInterval(() => {
+        busy.exec("version").catch(() => {});
+      }, 200_000),
+    ];
+    try {
+      // B, at 320 seconds: it last sent a command at 200.
+      await sleep(320_000 - (performance.now() - started));
+      expect(busy.status, `${kind}: the busy session`).toBe("connected");
+      expect((await busy.exec("version"))[0]?.["version"]).toBeDefined();
 
-        // A, by 340 seconds at the latest.
-        const isClosed = (): boolean => closedAt !== undefined;
-        while (!isClosed() && performance.now() - started < 340_000) await sleep(1_000);
-        expect(closedAt, "the idle session was never closed").toBeDefined();
-        expect(closedAt!).toBeGreaterThanOrEqual(290);
-        expect(closedAt!).toBeLessThanOrEqual(330);
-        // Notifications arrived all along and did not count as activity.
-        expect(heard).toBeGreaterThan(0);
-        expect(idle.status).toBe("disconnected");
-      } finally {
-        for (const timer of timers) clearInterval(timer);
-        await busy.disconnect().catch(() => {});
-        await idle.disconnect().catch(() => {});
-        await talker.disconnect().catch(() => {});
-      }
-    },
-    420_000,
-  );
+      // A, by 340 seconds at the latest.
+      const isClosed = (): boolean => closedAt !== undefined;
+      while (!isClosed() && performance.now() - started < 340_000) await sleep(1_000);
+      expect(closedAt, `${kind}: the idle session was never closed`).toBeDefined();
+      expect(closedAt!).toBeGreaterThanOrEqual(290);
+      expect(closedAt!).toBeLessThanOrEqual(330);
+      // Notifications arrived all along and did not count as activity.
+      expect(heard).toBeGreaterThan(0);
+      expect(idle.status).toBe("disconnected");
+    } finally {
+      for (const timer of timers) clearInterval(timer);
+      await busy.disconnect().catch(() => {});
+      await idle.disconnect().catch(() => {});
+      await talker.disconnect().catch(() => {});
+    }
+  }
+
+  it("closes an idle session between 290 and 330 seconds, and keeps one that sends a command every 200, on every transport at once", async () => {
+    await Promise.all(IDLE_KINDS.map(measure));
+  }, 420_000);
 });

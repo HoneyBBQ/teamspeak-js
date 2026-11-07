@@ -50,8 +50,9 @@ own thresholds, which its `serveredit` help describes, are:
   each tick for being good.
 - `virtualserver_antiflood_points_needed_command_block`: the points at which the
   server stops running a client's commands.
-- `virtualserver_antiflood_points_needed_ip_block`: the points at which new
-  connections from the client's address are refused.
+- `virtualserver_antiflood_points_needed_ip_block`: in the server's own
+  `serveredit` help, "Anti-flood points needed to block incoming connections
+  from the client".
 - `virtualserver_antiflood_points_needed_plugin_block`: the same for plugin
   commands.
 
@@ -70,8 +71,9 @@ Measured costs, the same on both servers:
 | `sendtextmessage` to the channel | 15     |
 
 Past `command_block` the server answers `error id=524 msg=client\sis\sflooding
-extra_msg=retry\sin\s1985ms` and does not run the command; past `ip_block` it
-refuses new connections from the address. `src/client/antiflood.integration.test.ts`
+extra_msg=retry\sin\s1985ms` and does not run the command; `ip_block` is the
+server's own threshold for blocking incoming connections, which this SDK has
+not exercised. `src/client/antiflood.integration.test.ts`
 is the test that measures the table.
 
 [yat.qa](https://yat.qa/ressourcen/voice-client-anti-flood/) keeps a fuller list
@@ -134,7 +136,7 @@ Charge each command what it costs, with the rate and the burst read from the
 server's thresholds by `servergetvariables`:
 
 ```typescript
-const pacer = new Pacer({ perSecond: 1e9, burst: 1e9 }); // unlimited until sized
+const pacer = new Pacer({ perSecond: 5, burst: 50, start: 50 }); // until sized
 const client = new Client(identity, addr, "Bot", {
   lineMiddleware: [resendOnFlood(pacer), paced(pacer, costOf)],
 });
@@ -142,8 +144,13 @@ await client.connect();
 await sizeFromServer(pacer, client);
 ```
 
-`sizeFromServer` keeps a fifth of the threshold in reserve and takes a tick as
-half a second, the third-party figure.
+Points are charged by `costOf`: the measured costs above, and 15, the dearest
+measured here, for a command not in the table (some cost more on the third-party
+list). Until `sizeFromServer` runs, the bucket refills 5 points a second with a
+burst of 50. `sizeFromServer` then refills `tick_reduce` points a second, which
+takes a tick as one second, and allows a burst of 80% of `command_block`. The
+tick was not measured here; the third-party list says half a second, so one
+second errs on the slow side.
 
 ### Idle sessions, raw TCP and SSH
 

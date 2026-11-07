@@ -103,8 +103,9 @@ export function resendOnFlood(pacer: Pacer, attempts = 3): LineMiddleware {
 
 /**
  * Recipe c: what a command costs in antiflood points, as measured on TeamSpeak 3
- * 3.13.8 and TeamSpeak 6 6.0.0-beta13.1. Commands not listed are taken to cost
- * as much as the dearest listed one, to err on the safe side.
+ * 3.13.8 and TeamSpeak 6 6.0.0-beta13.1. A command not listed is charged 15, the
+ * dearest measured here; some commands cost more on the third-party list the
+ * docs link to.
  */
 const COSTS: Readonly<Record<string, number>> = {
   servergetvariables: 0,
@@ -117,21 +118,23 @@ export const costOf = (line: CommandLine): number => COSTS[line.name] ?? 15;
 
 /**
  * Recipe c: read the thresholds with `servergetvariables` (free, and a fresh
- * guest may run it) and size the pacer to them, keeping a fifth in reserve. The
- * tick is taken as half a second, which is the third-party figure and not one
- * measured here.
+ * guest may run it) and size the pacer to them: `tick_reduce` points a second,
+ * and a burst of 80% of `command_block`. The tick is taken as one second. It was
+ * not measured here; a third-party list says half a second, so one second errs
+ * on the slow side.
  */
 export async function sizeFromServer(pacer: Pacer, client: Client): Promise<void> {
   const [row] = await client.exec("servergetvariables");
   const tickReduce = Number(row?.["virtualserver_antiflood_points_tick_reduce"]);
   const commandBlock = Number(row?.["virtualserver_antiflood_points_needed_command_block"]);
   if (!(tickReduce > 0) || !(commandBlock > 0)) throw new Error("the server named no thresholds");
-  pacer.configure({ perSecond: tickReduce * 2 * 0.8, burst: commandBlock * 0.8 });
+  pacer.configure({ perSecond: tickReduce, burst: commandBlock * 0.8 });
 }
 
 async function main(): Promise<void> {
-  // Weighted by cost, resending what the server still refuses.
-  const pacer = new Pacer({ perSecond: 1e9, burst: 1e9 });
+  // Weighted by cost, resending what the server still refuses. Until the
+  // thresholds are read, 5 points a second with a burst of 50.
+  const pacer = new Pacer({ perSecond: 5, burst: 50, start: 50 });
   const client = new Client(
     generateIdentitySync(8),
     process.env["TEAMSPEAK_ADDR"] ?? "127.0.0.1:9987",

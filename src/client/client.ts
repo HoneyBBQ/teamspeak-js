@@ -350,15 +350,11 @@ const VOICE_DROP_WARN_INTERVAL_MS = 10_000;
 /** The only commands handled before crypto init completes. */
 const PRE_INIT_COMMANDS: ReadonlySet<string> = new Set(["clientinitiv", "initivexpand2", "error"]);
 
-/** What the base of the line chain needs to know about the call a line belongs to. */
+/** What the base of the line chain needs to know about the call a line belongs to: its `onSent`. */
 interface LineCall {
   readonly onSent: (() => void) | undefined;
   /** Whether `onSent` has been called: it fires at the first write only. */
   sent: boolean;
-  /** The goodbye of a disconnect, which may go out while the status says Disconnected. */
-  readonly goodbye: boolean;
-  /** A line the server answers with nothing: resolves once written. */
-  readonly noWait: boolean;
 }
 
 interface Subscription {
@@ -464,7 +460,9 @@ export class Client implements CommandExecutor, AsyncDisposable {
   #down = new AbortController();
   /** The per-call state of the commands in the line chain, by their signal and their line. */
   #calls = new WeakMap<object, LineCall>();
+  /** The line chain around the base that waits for the answer, and the one around the base that resolves once written. */
   #line: LineSender;
+  #lineNoWait: LineSender;
   #cmdTrack = new CommandTracker(() => this.#clid);
   #viewStore: ViewStore;
   #clients: Map<number, ClientEntry>;
@@ -560,8 +558,12 @@ export class Client implements CommandExecutor, AsyncDisposable {
     this.#send = buildCommandChain(cmdMiddlewares, (request, commandOptions = {}) =>
       this.#exec(encodeRequest(request, prepareClientPassword), commandOptions),
     );
-    this.#line = buildLineChain(options.lineMiddleware ?? [], (line, lineOptions) =>
-      this.#writeLine(line, lineOptions),
+    const lineMiddlewares = options.lineMiddleware ?? [];
+    this.#line = buildLineChain(lineMiddlewares, (line, lineOptions) =>
+      this.#writeLine(line, lineOptions, false),
+    );
+    this.#lineNoWait = buildLineChain(lineMiddlewares, (line, lineOptions) =>
+      this.#writeNoWait(line, lineOptions),
     );
     this.#eventChain = buildEventChain([...this.#eventMiddlewares], (event) =>
       this.#deliver(event.name, event.payload),
@@ -1001,22 +1003,46 @@ export class Client implements CommandExecutor, AsyncDisposable {
     });
     gaveUp.catch(() => {});
     const line: CommandLine = { name, text };
-    const state: LineCall = {
-      onSent: call.onSent,
-      sent: false,
-      goodbye,
-      noWait: call.noWait === true,
-    };
-    this.#calls.set(abort.signal, state);
+    const state: LineCall = { onSent: call.onSent, sent: false };
     this.#calls.set(line, state);
+    this.#calls.set(abort.signal, state);
     try {
-      const send: LineSender = goodbye ? (l, o) => this.#writeLine(l, o) : this.#line;
+      // The goodbye goes to its own base: it passes no middleware, and may go
+      // out while the status says Disconnected.
+      const send: LineSender = goodbye
+        ? (l, o) => this.#writeLine(l, o, true)
+        : call.noWait === true
+          ? this.#lineNoWait
+          : this.#line;
       return await Promise.race([send(line, { signal: abort.signal }), gaveUp]);
     } finally {
       clearTimeout(timer);
       signal?.removeEventListener("abort", onCaller);
       down.removeEventListener("abort", onDown);
     }
+  }
+
+  /** Tell the call a line belongs to that its line was handed to the connection, the first time only. */
+  #sent(line: CommandLine, signal: AbortSignal): void {
+    const call = this.#calls.get(line) ?? this.#calls.get(signal);
+    if (call === undefined || call.sent) return;
+    call.sent = true;
+    call.onSent?.();
+  }
+
+  /**
+   * The base of the line chain for a line nobody answers: write it, and
+   * resolve with no rows once it is written.
+   */
+  async #writeNoWait(
+    line: CommandLine,
+    options: LineOptions,
+  ): Promise<Array<Record<string, string>>> {
+    options.signal.throwIfAborted();
+    if (!this.#canSend(false)) throw new NotConnectedError();
+    this.#sendLine(line.text);
+    this.#sent(line, options.signal);
+    return [];
   }
 
   /**
@@ -1027,21 +1053,11 @@ export class Client implements CommandExecutor, AsyncDisposable {
   async #writeLine(
     line: CommandLine,
     options: LineOptions,
+    goodbye: boolean,
   ): Promise<Array<Record<string, string>>> {
     const { signal } = options;
-    const call = this.#calls.get(signal) ?? this.#calls.get(line);
     signal.throwIfAborted();
-    if (!this.#canSend(call?.goodbye === true)) throw new NotConnectedError();
-    const sent = (): void => {
-      if (call === undefined || call.sent) return;
-      call.sent = true;
-      call.onSent?.();
-    };
-    if (call?.noWait === true) {
-      this.#sendLine(line.text);
-      sent();
-      return [];
-    }
+    if (!this.#canSend(goodbye)) throw new NotConnectedError();
 
     // Which notifications answer this command, and — for answers that arrive
     // after the `error` — the request field they echo back.
@@ -1055,11 +1071,11 @@ export class Client implements CommandExecutor, AsyncDisposable {
     answered.catch(() => {});
     try {
       this.#sendLine(appendReturnCode(line.text, rc));
-      sent();
+      this.#sent(line, signal);
       const result = await abortable(answered, signal);
       if (result.err) throw result.err;
       // The server took the rename, so it is what this client now asks for.
-      if (call?.goodbye !== true && line.name === "clientupdate") {
+      if (!goodbye && line.name === "clientupdate") {
         const renamed = parsed?.params["client_nickname"];
         if (renamed !== undefined) this.#requestedNickname = renamed;
       }

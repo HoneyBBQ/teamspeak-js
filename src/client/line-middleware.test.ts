@@ -114,6 +114,24 @@ describe("line middleware", () => {
     await client.disconnect({ signal: AbortSignal.timeout(1) });
   });
 
+  it("still resolves a no-wait line once written when a middleware replaces the line and the signal", async () => {
+    const replacing: LineMiddleware = (next) => (l, o) =>
+      next({ ...l }, { signal: AbortSignal.any([o.signal, new AbortController().signal]) });
+    const { client } = await connected({ lineMiddleware: [replacing] });
+    const sent = wire();
+    await client.execNoWait("clientupdate client_away=1");
+    // Written with no return code, and nothing waits for an answer.
+    expect(sent).toEqual(["clientupdate client_away=1"]);
+    expect(sent[0]).not.toContain("return_code");
+    // A line that is answered still gets its return code.
+    const answered = client.exec("whoami");
+    await settle();
+    expect(sent[1]).toMatch(/return_code=\d+/);
+    answer(client, sent[1]!, "0");
+    await answered;
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
   it("lets a line be refused before it is written", async () => {
     const { client } = await connected({
       lineMiddleware: [() => () => Promise.reject(new Error("no"))],
