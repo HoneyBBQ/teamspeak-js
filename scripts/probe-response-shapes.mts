@@ -23,7 +23,8 @@
  */
 import { Readable } from "node:stream";
 import { initFileUpload } from "../src/core/api/files.js";
-import { Client } from "../src/client/client.js";
+import { Client, clientInternals } from "../src/client/client.js";
+import { CommandTimeoutError, ServerError } from "../src/core/index.js";
 import { asChannelID } from "../src/core/command/ids.js";
 import { escape } from "../src/core/command/command.js";
 import { parseCommand } from "../src/core/command/parser.js";
@@ -49,7 +50,7 @@ async function connect(nickname: string): Promise<Client> {
     logger: quiet,
   });
   await client.connect();
-  await client.waitConnected(AbortSignal.timeout(10_000));
+  await client.view.whenReady({ signal: AbortSignal.timeout(10_000) });
   return client;
 }
 
@@ -58,8 +59,9 @@ const victim = await connect("shape-victim");
 
 // Record every command line the probe client receives, before the client
 // itself interprets it. Splitting batches here mirrors what the client does.
-const deliver = me.handler.onPacket;
-me.handler.onPacket = (p) => {
+const handler = clientInternals(me).handler;
+const deliver = handler.onPacket;
+handler.onPacket = (p) => {
   const type = packetType(p);
   if (type === PacketType.Command || type === PacketType.CommandLow) {
     for (const line of new TextDecoder().decode(p.data).split("\n")) {
@@ -76,7 +78,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 await sleep(1500);
 
 if (privilegeKey !== "") {
-  await me.execCommand(`privilegekeyuse token=${privilegeKey}`, 5000);
+  await me.exec(`privilegekeyuse token=${privilegeKey}`, { timeoutMs: 5000 });
   await sleep(500);
 }
 
@@ -94,10 +96,16 @@ async function measure(cmd: string): Promise<Shape> {
   let returnedRows = 0;
   let error = "0";
   try {
-    returnedRows = (await me.execCommandWithResponse(cmd, 5000)).length;
+    returnedRows = (await me.exec(cmd, { timeoutMs: 5000 })).length;
   } catch (e) {
-    const m = /id=(\d+)/.exec((e as Error).message) ?? /(timeout)/.exec((e as Error).message);
-    error = m?.[1] ?? (e as Error).message;
+    error =
+      e instanceof ServerError
+        ? String(e.code)
+        : e instanceof CommandTimeoutError
+          ? "timeout"
+          : e instanceof Error
+            ? e.message
+            : String(e);
   }
   await sleep(800);
 
@@ -118,12 +126,12 @@ async function measure(cmd: string): Promise<Shape> {
 
 // Facts later arguments depend on, read through queries already known to work.
 const myClid = me.clientID;
-const [self] = await me.execCommandWithResponse(`clientinfo clid=${myClid}`, 5000);
+const [self] = await me.exec(`clientinfo clid=${myClid}`, { timeoutMs: 5000 });
 const myDbid = self?.["client_database_id"] ?? "1";
 const myUid = self?.["client_unique_identifier"] ?? "";
-const [victimInfo] = await me.execCommandWithResponse(`clientinfo clid=${victim.clientID}`, 5000);
+const [victimInfo] = await me.exec(`clientinfo clid=${victim.clientID}`, { timeoutMs: 5000 });
 const victimDbid = victimInfo?.["client_database_id"] ?? "1";
-const [server] = await me.execCommandWithResponse("serverinfo", 5000);
+const [server] = await me.exec("serverinfo", { timeoutMs: 5000 });
 const defaultSgid = server?.["virtualserver_default_server_group"] ?? "8";
 const defaultCgid = server?.["virtualserver_default_channel_group"] ?? "8";
 const tag = Date.now().toString(36);
@@ -131,32 +139,33 @@ const uid = escape(myUid);
 
 // Give the list commands something to list.
 await me
-  .execCommand(`channeladdperm cid=1 permsid=i_channel_needed_join_power permvalue=0`, 5000)
+  .exec(`channeladdperm cid=1 permsid=i_channel_needed_join_power permvalue=0`, { timeoutMs: 5000 })
   .catch(() => {});
 await me
-  .execCommand(
-    `channelclientaddperm cid=1 cldbid=${myDbid} permsid=i_channel_join_power permvalue=1`,
-    5000,
-  )
+  .exec(`channelclientaddperm cid=1 cldbid=${myDbid} permsid=i_channel_join_power permvalue=1`, {
+    timeoutMs: 5000,
+  })
   .catch(() => {});
 await me
-  .execCommand(
-    `clientaddperm cldbid=${myDbid} permsid=i_client_talk_power permvalue=1 permskip=0`,
-    5000,
-  )
+  .exec(`clientaddperm cldbid=${myDbid} permsid=i_client_talk_power permvalue=1 permskip=0`, {
+    timeoutMs: 5000,
+  })
   .catch(() => {});
-await me.execCommand(`complainadd tcldbid=${victimDbid} message=probe`, 5000).catch(() => {});
-await me.execCommand(`ftcreatedir cid=1 cpw= dirname=\\/probe${tag}`, 5000).catch(() => {});
+await me
+  .exec(`complainadd tcldbid=${victimDbid} message=probe`, { timeoutMs: 5000 })
+  .catch(() => {});
+await me.exec(`ftcreatedir cid=1 cpw= dirname=\\/probe${tag}`, { timeoutMs: 5000 }).catch(() => {});
 
 /** Rows of one named response, read off the wire while the client cannot. */
 async function rowsOf(cmd: string, response: string): Promise<Array<Record<string, string>>> {
   const start = timeline.length;
-  await me.execCommand(cmd, 5000).catch(() => {});
+  await me.exec(cmd, { timeoutMs: 5000 }).catch(() => {});
   await sleep(300);
   const seen = timeline.slice(start);
   const first = seen.findIndex((a) => a.name === response);
-  if (first === -1) return [];
-  const rows = [seen[first].params];
+  const head = seen[first];
+  if (head === undefined) return [];
+  const rows = [head.params];
   for (const a of seen.slice(first + 1)) {
     if (a.name !== "") break;
     rows.push({ ...rows[rows.length - 1], ...a.params });
@@ -169,9 +178,13 @@ const channelGroups = await rowsOf("channelgrouplist", "notifychannelgrouplist")
 const channelAdmin =
   channelGroups.find((g) => g["type"] === "1" && g["cgid"] !== defaultCgid)?.["cgid"] ?? "5";
 await me
-  .execCommand(`setclientchannelgroup cgid=${channelAdmin} cid=1 cldbid=${victimDbid}`, 5000)
+  .exec(`setclientchannelgroup cgid=${channelAdmin} cid=1 cldbid=${victimDbid}`, {
+    timeoutMs: 5000,
+  })
   .catch(() => {});
-await me.execCommand(`messageadd cluid=${uid} subject=probe message=probe`, 5000).catch(() => {});
+await me
+  .exec(`messageadd cluid=${uid} subject=probe message=probe`, { timeoutMs: 5000 })
+  .catch(() => {});
 const messages = await rowsOf("messagelist", "notifymessagelist");
 const msgid = messages[0]?.["msgid"] ?? "1";
 const upload = await initFileUpload(me, asChannelID(1n), "/probe.txt", 3n)
@@ -194,10 +207,9 @@ for (const perm of [
   "b_serverinstance_permission_find",
 ]) {
   await me
-    .execCommand(
-      `servergroupaddperm sgid=6 permsid=${perm} permvalue=1 permnegated=0 permskip=0`,
-      5000,
-    )
+    .exec(`servergroupaddperm sgid=6 permsid=${perm} permvalue=1 permnegated=0 permskip=0`, {
+      timeoutMs: 5000,
+    })
     .catch((e: Error) => console.log(`grant ${perm}: ${e.message}`));
 }
 await sleep(500);
@@ -269,7 +281,7 @@ const fmt = (m: Map<string, number>) =>
 
 const results: Record<string, unknown> = {};
 for (const q of queries) {
-  const name = q.split(" ")[0];
+  const name = q.split(" ")[0] ?? q;
   const s = await measure(q);
   results[name] = {
     error: s.error,

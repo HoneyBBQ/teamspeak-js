@@ -67,21 +67,26 @@ for (const name of readdirSync(".changeset").filter(
   const file = `.changeset/${name}`;
   const text = readFileSync(file, "utf8").replace(/\r\n/g, "\n");
   const match = /^---\n([\s\S]*?)\n?---(?:\n|$)/.exec(text);
-  if (!match) {
+  const frontMatter = match?.[1];
+  if (frontMatter === undefined) {
     problems.push(`${file}: no front matter between --- lines.`);
     continue;
   }
-  for (const line of match[1].split("\n").filter((l) => l.trim() !== "")) {
+  for (const line of frontMatter.split("\n").filter((l) => l.trim() !== "")) {
     const entry = /^\s*["']?([^"':]+)["']?\s*:\s*(\S+)\s*$/.exec(line);
-    if (!entry) {
+    const entryName = entry?.[1];
+    const bump = entry?.[2];
+    if (entryName === undefined || bump === undefined) {
       problems.push(`${file}: cannot read front matter line \`${line}\`.`);
       continue;
     }
-    if (entry[1] !== pkg.name) {
-      problems.push(`${file}: names package \`${entry[1]}\`, the only package is \`${pkg.name}\`.`);
+    if (entryName !== pkg.name) {
+      problems.push(
+        `${file}: names package \`${entryName}\`, the only package is \`${pkg.name}\`.`,
+      );
     }
-    if (!bumps.has(entry[2])) {
-      problems.push(`${file}: bump \`${entry[2]}\` is not major, minor or patch.`);
+    if (!bumps.has(bump)) {
+      problems.push(`${file}: bump \`${bump}\` is not major, minor or patch.`);
     }
   }
 }

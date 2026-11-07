@@ -254,12 +254,14 @@ const targets: Target[] = [
 
 /** A transport that keeps every line the server sent, for comparing with what the client made of it. */
 class Tap implements QueryTransport {
+  readonly supportsNotifications: boolean;
   lines: string[] = [];
   onLine: ((line: string) => void) | null = null;
   onClose: ((error: Error | undefined) => void) | null = null;
   #inner: QueryTransport;
   constructor(inner: QueryTransport) {
     this.#inner = inner;
+    this.supportsNotifications = inner.supportsNotifications;
     inner.onLine = (line) => {
       this.lines.push(line);
       this.onLine?.(line);
@@ -316,7 +318,7 @@ class Recorder implements CommandExecutor {
   constructor(tap: Tap, kind: Target["kind"]) {
     this.tap = tap;
     this.kind = kind;
-    this.client = new QueryClient(tap);
+    this.client = new QueryClient({ transport: { kind: "custom", open: async () => tap } });
   }
 
   async send(
@@ -485,6 +487,7 @@ interface Findings {
 async function probe(target: Target): Promise<Findings> {
   const transport = await target.open();
   const q = new Recorder(new Tap(transport), target.kind);
+  await q.client.connect();
   const run: Run = { q, target, steps: [] };
   const extra: Record<string, unknown> = {};
   results.set(target.name, run.steps);
@@ -911,7 +914,7 @@ async function probe(target: Target): Promise<Findings> {
             console.log(`cleanup ${what}: ${String(e)}`);
         });
     }
-    await q.client.close().catch(() => {});
+    await q.client.disconnect().catch(() => {});
   }
   return { steps: run.steps, extra };
 }
@@ -921,7 +924,7 @@ async function probe(target: Target): Promise<Findings> {
 /** Run a raw command and note the answer rows and the notifications that arrive around it. */
 async function rawWithNotifications(q: Recorder, line: string) {
   const seen: NotificationEvent[] = [];
-  const stop = q.client.onNotification((event) => seen.push(event));
+  const stop = q.client.on("notification", (event) => seen.push(event));
   let rows: Array<Record<string, string>> = [];
   let error: string | undefined;
   try {
@@ -1218,7 +1221,7 @@ async function events(
     return;
   }
   const seen: NotificationEvent[] = [];
-  const stop = q.client.onNotification((event) => seen.push(event));
+  const stop = q.client.on("notification", (event) => seen.push(event));
   const registered: Record<string, string> = {};
   for (const [event, id] of [
     ["server"],
@@ -1281,6 +1284,7 @@ async function events(
 
   // Being kicked: a second query client, kicked by the voice client.
   const kq = new Recorder(new Tap(await target.open()), target.kind);
+  await kq.client.connect();
   const kicks: NotificationEvent[] = [];
   let kqClosed: string | undefined;
   try {
@@ -1292,7 +1296,7 @@ async function events(
     await kq.client.use({ id: 1 }, { nickname: `pq2-${tag}` });
     await kq.client.registerNotifications("server");
     await kq.client.registerNotifications("channel", 0);
-    kq.client.onNotification((n) => kicks.push(n));
+    kq.client.on("notification", (n) => kicks.push(n));
     const kqMe = await whoAmI(kq);
     await moveClient(kq, kqMe.clientID, pq);
     await sleep(300);
@@ -1349,7 +1353,7 @@ async function events(
       (e: unknown) => (e instanceof Error ? e.constructor.name : String(e)),
     );
   } finally {
-    await kq.client.close().catch(() => {});
+    await kq.client.disconnect().catch(() => {});
   }
   out["kicked query client received"] = kicks.map((n) => ({ name: n.name, params: n.params }));
   out["kicked query client afterwards"] = kqClosed;
