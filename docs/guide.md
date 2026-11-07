@@ -67,17 +67,21 @@ client.on("textMessage", (message) => console.log(message.message)); // the same
 | `on("channelUnsubscribed", handler)`       | Fires when the bot is unsubscribed from a channel              |
 | `on("pluginCommand", handler)`             | Fires on a plugin command (`sendPluginCommand`)                |
 | `on("clientChatComposing", handler)`       | Fires when a client is typing a private message                |
+| `on("clientChatClosed", handler)`          | Fires when a client closes its private chat with the bot       |
 | `on("kicked", handler)`                    | Fires when the bot is kicked                                   |
 | `on("poked", handler)`                     | Fires when poked by a client                                   |
 | `on("voiceData", handler)`                 | Fires on incoming voice data                                   |
 
-`on()` and `once()` return a function that removes the listener, which is also
-a `Disposable` (`using listener = client.on(...)`). Listeners run one at a
-time, in the order their events arrived, so a listener may call the client and
-await an answer. `disconnected` delivers `undefined` after `disconnect()`, and
-the cause otherwise — a `ConnectionTimeoutError`, or a `RemovedError` for a kick, a ban
-or a server stopping. `await using client = new Client(...)` disconnects when
-the scope ends.
+`on()` and `once()` return a function that removes the listener, which is also a
+`Disposable` (`using listener = client.on(...)`). Listeners run one at a time,
+in the order their events arrived, so a listener may call the client and await
+an answer. `disconnected` delivers a `DisconnectedEvent`: its `error` is
+`undefined` after `disconnect()` and the cause otherwise — a
+`ConnectionTimeoutError`, or a `RemovedError` for a kick, a ban or a server
+stopping — and its `willReconnect` says whether the reconnect loop will try
+again. `connected` delivers a `ConnectedEvent`, whose `reconnected` is true for
+a session the reconnect loop made. `await using client = new Client(...)`
+disconnects when the scope ends.
 
 `connected` is delivered after `connect()` resolves, so a listener added right
 after `await client.connect()` still hears it. `disconnect()` waits a second at

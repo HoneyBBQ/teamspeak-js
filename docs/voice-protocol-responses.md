@@ -21,10 +21,11 @@ three shapes:
    refusal arrives the same way, as `notifystatusfiletransfer` with a non-zero
    `status`.
 
-Notifications carry no `return_code`, so nothing on the wire says which
-command one answers. That pairing is a property of the command, recorded in
-`src/core/command/responses.ts`; the client consults it for every command it sends,
-including raw ones passed to `execCommandWithResponse`.
+Notifications carry no `return_code`, so nothing on the wire says which command
+one answers. The two stream notifications that answer `setupstream` and
+`requeststreaminfo` are the exceptions and echo it. That pairing is a property
+of the command, recorded in `src/core/command/responses.ts`; the client consults
+it for every command it sends, including raw ones passed to `exec`.
 
 The same notification can also arrive unprompted — `notifyservergrouplist`
 after someone else edits a group, `notifychannelcreated` for every channel
@@ -70,7 +71,8 @@ default and which only a ServerQuery admin can grant. Once granted they work
 over the voice protocol with nameless rows.
 
 `messageadd`, `customset`, `customdelete`, `apikeydel` and `queryloginadd` answer with
-nothing; `custominfo`, `customsearch` and `banfind` (TS6) answer with nameless rows.
+nothing; `custominfo` and `customsearch` answer with nameless rows, and `banfind`
+(TS6 only) with `notifybanfind`.
 `queryloginadd`, `querylogindel`, `queryloginlist`, `login`, `logout` and `use` are
 ServerQuery-only: a voice connection gets error 2 (not implemented) for them.
 

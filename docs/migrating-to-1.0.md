@@ -3,15 +3,18 @@
 From `@honeybbq/teamspeak-client` 0.x to 1.0. The per-release details are in
 the CHANGELOG; this guide is the path through them.
 
-In 1.0 the packages are one: `@honeybbq/teamspeak`, with two entry points.
+In 1.0 the packages are one: `@honeybbq/teamspeak`, with five entry points.
 Install it, and import from the entry that holds what you need.
 
-| Entry                        | What it holds                                                                                                                                                                            |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@honeybbq/teamspeak`        | The command language, branded ids, errors and `ErrorCode`, the typed commands such as `listChannels`, the event types, and what every client shares: `ClientStatus`, reconnection policy |
-| `@honeybbq/teamspeak/client` | The voice `Client`, identities, file transfer data, diagnostics, the retry policy, and the errors only the voice client throws                                                           |
+| Entry                          | What it holds                                                                                                                                                                            |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@honeybbq/teamspeak`          | The command language, branded ids, errors and `ErrorCode`, the typed commands such as `listChannels`, the event types, and what every client shares: `ClientStatus`, reconnection policy |
+| `@honeybbq/teamspeak/client`   | The voice `Client`, identities, file transfer data, diagnostics, the retry policy, and the errors only the voice client throws                                                           |
+| `@honeybbq/teamspeak/query`    | The `QueryClient` for ServerQuery over TCP, SSH and WebQuery, new in 1.0 (`@experimental`)                                                                                               |
+| `@honeybbq/teamspeak/stream`   | TeamSpeak 6 screen share signalling, new in 1.0                                                                                                                                          |
+| `@honeybbq/teamspeak/versions` | The client versions a server accepts, for the `version` option, new in 1.0                                                                                                               |
 
-Both are ESM-only, as 0.x was; on Node 22.12 and later `require()` loads them
+All are ESM-only, as 0.x was; on Node 22.12 and later `require()` loads them
 too. Each entry exports only its own symbols. The code samples below name
 symbols without import lines: `Client`, `Identity`, `generateIdentity`,
 `parseIdentity`, `uidFromPublicKey`, the voice client's errors
@@ -203,10 +206,14 @@ for (const where of await findPermission(
   client,
   permissionByName(PermissionName.ClientTalkPower),
 )) {
-  if (where.target === PermissionTarget.ChannelGroup)
-    console.log(where.channelID, where.channelGroupID);
+  if ("channelGroupID" in where) console.log(where.channelID, where.channelGroupID);
 }
 ```
+
+A row whose target `PermissionTarget` does not name is the last arm of the
+union, with `target` a plain number and the raw `id1` and `id2`, so comparing
+`target` does not narrow the union: test for the field, as above, or handle the
+rest in a default case.
 
 A `Channel`'s `uniqueIdentifier` is now `uid`, a `ChannelUID` — its own brand,
 not a client's `UID` — and the privilege key type table `TokenType` is
@@ -222,6 +229,17 @@ constructor: `asChannelID(5)`, `asClientID(3)`. A constructor throws a
 `RangeError` for anything but an integer in the id's wire range — 0–65535 for a
 `ClientID` and the file transfer ids, 0–2^32−1 for a `PermissionID`, 0–2^64−1
 for the `bigint` ids.
+
+`listChannels` answers `Channel`s, where 0.x had `ChannelInfo`, and
+`listClients` and the `clientEnter` event answer `ClientEntry`s, where 0.x had
+`ClientInfo`. A field the answer did not carry is `undefined` rather than `""`,
+`false` or `0`: `Channel.description` is absent from `channellist` and from the
+channel events, so read it with `getChannelInfo`, and a `ClientEntry`'s `uid`,
+`serverGroups` (now `ServerGroupID`s), `isAway`, `isRecording` and the rest are
+there only when the flag that brings them was on (`listClients` sets `uid`).
+A client's own move carries no invoker: `ClientMovedEvent.invokerID`,
+`invokerName` and `invokerUID` are `0`, `""` and `""`, and `reason` is
+`Reason.None`.
 
 Many queries were answered with nothing in 0.x, because the server sends their
 data in a notification. They now return the data.
@@ -249,10 +267,11 @@ under the handshake's public key.
 ## Voice
 
 `sendWhisper(data, targets, codec)` takes its targets as a record,
-`{ clients: [clid, …] }`, in place of a bare list of client ids. The whisper
-the client writes carries client ids only, so `WhisperTargets` has no field for
-channels yet. `sendVoice(data, codec, options?)` takes a `VoiceOptions`, which
-has no fields yet.
+`{ clients: [clid, …], channels: [cid, …] }`, in place of a bare list of client
+ids; either list may be left out, but not both. `sendGroupWhisper` is the call
+for server groups, channel groups and the other group targets.
+`sendVoice(data, codec, options?)` takes a `VoiceOptions`, which has no fields
+yet.
 
 ## Errors
 
@@ -270,26 +289,26 @@ if (err instanceof ServerError && err.code === ErrorCode.PermissionsClientInsuff
 password is no longer retried by the reconnect loop.
 
 Every error the SDK throws is a `TeamspeakError`, and `instanceof` works even
-when two copies of the package are installed, minified or not: each class
-names itself in a fixed static `kind`, which instances carry. A subclass of
-your own that declares no `kind` matches only its own instances across
-copies. A handshake that fails on what
-the server sent rejects with a `HandshakeError`; `parseIdentity` throws only
-an `InvalidIdentityError`. `EAXTagMismatchError` and
-`FakeSignatureMismatchError` are no longer exported: a packet that fails them
-is dropped, and they never reached a caller. An address that
-cannot be one — no host, a port outside 1–65535 — makes `connect()` reject with
-an `InvalidAddressError` instead of a Node `RangeError` or `TypeError`, and a
-host name that does not resolve with a `TeamspeakError` whose `cause` is the
-lookup's error. `TimedOutError` is now
-`ConnectionTimeoutError`, which says which timeout it is: a command's is a
-`CommandTimeoutError`. A command that exists to return data — `createChannel`,
-`addPrivilegeKey`, `initFileUpload`, `initFileDownload`, `getChannelInfo`,
-`getClientProperties`, `getClientDBIDByUID`, `getServerIDByPort`, `getMessage`,
-`whoAmI` and the other single-answer queries — throws the new `NoDataError`
-when the server answers without it, where it used to return an id of 0 or an
-object of empty fields; `getClientInfo`, now `getClientProperties`, threw a plain
-`TeamspeakError`.
+when two copies of the package are installed, minified or not: each class names
+itself in a fixed static `kind`, which instances carry. A subclass of your own
+that declares no `kind` matches only its own instances across copies. A
+handshake that fails on what the server sent rejects with a `HandshakeError`;
+`parseIdentity` throws only an `InvalidIdentityError`. `EAXTagMismatchError`
+and `FakeSignatureMismatchError` are no longer exported: a packet that fails
+them is dropped, and they never reached a caller. An address that cannot be one
+— no host, a port outside 1–65535 — makes `connect()` reject with an
+`InvalidAddressError` instead of a Node `RangeError` or `TypeError`, and a host
+name that does not resolve with a `TeamspeakError` whose `cause` is the
+lookup's error. `TimedOutError` is now `ConnectionTimeoutError`, which says
+which timeout it is: a command's is a `CommandTimeoutError`.
+`FileTransferTimeoutError` is gone: a transfer that moves no byte for
+`idleTimeoutMs` fails with a `FileTransferError`. A command that exists to
+return data — `createChannel`, `addPrivilegeKey`, `initFileUpload`,
+`initFileDownload`, `getChannelInfo`, `getClientProperties`,
+`getClientDBIDByUID`, `getServerIDByPort`, `getMessage`, `whoAmI` and the other
+single-answer queries — throws the new `NoDataError` when the server answers
+without it, where it used to return an id of 0 or an object of empty fields;
+`getClientInfo`, now `getClientProperties`, threw a plain `TeamspeakError`.
 
 The exported tables — `ErrorCode`, `Reason`, `ClientStatus`, every enumeration,
 `noopLogger`, `consoleLogger` and `defaultBackoffPolicy` — are frozen.
@@ -324,20 +343,13 @@ out of the catch-all by being given a typed event, and adding one is additive,
 a minor change — as is any key an event map gains; `EventMap`, `ServerEventMap`
 and `SessionEventMap` never lose a key in a minor release.
 
-Five of the names `NotificationName` lists have a typed event:
-`notifytextmessage`, `notifycliententerview`, `notifyclientleftview`,
-`notifyclientmoved` and `notifyclientpoke`. They are the notifications that
-describe this client's own session as it happens: who comes into view, moves or
-leaves, and the two that address this client directly, a message and a poke.
-The three about other clients are at the same time what the client's view of
-who is present is kept from, which the move and message payloads are then
-completed from. That is the shape they share, not a test that picks them out of
-the other 61: several notifications left to `notification` are just as
-unprompted and just as much about the session, such as `notifyclientupdated` or
-`notifyserveredited`, and none of the five is a command's answer. So promoting
-one is a judgement against that shape rather than a rule that decides itself.
-Adding such an event is a minor change, and the notification stays on the
-catch-all.
+A notification has a typed event when it describes the session as it happens:
+a text message or a poke, a client coming into view, moving, leaving or being
+updated, a change of its groups, a channel or the server edited, and on the
+voice client a subscription, a plugin command and a client typing. The answers
+to commands, and the rest, reach `notification` only. Promoting one to a typed
+event is a judgement against that shape, not a rule that decides itself; it is
+a minor change, and the notification stays on the catch-all.
 
 `disconnected` delivers a `DisconnectedEvent`: its `error` is `undefined`
 only after `disconnect()`, and otherwise the cause, such as a `RemovedError`

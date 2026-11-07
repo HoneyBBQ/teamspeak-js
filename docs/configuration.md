@@ -12,6 +12,7 @@ const client = new Client(identity, "ts.example.com", "Bot", {
   logger: consoleLogger, // silent unless set
   resolver: customResolver,
   commandMiddleware: [timing],
+  lineMiddleware: [logNames],
   eventMiddleware: [filterMiddleware],
   serverPassword: process.env.TEAMSPEAK_SERVER_PASSWORD,
   defaultChannel: "Lobby",
@@ -80,6 +81,9 @@ Connection auth options:
 - `serverPassword`: plain-text server password; sent as the TeamSpeak protocol hash during `clientinit`
 - `defaultChannel`: default channel name requested during `clientinit`
 - `defaultChannelPassword`: plain-text password for `defaultChannel`; sent as the TeamSpeak protocol hash
+- `privilegeKey`: a privilege key to join with, sent as `client_default_token` in `clientinit`; the server adds the key's group and the key is spent. Sent on the first successful connection only, so a reconnection does not present a spent key again
+- `metaData`: meta data to join with, sent as `client_meta_data` in `clientinit`: an opaque string other clients see in their record of this one. It is sent again on every reconnection; `updateClient({ metaData })` changes it while connected
+- `nicknameLookup`: look a dot-less address up as a server nickname at named.myteamspeak.com, as the TeamSpeak application does. Off by default, since it sends the name to a third party; ignored with a custom `resolver`
 
 ## Client version
 

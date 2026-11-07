@@ -5,18 +5,21 @@ the way the voice protocol cannot: the same typed commands the core exports,
 plus the ones only an administrator may run, over the three transports a
 ServerQuery speaks.
 
-| Transport | Where                       | Server           | Login             | Notifications |
-| --------- | --------------------------- | ---------------- | ----------------- | ------------- |
-| `tcp`     | 10011                       | TeamSpeak 3 only | `transport.login` | yes           |
-| `ssh`     | 10022                       | both             | the SSH login     | yes           |
-| `web`     | 10080 (HTTP), 10443 (HTTPS) | both             | the api key       | **no**        |
+| Transport | Where                       | Server           | Login                                         | Notifications |
+| --------- | --------------------------- | ---------------- | --------------------------------------------- | ------------- |
+| `tcp`     | 10011                       | TeamSpeak 3 only | `transport.login`                             | yes           |
+| `ssh`     | 10022                       | both             | the SSH login, or `guest: true` (TeamSpeak 6) | yes           |
+| `web`     | 10080 (HTTP), 10443 (HTTPS) | both             | the api key, or `guest: true` (TeamSpeak 6)   | **no**        |
 
 TeamSpeak 3 (3.12 and later for WebQuery, 3.3 and later for SSH) serves SSH and
 WebQuery as well as raw TCP, but only the raw port is on until
 `query_protocols` lists the others; the official Docker image takes it as
 `TS3SERVER_QUERY_PROTOCOLS=raw,ssh,http`. TeamSpeak 6 has no raw port. Its
-WebQuery also answers a request with no api key as a guest; TeamSpeak 3 refuses
-one.
+WebQuery and SSH also take a guest, from beta13 on, with the Guest Server Query
+group's permissions: `guest: true` in place of the api key, or of the SSH
+username and password. Leaving the api key out is an error, never a guest.
+TeamSpeak 3 has no guest, and a TeamSpeak 6 started with
+`--query-http-allow-guest=0` or `--query-ssh-allow-guest=0` refuses one.
 
 WebQuery is reached over `http:` or `https:`, by the scheme of `url`. TeamSpeak 3
 serves HTTPS on 10443 once `query_protocols` lists `https` and

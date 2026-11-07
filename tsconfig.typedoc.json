@@ -11,6 +11,7 @@
     "src/core/index.ts",
     "src/client/index.ts",
     "src/query/index.ts",
-    "src/stream/index.ts"
+    "src/stream/index.ts",
+    "src/versions/index.ts"
   ]
 }

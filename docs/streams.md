@@ -7,9 +7,9 @@ WebRTC, which is yours: `Streams` hands you the SDP and the ICE candidates as st
 takes them back, so any WebRTC stack plugs in, in a browser, in Electron or in Node. The
 package has no WebRTC dependency.
 
-TeamSpeak does not document this protocol. It was verified against the TeamSpeak 6 server
-6.0.0-beta13.1 and the TeamSpeak 6 client 6.0.0-beta5 (macOS), and a TeamSpeak update may
-break it. Streams are used on a server that names `STREAM_P2P` among its extensions
+TeamSpeak does not document this protocol. The live tests run it against the TeamSpeak 6
+server 6.0.0-beta13.1, interop with the TeamSpeak 6 client 6.0.0-beta5 (macOS) was observed
+by hand, and a TeamSpeak update may break it. Streams are used on a server that names `STREAM_P2P` among its extensions
 (`client.serverCapabilities.extensions`), as TeamSpeak 6 does. On any other, `publish` and
 `watch` throw a `StreamsUnsupportedError` before sending anything: a TeamSpeak 3 server names
 no extension and does not answer the stream commands at all.

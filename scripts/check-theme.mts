@@ -8,7 +8,7 @@
  * into the site and, on every page, inlines the Material system colours that
  * stylesheet reads — the stock theme does neither — so a page that loads that
  * asset and carries those properties can only have been rendered with the
- * theme in place. Run `pnpm docs:build` first, or use `pnpm check:theme`, which
+ * theme in place. Run `pnpm docs:build` first, or use `pnpm check:site`, which
  * does.
  */
 
