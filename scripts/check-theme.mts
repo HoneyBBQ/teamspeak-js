@@ -49,7 +49,7 @@ function stylesheets(html: string): string[] {
 function targetOf(page: string, href: string): string {
   // A page under `documents/` links `../assets/...`, the root one `assets/...`.
   // A leading slash would be site-absolute, so resolve it from the root.
-  const path = href.split(/[?#]/)[0];
+  const path = href.split(/[?#]/)[0] ?? "";
   return path.startsWith("/") ? resolve(root, path.slice(1)) : resolve(dirname(page), path);
 }
 

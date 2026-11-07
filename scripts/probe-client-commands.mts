@@ -19,6 +19,7 @@
  */
 import { generateIdentitySync } from "../src/client/crypto/identity.js";
 import { Client } from "../src/client/client.js";
+import { CommandTimeoutError } from "../src/core/index.js";
 
 const quiet = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
 const c = new Client(
@@ -31,9 +32,9 @@ const c = new Client(
   },
 );
 await c.connect();
-await c.waitConnected(AbortSignal.timeout(10_000));
+await c.view.whenReady({ signal: AbortSignal.timeout(10_000) });
 
-const me = await c.execCommandWithResponse("clientinfo", 5000).catch(() => []);
+const me = await c.exec("clientinfo", { timeoutMs: 5000 }).catch(() => []);
 const myDbId = me[0]?.["client_database_id"] ?? "1";
 console.log(`PROBE clid=${c.clientID} dbid=${myDbId}`);
 
@@ -189,19 +190,21 @@ for (let i = 0; i < candidates.length; i++) {
       },
     );
     await client.connect();
-    await client.waitConnected(AbortSignal.timeout(10_000));
+    await client.view.whenReady({ signal: AbortSignal.timeout(10_000) });
   }
-  const [name, cmd] = candidates[i];
+  const candidate = candidates[i];
+  if (candidate === undefined) continue;
+  const [name, cmd] = candidate;
   try {
-    const rows = await client.execCommandWithResponse(cmd, 3000);
+    const rows = await client.exec(cmd, { timeoutMs: 3000 });
     available.push(name);
     console.log(`AVAILABLE   ${name.padEnd(26)} rows=${rows.length}`);
   } catch (e) {
-    const msg = (e as Error).message;
-    if (msg.includes("command timeout")) {
+    if (e instanceof CommandTimeoutError) {
       unavailable.push(name);
       console.log(`NOT-SUPPORTED ${name.padEnd(26)} (no response)`);
     } else {
+      const msg = e instanceof Error ? e.message : String(e);
       available.push(name);
       console.log(
         `AVAILABLE   ${name.padEnd(26)} ${msg.replace("TeamSpeak server error: ", "").slice(0, 40)}`,

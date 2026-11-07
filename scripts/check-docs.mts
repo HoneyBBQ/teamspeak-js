@@ -11,7 +11,7 @@
 
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
-import type * as TS from "typescript";
+import type * as TS from "typescript-api";
 
 // The compiler API ships with TypeScript 6's JavaScript implementation; the
 // repository builds with TypeScript 7, which has none, so this loads the API
