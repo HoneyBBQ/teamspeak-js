@@ -111,7 +111,16 @@ export const RESPONSES: Readonly<Record<string, ResponseSpec>> = {
   clientgetnamefromdbid: inline("notifyclientnamefromdbid"),
   clientgetnamefromuid: inline("notifyclientnamefromuid"),
   clientgetuidfromclid: inline("notifyclientuidfromclid"),
-  clientgetvariables: echoing("notifyclientupdated", "clid"),
+  // Matched on the echoed `clid`, wherever the row falls against the `error`,
+  // as `getconnectioninfo` is: measured with `clientgetvariables` while other
+  // commands were in flight, 600 times per server, TeamSpeak 6 6.0.0-beta13.1
+  // sent `error id=0` ahead of the `notifyclientupdated` row twice (it came
+  // back with no row), TeamSpeak 3 3.13.8 never (0 of 600). The same
+  // notification goes out whenever any client changes, so only the echo says
+  // which row answers.
+  clientgetvariables: {
+    correlated: { notifications: ["notifyclientupdated"], key: "clid" },
+  },
   clientsetserverquerylogin: inline("notifyclientserverqueryloginpassword"),
   clientpermlist: inline("notifyclientpermlist"),
   complainlist: inline("notifycomplainlist"),

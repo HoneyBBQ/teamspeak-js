@@ -17,7 +17,6 @@ describe("responseSpec", () => {
     ["apikeyadd", "notifyapikeyadd"],
     ["apikeylist", "notifyapikeylist"],
     ["permget", "notifypermget"],
-    ["clientgetvariables", "notifyclientupdated"],
     ["servergetvariables", "notifyserverupdated"],
     ["clientsetserverquerylogin", "notifyclientserverqueryloginpassword"],
   ])("answers %s with %s", (command, notification) => {
@@ -31,6 +30,15 @@ describe("banfind", () => {
   // arrive as notifybanfind, so a table without it returned no rows at all.
   it("is answered by notifybanfind", () => {
     expect(responseSpec("banfind")?.notifications).toEqual([NotificationName.BanFind]);
+  });
+});
+
+describe("clientgetvariables", () => {
+  it("is answered by notifyclientupdated echoing the clid", () => {
+    expect(responseSpec("clientgetvariables")?.correlated).toEqual({
+      notifications: ["notifyclientupdated"],
+      key: "clid",
+    });
   });
 });
 
@@ -76,7 +84,7 @@ describe("RESPONSES", () => {
   // A command whose answer the server also sends unprompted, and which carries a
   // key the answer echoes, is told from the unprompted row by that key.
   it("names the echoed key of the answers that also arrive unprompted", () => {
-    expect(responseSpec("clientgetvariables")?.echoKey).toBe("clid");
+    expect(responseSpec("clientgetvariables")?.correlated?.key).toBe("clid");
     expect(responseSpec("getconnectioninfo")?.correlated?.key).toBe("clid");
     expect(responseSpec("channelgetdescription")?.echoKey).toBe("cid");
   });

@@ -47,18 +47,48 @@ describe("CommandTracker", () => {
     expect((await done).data).toEqual([{ sgid: "6", name: "Server Admin" }]);
   });
 
-  // `notifyclientupdated` is sent whenever any client changes, so a row for
-  // someone else, or the client's own mute broadcast, can sit in front of the
-  // row that answers.
-  it("takes only the row that echoes the requested clid", async () => {
-    const t = ready();
-    const [rc, done] = t.register(responseSpec("clientgetvariables"), undefined, "7");
-    t.buffer({ clid: "3", client_input_muted: "1" }, "notifyclientupdated");
-    t.buffer({ clid: "7", client_nickname: "Seven" }, "notifyclientupdated");
-    t.buffer({ clid: "9", client_output_muted: "1" }, "notifyclientupdated");
-    t.resolve(rc, null);
+  describe("clientgetvariables", () => {
+    const spec = responseSpec("clientgetvariables");
+    const row = (clid: string) => ({ clid, client_nickname: `c${clid}` });
 
-    expect((await done).data).toEqual([{ clid: "7", client_nickname: "Seven" }]);
+    // `notifyclientupdated` is sent whenever any client changes, so a row for
+    // someone else, or the client's own mute broadcast, can sit in front of
+    // the row that answers.
+    it("takes the row for the clid asked when it comes before the error", async () => {
+      const t = ready();
+      const [rc, done] = t.register(spec, "7");
+      t.offerCorrelated("notifyclientupdated", row("3"));
+      t.offerCorrelated("notifyclientupdated", row("7"));
+      t.offerCorrelated("notifyclientupdated", row("9"));
+      t.resolve(rc, null);
+      expect((await done).data).toEqual([row("7")]);
+    });
+
+    // Recorded on TeamSpeak 6 with other commands in flight: the error first.
+    it("takes the row for the clid asked when it comes after the error", async () => {
+      const t = ready();
+      const [rc, done] = t.register(spec, "7");
+      let settled = false;
+      void done.then(() => (settled = true));
+      t.resolve(rc, null);
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      t.offerCorrelated("notifyclientupdated", row("3"));
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      t.offerCorrelated("notifyclientupdated", row("7"));
+      expect((await done).data).toEqual([row("7")]);
+    });
+
+    it("never takes a row for another clid", async () => {
+      const t = ready();
+      const [rc, done] = t.register(spec, "7");
+      t.offerCorrelated("notifyclientupdated", row("3"));
+      t.resolve(rc, null);
+      t.offerCorrelated("notifyclientupdated", row("9"));
+      t.offerCorrelated("notifyclientupdated", row("7"));
+      expect((await done).data).toEqual([row("7")]);
+    });
   });
 
   describe("getconnectioninfo", () => {
@@ -130,10 +160,10 @@ describe("CommandTracker", () => {
     t.resolve(first, null);
     expect((await firstDone).data).toEqual([{ channel_description: "no cid" }]);
 
-    const [second, secondDone] = t.register(responseSpec("clientgetvariables"));
-    t.buffer({ clid: "3" }, "notifyclientupdated");
+    const [second, secondDone] = t.register(responseSpec("channelgetdescription"));
+    t.buffer({ cid: "3" }, "notifychanneledited");
     t.resolve(second, null);
-    expect((await secondDone).data).toEqual([{ clid: "3" }]);
+    expect((await secondDone).data).toEqual([{ cid: "3" }]);
   });
 
   // An event that happens to arrive between a command and its answer is not
