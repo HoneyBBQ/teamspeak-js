@@ -169,7 +169,71 @@ and `iterator.dropped` counts the frames it has dropped. A listener added with
 more than 256 deliveries are waiting; that is logged as a warning at most every
 ten seconds, with the number dropped since the last one.
 
-### What the server relays
+## Sending voice
+
+The SDK sends encoded audio frames. It does not encode or decode audio and has
+no native addon: bring an Opus encoder and give `sendVoice` one encoded frame
+per call. Each call is one packet, and it goes out at once. The SDK does no
+pacing, so the caller sends frames in real time, one for each frame duration of
+the encoder it chose (see [flood control](flood-control.md) for what else the SDK
+leaves to you).
+
+```typescript
+import { Codec } from "@honeybbq/teamspeak";
+
+// `encoder` is yours: it turns one frame of PCM into one Opus frame.
+for await (const pcm of microphone) {
+  client.sendVoice(encoder.encode(pcm), Codec.OpusVoice);
+}
+client.sendVoice(new Uint8Array(0), Codec.OpusVoice); // the end of speech
+```
+
+- `codec`: `Codec.OpusVoice` (mono, tuned for speech) or `Codec.OpusMusic`
+  (stereo, tuned for music). The other values of `Codec` are Speex and CELT,
+  which current clients no longer play. The SDK writes the codec byte as given
+  and does not check it.
+- An empty frame marks the end of speech. The server relays it, and listeners
+  get a `voiceData` event with empty `data`. Send one when the speaker stops.
+- `sendVoice(data, codec, options?)` takes a `VoiceOptions`, which has no fields
+  yet.
+- `sendVoice`, `sendWhisper` and `sendGroupWhisper` throw a `NotConnectedError`
+  unless the client is connected, and send nothing.
+
+### Whispers
+
+A whisper goes to the targets you name instead of to the channel.
+
+```typescript
+import { GroupWhisperScope, GroupWhisperType } from "@honeybbq/teamspeak/client";
+
+client.sendWhisper(frame, { clients: [clid], channels: [cid] }, Codec.OpusVoice);
+
+client.sendGroupWhisper(
+  frame,
+  { type: GroupWhisperType.ServerGroup, scope: GroupWhisperScope.AllChannels, group: sgid },
+  Codec.OpusVoice,
+);
+```
+
+- `sendWhisper` takes `{ clients?, channels? }`. It throws a `RangeError` for
+  no target at all, more than 32 clients, more than 255 channels, or an id the
+  packet cannot hold.
+- `sendGroupWhisper` takes a `type` (`GroupWhisperType`: a server group, a
+  channel group, the channel commanders or all clients), a `scope`
+  (`GroupWhisperScope`: which channels it reaches) and, for the two group types,
+  the `group` id. It throws a `RangeError` for a type, scope or group id the
+  packet cannot hold. The doc comments of `GroupWhisperType` and
+  `GroupWhisperScope` say which values were tried on a live server and which
+  carry the packet's names only.
+- Whether a target hears a whisper is the server's decision, from the sender's
+  `i_client_whisper_power` against the target's
+  `i_client_needed_whisper_power`. Talk power does not apply to a whisper.
+- The receiver learns only that a packet was a whisper (`whisper` on the
+  `voiceData` event), not who it was for.
+
+The rest of the rules that decide whether voice is relayed are below.
+
+## What the server relays
 
 The server decides whose voice reaches whom, and drops the rest without an
 error. Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 6.0.0-beta13.1:

@@ -1,14 +1,22 @@
 {
   "name": "@honeybbq/teamspeak",
   "version": "1.0.0-beta.27",
-  "description": "TeamSpeak SDK for TypeScript: an independent voice client for Node.js, and the typed commands, ids and errors every connection shares",
+  "description": "A complete TeamSpeak 3 and 6 client SDK for TypeScript: send and receive Opus voice and whispers, ServerQuery over TCP, SSH and WebQuery, TeamSpeak 6 screen share, file transfers, typed commands and events",
   "keywords": [
+    "bot",
     "client",
+    "opus",
+    "screen-share",
     "sdk",
+    "serverquery",
     "teamspeak",
+    "teamspeak3",
+    "teamspeak6",
     "ts3",
     "ts6",
-    "voip"
+    "voice",
+    "voip",
+    "webrtc"
   ],
   "homepage": "https://github.com/HoneyBBQ/teamspeak-js#readme",
   "bugs": {
