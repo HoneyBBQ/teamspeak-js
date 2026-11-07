@@ -97,6 +97,11 @@ export type LineSender = (
  * once more and fails with a NotConnectedError, writing nothing, if a
  * disconnect has begun meanwhile.
  *
+ * The voice client builds two chains from the same list, one for lines that
+ * are answered and one for lines that are not (`execNoWait`,
+ * `setconnectioninfo`), so a middleware may be called more than once: keep
+ * state that every line shares, such as a token bucket, outside it.
+ *
  * `line.text` can carry secrets, so do not log it whole.
  */
 export type LineMiddleware = (next: LineSender) => LineSender;
