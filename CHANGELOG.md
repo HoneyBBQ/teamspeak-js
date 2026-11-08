@@ -4,6 +4,16 @@ Until 1.0.0-beta.4 this package was published as `@honeybbq/teamspeak-core`, and
 `@honeybbq/teamspeak-client` was a second package. The sections below, down to
 the last version heading, are the core's history; the client's is at the bottom.
 
+## 1.0.0-beta.29
+
+### Minor Changes
+
+- [#199](https://github.com/HoneyBBQ/teamspeak-js/pull/199) [`1ef4ca3`](https://github.com/HoneyBBQ/teamspeak-js/commit/1ef4ca32822362665ee6b3e86162b5023969fd26) - TeamSpeak 6 S3 file transfer. A TeamSpeak 6 server started with S3 file transfer keeps channel files in an S3-compatible bucket and names `s3` among its extensions; the voice client now asks it for presigned URLs and moves the bytes with HTTPS requests to the storage. New in `@honeybbq/teamspeak/client`: `uploadS3File`, `downloadS3File`, `listS3Files`, `deleteS3File`, and the steps behind them, `initS3FileUpload`, `uploadS3FileData`, `completeS3FileUpload`, `initS3FileDownload` and `downloadS3FileData`, with the types `S3FileOptions`, `S3FileUploadInfo`, `S3FileDownloadInfo`, `S3FileEntry`, `S3TransferOptions`, `S3DownloadDataOptions`, `UploadS3FileOptions` and `DownloadS3FileOptions`, and the errors `S3TransferError` (a `FileTransferError` with the HTTP `status` and the storage's error `code`) and `S3UnsupportedError`, which they reject with before sending on a server that does not name `s3`. Uploads take bytes, a `Blob` or a `Readable` of a declared size; downloads go into memory up to `maxSize` or into a `Writable`, and resume from `seekPosition`. The requests go through the global `fetch` unless `fetch` is passed. `CommandName` and `NotificationName` name the four commands and their answers, which echo the command's return code; two of them end the command without an `error`, which the client now pairs as well. Measured on TeamSpeak 6 6.0.0-beta13.1, and run live in CI against a TeamSpeak 6 server with an S3-compatible storage behind TLS (`scripts/s3-lab.sh`).
+
+### Patch Changes
+
+- [#199](https://github.com/HoneyBBQ/teamspeak-js/pull/199) [`1ef4ca3`](https://github.com/HoneyBBQ/teamspeak-js/commit/1ef4ca32822362665ee6b3e86162b5023969fd26) - A command or notification name may have an underscore in it, as TeamSpeak 6 names its S3 file transfer commands (`s3ft_getpresignedurl`) and their answers (`notify_presigned_urls`). Such a line used to be read as a nameless data row, so the answer was attributed by position, a raw command's name was empty for line middleware and tracing, and an answer the server sends without an `error` after it was handed to the next command.
+
 ## 1.0.0-beta.28
 
 ### Patch Changes
