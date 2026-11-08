@@ -134,10 +134,10 @@ describe("reading numbers off the wire", () => {
     }
   });
 
-  it("names a command as a run of ASCII letters and digits", () => {
+  it("names a command as a run of ASCII letters, digits and underscores", () => {
     fc.assert(
       fc.property(fc.string({ unit: "binary", maxLength: 20 }), (s) => {
-        expect(isCommandName(s)).toBe(/^[A-Za-z0-9]+$/.test(s) && s.length > 0);
+        expect(isCommandName(s)).toBe(/^[A-Za-z0-9_]+$/.test(s) && s.length > 0);
       }),
       { numRuns: 1000 },
     );

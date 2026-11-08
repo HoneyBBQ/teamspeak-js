@@ -13,6 +13,17 @@ describe("splitCommandRows", () => {
     expect(rows[1]).toBe("clientlist clid=2 cid=6");
   });
 
+  // TeamSpeak 6 6.0.0-beta13.1 answers a presign request of two rows with one
+  // line of two rows, under a name with underscores.
+  it("keeps a name with underscores on every row", () => {
+    expect(
+      splitCommandRows("notify_presigned_urls return_code=2 url=a key=\\/a|url=b key=\\/b"),
+    ).toEqual([
+      "notify_presigned_urls return_code=2 url=a key=\\/a",
+      "notify_presigned_urls return_code=2 url=b key=\\/b",
+    ]);
+  });
+
   it("inherits omitted fields from the previous row", () => {
     const rows = splitCommandRows(
       "notifycliententerview cfid=0 ctid=1 reasonid=2 clid=7 client_nickname=Alice|clid=8 client_nickname=Bob",

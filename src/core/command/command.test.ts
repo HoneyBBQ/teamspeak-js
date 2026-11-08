@@ -112,6 +112,19 @@ describe("parseCommand", () => {
     expect(cmd?.params["msg"]).toBe("bad command");
   });
 
+  it("reads a TeamSpeak 6 name with underscores", () => {
+    // Measured on TeamSpeak 6 6.0.0-beta13.1: the answer to s3ft_getpresignedurl.
+    const cmd = parseCommand(
+      "notify_presigned_urls return_code=2 url=https:\\/\\/b.s3\\/k key=\\/k",
+    );
+    expect(cmd?.name).toBe("notify_presigned_urls");
+    expect(cmd?.params["url"]).toBe("https://b.s3/k");
+    expect(cmd?.params["key"]).toBe("/k");
+    const empty = parseCommand("notify_s3ft_file_list b64_json return_code=3");
+    expect(empty?.name).toBe("notify_s3ft_file_list");
+    expect(empty?.params["b64_json"]).toBe("");
+  });
+
   it("still reads a real command name", () => {
     const cmd = parseCommand("clientlist -uid -away");
     expect(cmd?.name).toBe("clientlist");
