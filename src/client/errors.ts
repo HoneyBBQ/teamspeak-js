@@ -1,4 +1,5 @@
 import { Reason, TeamspeakError } from "@honeybbq/teamspeak";
+import type { ServerFamily } from "@honeybbq/teamspeak";
 
 /**
  * The address a client was given cannot be connected to: no host, a host with
@@ -94,6 +95,95 @@ export class FileTransferError extends TeamspeakError {
 
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
+  }
+}
+
+/**
+ * An S3 file transfer failed: the storage answered a request with an HTTP
+ * error, a request got no answer, or the server reports that its own request
+ * to the storage failed. The message names the file, never the presigned URL.
+ */
+export class S3TransferError extends FileTransferError {
+  /** {@inheritDoc @honeybbq/teamspeak!TeamspeakError.kind} */
+  static override readonly kind: string = "S3TransferError";
+  static {
+    // On the prototype, not the instance, as built-in errors do: an own `name`
+    // would be enumerable and show up in JSON.stringify and object spread.
+    Object.defineProperty(this.prototype, "name", {
+      value: "S3TransferError",
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
+
+  /**
+   * The HTTP status the storage answered with: 404 for a file that is not
+   * there, 403 for a URL that expired or a body whose length is not the one the
+   * URL is signed for. Undefined when no answer came, and when the server
+   * reported the failure.
+   */
+  readonly status: number | undefined;
+  /**
+   * The error code in the storage's answer (`NoSuchKey`,
+   * `SignatureDoesNotMatch`), when it sent one.
+   */
+  readonly code: string | undefined;
+
+  constructor(
+    message: string,
+    options?: ErrorOptions & {
+      readonly status?: number | undefined;
+      readonly code?: string | undefined;
+    },
+  ) {
+    super(message, options?.cause === undefined ? undefined : { cause: options.cause });
+    this.status = options?.status;
+    this.code = options?.code;
+  }
+}
+
+/**
+ * The connected server does not say it does S3 file transfer: its
+ * `extensions` (`virtualserver_capability_extensions`) do not name `"s3"`. The
+ * S3 functions refuse before sending: a TeamSpeak 6 server without it answers
+ * the commands with 1035, and a TeamSpeak 3 server, which names no extension,
+ * with an error that names no command, so they would wait out their timeout.
+ * Before the client has connected no server has named any, and it is refused
+ * the same way.
+ */
+export class S3UnsupportedError extends TeamspeakError {
+  /** {@inheritDoc @honeybbq/teamspeak!TeamspeakError.kind} */
+  static override readonly kind: string = "S3UnsupportedError";
+  static {
+    // On the prototype, not the instance, as built-in errors do: an own `name`
+    // would be enumerable and show up in JSON.stringify and object spread.
+    Object.defineProperty(this.prototype, "name", {
+      value: "S3UnsupportedError",
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
+
+  /** The server generation the client found. */
+  readonly family: ServerFamily;
+  /** The `virtualserver_version` the server sent; empty before the client has connected. */
+  readonly version: string;
+  /** The extensions the server named, `"s3"` not among them. Frozen. */
+  readonly extensions: readonly string[];
+
+  constructor(family: ServerFamily, version: string, extensions: readonly string[]) {
+    const server = family === "unknown" ? "an unknown server" : family;
+    const named = extensions.length === 0 ? "none" : extensions.join(", ");
+    super(
+      `S3 file transfer needs a server that names s3 among its extensions; this is ${server}${
+        version === "" ? "" : ` (${version})`
+      }, which names ${named}`,
+    );
+    this.family = family;
+    this.version = version;
+    this.extensions = Object.freeze([...extensions]);
   }
 }
 

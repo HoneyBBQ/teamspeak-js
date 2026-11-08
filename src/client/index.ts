@@ -38,6 +38,8 @@ export type {
 
 export {
   FileTransferError,
+  S3TransferError,
+  S3UnsupportedError,
   HandshakeError,
   PuzzleTooHardError,
   InvalidAddressError,
@@ -51,6 +53,7 @@ export {
 export * from "./api/voice.js";
 export * from "./api/avatars.js";
 export * from "./api/files.js";
+export * from "./api/s3.js";
 
 // File transfer data
 export {

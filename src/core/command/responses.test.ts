@@ -64,6 +64,31 @@ describe("setupstream", () => {
   });
 });
 
+describe("S3 file transfer", () => {
+  // Measured on TeamSpeak 6 6.0.0-beta13.1: every answer echoes the command's
+  // return_code; the upload-done and delete answers are the command's last line.
+  it("pairs each command with the answer that echoes its return_code", () => {
+    expect(responseSpec("s3ft_getpresignedurl")?.correlated).toEqual({
+      notifications: ["notify_presigned_urls"],
+      key: "return_code",
+    });
+    expect(responseSpec("s3ft_list_files")?.correlated).toEqual({
+      notifications: ["notify_s3ft_file_list"],
+      key: "return_code",
+    });
+    expect(responseSpec("s3ft_upload_done_notification")?.correlated).toEqual({
+      notifications: ["notify_s3ft_upload_done"],
+      key: "return_code",
+      endsCommand: true,
+    });
+    expect(responseSpec("s3ft_deletefile")?.correlated).toEqual({
+      notifications: ["notify_s3ft_delete"],
+      key: "return_code",
+      endsCommand: true,
+    });
+  });
+});
+
 describe("RESPONSES", () => {
   // Every name the table keys on or waits for is one the name tables know, so
   // a typo here cannot go unnoticed.

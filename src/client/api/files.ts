@@ -8,6 +8,10 @@
  * beta13.1 (SSH, voice), the key a query connection negotiates opens the same
  * file transfer port a voice client's does. WebQuery refuses every file command
  * (error 5120), on both servers.
+ *
+ * A TeamSpeak 6 server whose extensions name `s3` keeps a separate store in an
+ * S3 bucket, which these do not reach: see `uploadS3File` and the rest of the
+ * S3 functions.
  */
 
 import { Readable, Transform, Writable, pipeline } from "node:stream";

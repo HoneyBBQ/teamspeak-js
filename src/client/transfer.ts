@@ -334,7 +334,7 @@ function countingStream(t: TransferTrace, total: number, idle: IdleGuard): Trans
  * not passed on; a stream that ends before `expected` fails it too. `what`
  * says who fixed the size, for the message.
  */
-function exactSize(expected: number, what: "announced" | "declared"): Transform {
+export function exactSize(expected: number, what: "announced" | "declared"): Transform {
   let received = 0;
   return new Transform({
     transform(chunk: Buffer, _encoding, callback) {
@@ -456,7 +456,7 @@ function bytesToMove(size: bigint, seekPosition: bigint): number {
  * ever ending it: the stream is the caller's, and may take more transfers.
  * `dest`'s errors fail the sink, so the pipeline sees them.
  */
-function intoStream(dest: Writable): Writable {
+export function intoStream(dest: Writable): Writable {
   const sink = new Writable({
     write(chunk: Buffer, _encoding, callback) {
       dest.write(chunk, callback);

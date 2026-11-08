@@ -40,6 +40,9 @@ const kinds = [
   "HandshakeError",
   "PuzzleTooHardError",
   "RemovedError",
+  "FileTransferError",
+  "S3TransferError",
+  "S3UnsupportedError",
 ] as const;
 
 function make(classes: Record<string, Function>, kind: string): Error {
@@ -47,6 +50,7 @@ function make(classes: Record<string, Function>, kind: string): Error {
   if (kind === "ServerError") return new C(1, "x");
   if (kind === "PuzzleTooHardError") return new C(5, 4);
   if (kind === "RemovedError") return new C(5, "bye", "admin");
+  if (kind === "S3UnsupportedError") return new C("ts3", "3.13.8", []);
   return new C("x");
 }
 
@@ -89,6 +93,8 @@ describe("client error names", () => {
       new client.ConnectionTimeoutError(),
       new client.ConnectionStalledError(),
       new client.RemovedError(1, "", ""),
+      new client.S3TransferError("x", { status: 404, code: "NoSuchKey" }),
+      new client.S3UnsupportedError("unknown", "", []),
     ];
     for (const err of errors) {
       expect(Object.keys(err)).not.toContain("name");

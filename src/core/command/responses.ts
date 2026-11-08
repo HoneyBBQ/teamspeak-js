@@ -70,6 +70,12 @@ export interface ResponseSpec {
      * answers `error id=0` and then this with `status=2568`.
      */
     readonly failure?: string;
+    /**
+     * The answer ends the command: the server sends no `error` after it, so
+     * the command settles on the answer. An `error` still settles it when the
+     * server refuses the command, and then no answer comes.
+     */
+    readonly endsCommand?: boolean;
   };
 }
 
@@ -79,6 +85,15 @@ const inline = (...notifications: string[]): ResponseSpec => ({ notifications })
 const echoing = (notification: string, key: string): ResponseSpec => ({
   notifications: [notification],
   echoKey: key,
+});
+
+/**
+ * A TeamSpeak 6 S3 file transfer command, answered by a notification that
+ * echoes the command's own return_code. Measured on TeamSpeak 6
+ * 6.0.0-beta13.1; TeamSpeak 3 has none of these commands.
+ */
+const s3 = (answer: string, endsCommand?: true): ResponseSpec => ({
+  correlated: { notifications: [answer], key: "return_code", ...(endsCommand && { endsCommand }) },
 });
 
 const fileTransfer = (answer: string): ResponseSpec => ({
@@ -147,6 +162,15 @@ export const RESPONSES: Readonly<Record<string, ResponseSpec>> = {
   permissionlist: inline("notifypermissionlist"),
   permoverview: inline("notifypermoverview"),
   privilegekeyadd: inline("notifytokenadd"),
+  // Each row of the answer is one presigned URL, sent ahead of the `error`.
+  s3ft_getpresignedurl: s3("notify_presigned_urls"),
+  // The answer carries `success`; no `error` follows it, but a refusal (2568
+  // for a client without delete power) is an `error` and no answer.
+  s3ft_deletefile: s3("notify_s3ft_delete", true),
+  // The file list, as one base64 JSON field, sent ahead of the `error`.
+  s3ft_list_files: s3("notify_s3ft_file_list"),
+  // The answer carries `success`, and no `error` follows it.
+  s3ft_upload_done_notification: s3("notify_s3ft_upload_done", true),
   privilegekeylist: inline("notifytokenlist"),
   servergetvariables: inline("notifyserverupdated"),
   servergroupadd: inline("notifyservergrouplist"),
