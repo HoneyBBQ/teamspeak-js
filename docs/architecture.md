@@ -25,7 +25,7 @@ src/
 │   ├── trace.ts           # The connect phases and trace hooks
 │   ├── diagnostics.ts     # The diagnostics_channel tracing points
 │   ├── types.ts           # Options, the event map, voice and whisper types
-│   ├── api/               # Commands only the voice protocol has; file, avatar and icon helpers
+│   ├── api/               # Commands only the voice protocol has; file, S3 file, avatar and icon helpers
 │   ├── crypto/            # ECDH, EAX encryption, identities
 │   ├── handshake/         # Crypto handshake and license verification
 │   ├── transport/         # UDP packets, acks, generation windows, QuickLZ, traffic counters

@@ -1035,6 +1035,10 @@ const commandNameValues: {
     readonly Quit: "quit";
     readonly RequestStreamInfo: "requeststreaminfo";
     readonly RespondJoinStreamRequest: "respondjoinstreamrequest";
+    readonly S3FTDeleteFile: "s3ft_deletefile";
+    readonly S3FTGetPresignedURL: "s3ft_getpresignedurl";
+    readonly S3FTListFiles: "s3ft_list_files";
+    readonly S3FTUploadDoneNotification: "s3ft_upload_done_notification";
     readonly SendTextMessage: "sendtextmessage";
     readonly ServerCreate: "servercreate";
     readonly ServerDelete: "serverdelete";
@@ -2033,6 +2037,10 @@ const notificationNameValues: {
     readonly PermOverview: "notifypermoverview";
     readonly PermGet: "notifypermget";
     readonly PluginCmd: "notifyplugincmd";
+    readonly PresignedURLs: "notify_presigned_urls";
+    readonly S3FTDelete: "notify_s3ft_delete";
+    readonly S3FTFileList: "notify_s3ft_file_list";
+    readonly S3FTUploadDone: "notify_s3ft_upload_done";
     readonly ServerConnectionInfo: "notifyserverconnectioninfo";
     readonly RespondJoinStreamRequest: "notifyrespondjoinstreamrequest";
     readonly ServerEdited: "notifyserveredited";

@@ -164,6 +164,9 @@ export interface CommandTrace {
 }
 
 // @public
+export function completeS3FileUpload(client: Client, info: S3FileUploadInfo, options?: S3FileOptions): Promise<void>;
+
+// @public
 export interface ConnectDoneInfo extends AttemptInfo {
     readonly durationMs: number;
     readonly localAddr: string;
@@ -224,6 +227,9 @@ export interface DatagramSocket {
 export function defaultShouldRetry(error: Error | undefined): boolean;
 
 // @public
+export function deleteS3File(client: Client, channelID: ChannelID, path: string, options?: S3FileOptions): Promise<void>;
+
+// @public
 export function dialFileTransfer(host: string, port: number, key: string, options?: FileTransferOptions): Promise<Duplex>;
 
 // @public
@@ -259,6 +265,23 @@ export interface DownloadFileOptions extends FileDownloadOptions, FileTransferOp
 
 // @public
 export function downloadIcon(client: Client, id: IconID, options?: AvatarTransferOptions): Promise<Uint8Array | undefined>;
+
+// @public
+export function downloadS3File(client: Client, channelID: ChannelID, path: string, options: DownloadS3FileOptions & {
+    readonly dest: Writable;
+}): Promise<void>;
+
+// @public (undocumented)
+export function downloadS3File(client: Client, channelID: ChannelID, path: string, options?: DownloadS3FileOptions): Promise<Uint8Array>;
+
+// @public
+export function downloadS3FileData(info: S3FileDownloadInfo, dest: Writable, options?: S3DownloadDataOptions): Promise<void>;
+
+// @public
+export interface DownloadS3FileOptions extends S3FileOptions, S3DownloadDataOptions {
+    readonly dest?: Writable | undefined;
+    readonly maxSize?: number | undefined;
+}
 
 // @public
 export interface EventIterator<T> extends AsyncIterableIterator<T> {
@@ -501,6 +524,12 @@ export interface IncomingTrace {
 }
 
 // @public
+export function initS3FileDownload(client: Client, channelID: ChannelID, path: string, options?: S3FileOptions): Promise<S3FileDownloadInfo>;
+
+// @public
+export function initS3FileUpload(client: Client, channelID: ChannelID, path: string, size: bigint, options?: S3FileOptions): Promise<S3FileUploadInfo>;
+
+// @public
 export class InvalidAddressError extends TeamspeakError {
     constructor(address: string, reason: string);
     readonly address: string;
@@ -514,6 +543,9 @@ export class InvalidIdentityError extends TeamspeakError {
     // (undocumented)
     static readonly kind: string;
 }
+
+// @public
+export function listS3Files(client: Client, channelID: ChannelID, options?: S3FileOptions): Promise<S3FileEntry[]>;
 
 // @public
 export function lookupTSDNS(server: string, host: string, options?: {
@@ -624,6 +656,66 @@ export interface ResolveStartInfo extends AttemptInfo {
 export interface RoundTripEstimate {
     readonly deviationMs: number;
     readonly meanMs: number;
+}
+
+// @public
+export interface S3DownloadDataOptions extends S3TransferOptions {
+    readonly seekPosition?: bigint | undefined;
+}
+
+// @public
+export interface S3FileDownloadInfo {
+    readonly channelID: ChannelID;
+    readonly path: string;
+    readonly url: string;
+}
+
+// @public
+export interface S3FileEntry {
+    readonly modifiedAt: Date | undefined;
+    readonly path: string;
+    readonly size: bigint;
+}
+
+// @public
+export interface S3FileOptions extends CommandOptions {
+    readonly password?: string | undefined;
+}
+
+// @public
+export interface S3FileUploadInfo {
+    readonly channelID: ChannelID;
+    readonly path: string;
+    readonly size: bigint;
+    readonly url: string;
+}
+
+// @public
+export class S3TransferError extends FileTransferError {
+    constructor(message: string, options?: ErrorOptions & {
+        readonly status?: number | undefined;
+        readonly code?: string | undefined;
+    });
+    readonly code: string | undefined;
+    // (undocumented)
+    static readonly kind: string;
+    readonly status: number | undefined;
+}
+
+// @public
+export interface S3TransferOptions {
+    readonly fetch?: typeof globalThis.fetch | undefined;
+    readonly signal?: AbortSignal | undefined;
+}
+
+// @public
+export class S3UnsupportedError extends TeamspeakError {
+    constructor(family: ServerFamily, version: string, extensions: readonly string[]);
+    readonly extensions: readonly string[];
+    readonly family: ServerFamily;
+    // (undocumented)
+    static readonly kind: string;
+    readonly version: string;
 }
 
 // @public
@@ -760,6 +852,17 @@ export interface UploadFileOptions extends FileUploadOptions, FileTransferOption
 
 // @public
 export function uploadIcon(client: Client, data: Uint8Array, options?: AvatarTransferOptions): Promise<IconID>;
+
+// @public
+export function uploadS3File(client: Client, channelID: ChannelID, path: string, data: Uint8Array | Blob | Readable, options?: UploadS3FileOptions): Promise<void>;
+
+// @public
+export function uploadS3FileData(info: S3FileUploadInfo, data: Uint8Array | Blob | Readable, options?: S3TransferOptions): Promise<void>;
+
+// @public
+export interface UploadS3FileOptions extends S3FileOptions, S3TransferOptions {
+    readonly size?: bigint | number | undefined;
+}
 
 // @public
 export function verifyChannelPassword(client: Client, cid: ChannelID, password: string, options?: CommandOptions): Promise<boolean>;

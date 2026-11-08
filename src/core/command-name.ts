@@ -264,6 +264,14 @@ const commandNameValues = {
   RequestStreamInfo: "requeststreaminfo",
   /** `respondjoinstreamrequest`: The stream owner's answer to a join request: accepts with the SDP offer, or denies. Voice protocol only, TeamSpeak 6 only; undocumented by TeamSpeak. */
   RespondJoinStreamRequest: "respondjoinstreamrequest",
+  /** `s3ft_deletefile`: Deletes one file from a channel's S3 file area, answered by `notify_s3ft_delete`. Voice protocol only, TeamSpeak 6 only; undocumented by TeamSpeak. */
+  S3FTDeleteFile: "s3ft_deletefile",
+  /** `s3ft_getpresignedurl`: Asks for presigned URLs to upload (`PUT`) or download (`GET`) files in a channel's S3 file area, answered by `notify_presigned_urls`. Voice protocol only, TeamSpeak 6 only; undocumented by TeamSpeak. */
+  S3FTGetPresignedURL: "s3ft_getpresignedurl",
+  /** `s3ft_list_files`: Lists the files in a channel's S3 file area, answered by `notify_s3ft_file_list`. Voice protocol only, TeamSpeak 6 only; undocumented by TeamSpeak. */
+  S3FTListFiles: "s3ft_list_files",
+  /** `s3ft_upload_done_notification`: Tells the server an upload to a channel's S3 file area is done, so it reads the channel's file list from the storage again; answered by `notify_s3ft_upload_done`. Voice protocol only, TeamSpeak 6 only; undocumented by TeamSpeak. */
+  S3FTUploadDoneNotification: "s3ft_upload_done_notification",
   /** `sendtextmessage`: Sends a text message to a specified target. */
   SendTextMessage: "sendtextmessage",
   /** `servercreate`: Creates a new virtual server using the given properties and displays its ID, port and initial administrator privilege key. */

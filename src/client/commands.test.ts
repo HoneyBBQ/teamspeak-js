@@ -379,6 +379,61 @@ describe("CommandTracker", () => {
     expect((await first).err).toBe(cause);
     expect((await second).err).toBe(cause);
   });
+
+  // The TeamSpeak 6 S3 file transfer answers echo the command's own number.
+  // Measured on 6.0.0-beta13.1: a presign answer comes ahead of the `error`;
+  // an upload-done or delete answer is the last line, no `error` after it.
+  describe("S3 file transfer answers", () => {
+    it("takes a presign answer that comes ahead of the error", async () => {
+      const t = ready();
+      const [rc, done] = t.register(responseSpec("s3ft_getpresignedurl"));
+      t.offerCorrelated("notify_presigned_urls", { return_code: String(rc), url: "u", key: "/k" });
+      t.resolve(rc, null);
+
+      expect((await done).data).toEqual([{ return_code: String(rc), url: "u", key: "/k" }]);
+    });
+
+    it("settles on an answer that ends the command", async () => {
+      const t = ready();
+      const [rc, done] = t.register(responseSpec("s3ft_upload_done_notification"));
+      t.offerCorrelated("notify_s3ft_upload_done", { success: "1", return_code: String(rc) });
+
+      const { err, data } = await done;
+      expect(err).toBeNull();
+      expect(data).toEqual([{ success: "1", return_code: String(rc) }]);
+    });
+
+    it("settles a refused delete on its error", async () => {
+      const t = ready();
+      const [rc, done] = t.register(responseSpec("s3ft_deletefile"));
+      t.resolve(rc, new ServerError(2568, "insufficient client permissions"));
+
+      expect((await done).err).toBeInstanceOf(ServerError);
+    });
+
+    // Two deletes in flight: each answer names its own command.
+    it("gives each answer to the command whose number it echoes", async () => {
+      const t = ready();
+      const [first, firstDone] = t.register(responseSpec("s3ft_deletefile"));
+      const [second, secondDone] = t.register(responseSpec("s3ft_deletefile"));
+      t.offerCorrelated("notify_s3ft_delete", { success: "0", return_code: String(second) });
+      t.offerCorrelated("notify_s3ft_delete", { success: "1", return_code: String(first) });
+
+      expect((await firstDone).data).toEqual([{ success: "1", return_code: String(first) }]);
+      expect((await secondDone).data).toEqual([{ success: "0", return_code: String(second) }]);
+    });
+
+    it("ignores an answer that echoes no pending command", async () => {
+      const t = ready();
+      const [rc, done] = t.register(responseSpec("s3ft_upload_done_notification"));
+      let settled = false;
+      void done.then(() => (settled = true));
+      t.offerCorrelated("notify_s3ft_upload_done", { success: "1", return_code: String(rc + 1) });
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      t.unregister(rc);
+    });
+  });
 });
 
 describe("appendReturnCode", () => {

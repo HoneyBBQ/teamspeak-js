@@ -34,7 +34,7 @@
 - **ServerQuery.** The same typed commands run over raw TCP, SSH (with host-key verification) or WebQuery, so an administration script and a voice bot share one vocabulary.
 - **TeamSpeak 6 screen share.** Find, publish and watch the streams of a TeamSpeak 6 server, interoperable with the TeamSpeak 6 client. SDP and ICE are plain strings for any WebRTC stack: a browser, Electron, or werift in Node.
 - **Typed commands and events.** Every command the voice protocol answers is a typed function, and the server's notifications arrive as typed events with pluggable middleware.
-- **File transfers.** Upload, download and delete files on the server, with avatars and icons covered.
+- **File transfers.** Upload, download and delete files on the server, with avatars and icons covered, and the S3 file transfer of a TeamSpeak 6 server that keeps its files in an S3 bucket.
 - **Built for long-running bots.** Opt-in reconnection tuned for TeamSpeak's antiflood ban, and a line middleware seam for pacing commands, with recipes for a token bucket, resending a refused command and keeping a query session open.
 - **Identities and server facts.** Generate, import, export and upgrade identities; read the server version, its uid hash (SHA-1 on TS3, SHA-256 on TS6) and its name, icon and banner.
 - **TeamSpeak 3 and 6, ESM with types.** Pure TypeScript, zero native dependencies, full declarations, and a custom-transport hook for proxies and tests.

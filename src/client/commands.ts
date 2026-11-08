@@ -123,7 +123,9 @@ export class CommandTracker {
         return;
       }
       p.correlated.push(params);
-      if (p.settled) this.#settle(rc, p, { err: null, data: [...p.settled.data, ...p.correlated] });
+      if (p.settled || c.endsCommand) {
+        this.#settle(rc, p, { err: null, data: [...(p.settled?.data ?? []), ...p.correlated] });
+      }
       return;
     }
   }

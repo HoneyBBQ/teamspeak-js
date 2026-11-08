@@ -375,6 +375,20 @@ jobs:
             echo "export TEAMSPEAK_QUERY_HTTPS_URL=https://127.0.0.1:10443"
             echo "export TEAMSPEAK_QUERY_HTTPS_CA=$TLS_DIR/ca.pem"
           } >> "$TS3_FIXTURE_ENV"
+      # TeamSpeak 6 S3 file transfer needs an S3-compatible storage, a TLS front
+      # for it and a CA the server trusts, none of which a service container
+      # can be started with, so scripts/s3-lab.sh starts a second TS6 server
+      # with all three and appends TEAMSPEAK_S3_* to the fixture's file. The
+      # server signs URLs for teamspeak.s3.localhost, which the tests on the
+      # runner must reach, so the name is pointed at the runner first.
+      - name: Serve S3 file transfer
+        if: ${{ matrix.server.name == 'TS6' }}
+        env:
+          TS3_FIXTURE_ENV: ${{ runner.temp }}/ts3-fixture.env
+          TS6_IMAGE: ${{ matrix.server.image }}
+        run: |
+          echo "127.0.0.1 s3.localhost teamspeak.s3.localhost" | sudo tee -a /etc/hosts
+          ./scripts/s3-lab.sh "$RUNNER_TEMP/s3-lab"
       - name: Run integration tests
         env:
           # Where the fixture wrote its environment file.

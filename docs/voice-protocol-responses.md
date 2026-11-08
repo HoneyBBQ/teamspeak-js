@@ -23,7 +23,8 @@ three shapes:
 
 Notifications carry no `return_code`, so nothing on the wire says which command
 one answers. The two stream notifications that answer `setupstream` and
-`requeststreaminfo` are the exceptions and echo it. That pairing is a property
+`requeststreaminfo` are the exceptions and echo it, as do the answers to the
+TeamSpeak 6 S3 file transfer commands (below). That pairing is a property
 of the command, recorded in `src/core/command/responses.ts`; the client consults
 it for every command it sends, including raw ones passed to `exec`.
 
@@ -86,6 +87,24 @@ not sent over a voice connection.
 
 `banadd`, `banclient` and `servertemppasswordadd` succeed without reporting an
 id over the voice protocol; ServerQuery reports one.
+
+## TeamSpeak 6 S3 file transfer
+
+A TeamSpeak 6 server with S3 file transfer on (its extensions name `s3`) takes
+four more commands over the voice protocol. Each answer is a notification with
+an underscore in its name that echoes the command's own `return_code`, and two
+of them are the last line the command gets: no `error` follows. Measured on
+TeamSpeak 6 6.0.0-beta13.1; TeamSpeak 3 has none of them, and answers each
+with an `error` that carries no `return_code`.
+
+| Command                         | Answer                                                                       |
+| ------------------------------- | ---------------------------------------------------------------------------- |
+| `s3ft_getpresignedurl`          | `notify_presigned_urls`, one row per file, then `error`                      |
+| `s3ft_list_files`               | `notify_s3ft_file_list` (the list as base64 JSON), then `error`              |
+| `s3ft_upload_done_notification` | `notify_s3ft_upload_done` with `success`, and no `error`                     |
+| `s3ft_deletefile`               | `notify_s3ft_delete` with `success`, and no `error`; a refusal is an `error` |
+
+A refusal of any of them is an `error` with the code and no answer.
 
 ## Measured
 

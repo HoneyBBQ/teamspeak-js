@@ -57,3 +57,8 @@ with the same semantics, apart from what the languages make differ:
   unions where Go has numeric `Source` and `Accessibility` types.
 - A listener for a server event on a `QueryClient` over WebQuery throws a
   `TypeError`; Go's `On…` methods are inert there and log one warning.
+- S3 file transfer: a `fetch` where Go takes an `*http.Client`. Go's
+  `UploadS3File` takes bytes, and a stream goes through its three steps;
+  `uploadS3File` here also takes a `Blob` or a `Readable` of a declared size.
+  `downloadS3File` holds at most 256 MiB by default, as `downloadFile` does; Go
+  holds 64 MiB, as its `DownloadFile` does.

@@ -442,6 +442,79 @@ whose `cause` is a `TimeoutError`, and its connection is destroyed. A download
 that sends more bytes than the negotiated size, or ends short of it, fails with
 a `FileTransferError` too; bytes past the announced size are never written.
 
+## S3 File Transfer
+
+A TeamSpeak 6 server started with S3 file transfer keeps channel files in an
+S3-compatible bucket and says so: `client.serverCapabilities.extensions`
+includes `"s3"`. The client asks the server for a presigned URL over the voice
+connection and moves the bytes with an HTTPS request to the storage, not through
+the file transfer port. The functions are in `@honeybbq/teamspeak/client`:
+
+```typescript
+import {
+  deleteS3File,
+  downloadS3File,
+  listS3Files,
+  uploadS3File,
+} from "@honeybbq/teamspeak/client";
+
+if (client.serverCapabilities.extensions.includes("s3")) {
+  await uploadS3File(client, cid, "/docs/notes.txt", data);
+  const files = await listS3Files(client, cid); // [{ path: "/docs/notes.txt", size: 12n, modifiedAt }]
+  const bytes = await downloadS3File(client, cid, "/docs/notes.txt");
+  await deleteS3File(client, cid, "/docs/notes.txt");
+}
+```
+
+On a server that does not name `s3` they reject with an `S3UnsupportedError`
+before sending anything: TeamSpeak 3 would leave the commands unanswered. They
+run on a voice `Client` only; WebQuery refuses them.
+
+The classic file commands still work on such a server, and reach a separate
+store: a file uploaded one way is not listed the other.
+
+`uploadS3File` signs the upload (`initS3FileUpload`), sends the file to the
+storage (`uploadS3FileData`) and tells the server it is stored
+(`completeS3FileUpload`). The last step matters: the server lists a channel's
+files from a copy it keeps, and reads it from the storage again only when told
+an upload is done. The data is bytes, a `Blob` (`fs.openAsBlob(file)` streams a
+file from disk) or a `Readable` with `{ size }`; the storage refuses a body
+whose length is not the one the URL is signed for. An upload replaces a file
+already at the path.
+
+`downloadS3File` takes `{ dest }` to stream into a `Writable`, refuses a
+download over `maxSize` (256 MiB) in memory, and resumes from `{ seekPosition }`
+with an HTTP range request. A file that is not there is an `S3TransferError`
+with `status` 404.
+
+Paths run from the channel's root; there are no directories, only paths, but
+uploading into a directory the server does not list yet needs directory create
+power as well as upload power. A path with an empty, `.` or `..` segment, a
+control character or a slash at its end is refused with a `TypeError`: the
+server signs the path as given, and a URL parser would change it.
+
+A presigned URL is a credential for its file until it expires (300 seconds by
+default, the server's `s3ft-presigned-url-expiration`): keep `info.url` out of
+logs. No error message carries it. The requests go through the global `fetch`;
+pass `{ fetch }` to route them through a proxy, trust another certificate
+authority, or watch them.
+
+| Function                                    | Description                                   |
+| ------------------------------------------- | --------------------------------------------- |
+| `initS3FileUpload(client, cid, path, size)` | Sign an upload                                |
+| `uploadS3FileData(info, data, options?)`    | `PUT` the file to the storage                 |
+| `completeS3FileUpload(client, info)`        | Tell the server the upload is stored          |
+| `initS3FileDownload(client, cid, path)`     | Sign a download                               |
+| `downloadS3FileData(info, dest, options?)`  | `GET` the file from the storage into a stream |
+| `listS3Files(client, cid)`                  | Every file in the channel's area              |
+| `deleteS3File(client, cid, path)`           | Delete one file                               |
+
+A refusal by the server is the `ServerError` it sends: 2049 (invalid file
+permissions) for an upload or download without the power, 2568 for a delete
+without it. A failed storage request, or a server that reports its own request
+to the storage failed, is an `S3TransferError` (a `FileTransferError`) with the
+HTTP `status` and the storage's error `code` when there was an answer.
+
 ## Identity
 
 ```typescript

@@ -47,8 +47,9 @@ export interface ServerCapabilities {
    * once, such as `["FILETIME", "STREAM_P2P"]`; test one with `includes`.
    * Empty when it names none, as a TeamSpeak 3 server does. Frozen.
    *
-   * It is what the server claims, read as sent; the SDK does not refuse a
-   * command because a name is missing from it.
+   * It is what the server claims, read as sent. A raw command is never refused
+   * because a name is missing from it; the features built on one (streams on
+   * `STREAM_P2P`, S3 file transfer on `s3`) refuse before sending.
    */
   readonly extensions: readonly string[];
   /** The welcome message shown on connecting (`virtualserver_welcomemessage`). */
