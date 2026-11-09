@@ -16,15 +16,21 @@ import { readFileSync } from "node:fs";
 import { Readable } from "node:stream";
 import tls from "node:tls";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
 import {
   CommandTimeoutError,
+  GroupType,
   ServerError,
   addChannelPermission,
+  addPrivilegeKey,
   asChannelID,
+  avatarFileName,
   createChannel,
   deleteChannel,
   deleteFile,
+  iconIDOf,
   listFiles,
+  listServerGroups,
   permissionByName,
 } from "@honeybbq/teamspeak";
 import type { ChannelID } from "@honeybbq/teamspeak";
@@ -39,19 +45,48 @@ import {
   initS3FileDownload,
   initS3FileUpload,
   listS3Files,
+  renameS3File,
+  renameS3Files,
   uploadS3File,
   uploadS3FileData,
 } from "./api/s3.js";
+import {
+  deleteS3Icon,
+  downloadS3Avatar,
+  downloadS3Icon,
+  removeS3Avatar,
+  uploadS3Avatar,
+  uploadS3Icon,
+} from "./api/s3-avatars.js";
 import { QueryClient } from "../query/client.js";
 import type { NotificationEvent } from "@honeybbq/teamspeak";
+import type { EventMap } from "./types.js";
 
 const S3_ADDR = process.env["TEAMSPEAK_S3_ADDR"];
+const UNCHECKED_ADDR = process.env["TEAMSPEAK_S3_UNCHECKED_ADDR"];
 const ADDR = process.env["TEAMSPEAK_ADDR"];
 const RUN = Date.now().toString(36).slice(-5);
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-async function connect(addr: string, serverPassword: string, nickname: string): Promise<Client> {
-  const client = new Client(generateIdentitySync(8), addr, nickname, { serverPassword });
+/** Trust the CAs of both labs' storages, for this test file's process. */
+function trustLabs(): void {
+  const cas = ["TEAMSPEAK_S3_CA", "TEAMSPEAK_S3_UNCHECKED_CA"]
+    .map((name) => process.env[name])
+    .filter((path): path is string => path !== undefined && path !== "")
+    .map((path) => readFileSync(path, "utf8"));
+  if (cas.length > 0) tls.setDefaultCACertificates([...tls.getCACertificates("default"), ...cas]);
+}
+
+async function connect(
+  addr: string,
+  serverPassword: string,
+  nickname: string,
+  privilegeKey = "",
+): Promise<Client> {
+  const client = new Client(generateIdentitySync(8), addr, nickname, {
+    serverPassword,
+    privilegeKey,
+  });
   for (let attempt = 1; ; attempt++) {
     try {
       await client.connect({ signal: AbortSignal.timeout(10_000) });
@@ -65,8 +100,57 @@ async function connect(addr: string, serverPassword: string, nickname: string): 
   return client;
 }
 
-const connectS3 = (nickname: string): Promise<Client> =>
-  connect(S3_ADDR!, process.env["TEAMSPEAK_S3_SERVER_PASSWORD"] ?? "", `${nickname}-${RUN}`);
+const connectS3 = (nickname: string, privilegeKey = ""): Promise<Client> =>
+  connect(
+    S3_ADDR!,
+    process.env["TEAMSPEAK_S3_SERVER_PASSWORD"] ?? "",
+    `${nickname}-${RUN}`,
+    privilegeKey,
+  );
+
+/** An administrator over a lab's WebQuery. */
+async function labAdmin(prefix: string): Promise<QueryClient> {
+  const query = new QueryClient({
+    transport: {
+      kind: "web",
+      url: process.env[`${prefix}_QUERY_URL`] ?? "",
+      apiKey: process.env[`${prefix}_QUERY_API_KEY`] ?? "",
+    },
+    server: { id: 1 },
+  });
+  await query.connect();
+  return query;
+}
+
+/** A key that puts the client using it in the Server Admin group. */
+async function serverAdminKey(query: QueryClient): Promise<string> {
+  const group = (await listServerGroups(query)).find(
+    (g) => g.type === GroupType.Regular && /server admin/i.test(g.name),
+  )!;
+  return addPrivilegeKey(query, { serverGroupID: group.id, description: `s3-${RUN}` });
+}
+
+function nextEvent<K extends keyof EventMap>(
+  client: Client,
+  name: K,
+  match: (payload: EventMap[K]) => boolean,
+): Promise<EventMap[K]> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      off();
+      reject(new Error(`no ${name} event arrived`));
+    }, 8_000);
+    const off = (client.on as (n: K, l: (p: EventMap[K]) => void) => () => void)(name, (p) => {
+      if (!match(p)) return;
+      clearTimeout(timer);
+      off();
+      resolve(p);
+    });
+  });
+}
+
+const paths = async (client: Client, cid: ChannelID): Promise<string[]> =>
+  (await listS3Files(client, cid)).map((entry) => entry.path);
 
 describe.skipIf(!S3_ADDR)("S3 file transfer — live", () => {
   let client: Client;
@@ -74,10 +158,7 @@ describe.skipIf(!S3_ADDR)("S3 file transfer — live", () => {
   const dir = `/ts-js-${RUN}`;
 
   beforeAll(async () => {
-    const ca = process.env["TEAMSPEAK_S3_CA"];
-    if (ca !== undefined && ca !== "") {
-      tls.setDefaultCACertificates([...tls.getCACertificates("default"), readFileSync(ca, "utf8")]);
-    }
+    trustLabs();
     client = await connectS3("ts-js-s3");
     cid = client.channelID;
   });
@@ -140,10 +221,10 @@ describe.skipIf(!S3_ADDR)("S3 file transfer — live", () => {
   });
 
   it("keeps names the server has to encode", async () => {
-    const paths = [`${dir}/a b+c#d?e&f=g.txt`, `${dir}/ünï€ (1).txt`, `${dir}/nested/deeper/x.txt`];
-    for (const path of paths) await uploadS3File(client, cid, path, Buffer.from(path));
+    const names = [`${dir}/a b+c#d?e&f=g.txt`, `${dir}/ünï€ (1).txt`, `${dir}/nested/deeper/x.txt`];
+    for (const path of names) await uploadS3File(client, cid, path, Buffer.from(path));
     const listed = new Set((await listS3Files(client, cid)).map((entry) => entry.path));
-    for (const path of paths) {
+    for (const path of names) {
       expect(listed.has(path), path).toBe(true);
       expect(Buffer.from(await downloadS3File(client, cid, path)).toString()).toBe(path);
       await deleteS3File(client, cid, path);
@@ -229,6 +310,110 @@ describe.skipIf(!S3_ADDR)("S3 file transfer — live", () => {
     }
   });
 
+  it("deletes several files in one command", async () => {
+    const files = [`${dir}/batch/a.txt`, `${dir}/batch/b.txt`, `${dir}/batch/c.txt`];
+    for (const path of files) await uploadS3File(client, cid, path, Buffer.from(path));
+    await deleteS3File(client, cid, files.slice(0, 2));
+    const left = await paths(client, cid);
+    expect(left).not.toContain(files[0]);
+    expect(left).not.toContain(files[1]);
+    expect(left).toContain(files[2]);
+    await deleteS3File(client, cid, files[2]!);
+  });
+
+  // The server's copy leaves x-amz-copy-source unsigned, which RustFS, as every
+  // storage that checks signatures, refuses.
+  it("fails a rename on a storage that checks signatures, and the file stays", async () => {
+    const path = `${dir}/stays.txt`;
+    await uploadS3File(client, cid, path, Buffer.from("stays"));
+    const error = await renameS3File(client, cid, path, `${dir}/moved.txt`).catch(
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(S3TransferError);
+    const listed = await paths(client, cid);
+    expect(listed).toContain(path);
+    expect(listed).not.toContain(`${dir}/moved.txt`);
+    await deleteS3File(client, cid, path);
+  });
+
+  describe("avatars and icons", () => {
+    let bystander: Client;
+    let iconOwner: Client;
+    let query: QueryClient;
+
+    beforeAll(async () => {
+      bystander = await connectS3("ts-js-s3-bystander");
+      query = await labAdmin("TEAMSPEAK_S3");
+      // Icons need b_icon_manage and i_max_icon_filesize, which a Server Admin has.
+      iconOwner = await connectS3("ts-js-s3-icons", await serverAdminKey(query));
+    });
+
+    afterAll(async () => {
+      await removeS3Avatar(client).catch(() => {});
+      await bystander?.disconnect();
+      await iconOwner?.disconnect();
+      await query?.disconnect();
+    });
+
+    it("uploads an avatar that a bystander sees flagged and downloads byte for byte", async () => {
+      const data = Buffer.from(`not really a picture ${RUN}`);
+      const md5 = createHash("md5").update(data).digest("hex");
+      const seen = nextEvent(
+        bystander,
+        "clientUpdated",
+        (e) => e.clientID === client.clientID && e.changes.avatar === md5,
+      );
+      expect(await uploadS3Avatar(client, data)).toBe(md5);
+      await seen;
+      const got = await downloadS3Avatar(bystander, client.uid);
+      expect(got && Buffer.from(got).equals(data)).toBe(true);
+      // Kept in channel 0 under the uploader's avatar name, apart from the classic store.
+      expect(await paths(iconOwner, asChannelID(0))).toContain(`/${avatarFileName(client.uid)}`);
+
+      const cleared = nextEvent(
+        bystander,
+        "clientUpdated",
+        (e) => e.clientID === client.clientID && "avatar" in e.changes && !e.changes.avatar,
+      );
+      await removeS3Avatar(client);
+      await cleared;
+      expect(await downloadS3Avatar(bystander, client.uid)).toBeUndefined();
+    });
+
+    it("refuses another client's avatar to delete", async () => {
+      await uploadS3Avatar(client, Buffer.from("mine"));
+      const error = await deleteS3File(
+        bystander,
+        asChannelID(0),
+        `/${avatarFileName(client.uid)}`,
+      ).catch((e: unknown) => e);
+      expect((error as ServerError).code).toBe(2568);
+      await removeS3Avatar(client);
+    });
+
+    it("refuses an avatar over the size limit with 2049", async () => {
+      await expect(uploadS3Avatar(client, Buffer.alloc(200_001, 1))).rejects.toMatchObject({
+        code: 2049,
+      });
+    });
+
+    it("uploads an icon that a bystander downloads, and deletes it", async () => {
+      const data = Buffer.from(`\x89PNG icon ${RUN}`);
+      const id = await uploadS3Icon(iconOwner, data);
+      expect(id).toBe(iconIDOf(data));
+      const got = await downloadS3Icon(bystander, id);
+      expect(got && Buffer.from(got).equals(data)).toBe(true);
+      await deleteS3Icon(iconOwner, id);
+      expect(await downloadS3Icon(bystander, id)).toBeUndefined();
+    });
+
+    it("refuses icons to a client without b_icon_manage", async () => {
+      const data = Buffer.from(`icon ${RUN}`);
+      await expect(uploadS3Icon(bystander, data)).rejects.toMatchObject({ code: 2049 });
+      await expect(deleteS3Icon(bystander, iconIDOf(data))).rejects.toMatchObject({ code: 2568 });
+    });
+  });
+
   describe("permissions", () => {
     let query: QueryClient;
     let locked: ChannelID;
@@ -246,7 +431,7 @@ describe.skipIf(!S3_ADDR)("S3 file transfer — live", () => {
       await query.connect();
       locked = await createChannel(query, { name: `ts-js-s3-locked-${RUN}` });
       // The fixture gives every client 100 of each file power.
-      for (const power of ["upload", "download", "delete"]) {
+      for (const power of ["upload", "download", "delete", "rename"]) {
         await addChannelPermission(
           query,
           locked,
@@ -305,6 +490,19 @@ describe.skipIf(!S3_ADDR)("S3 file transfer — live", () => {
       const error = await deleteS3File(client, locked, "/a.txt").catch((e: unknown) => e);
       expect(error).toBeInstanceOf(ServerError);
       expect((error as ServerError).code).toBe(2568);
+      const batch = await deleteS3File(client, locked, ["/a.txt", "/b.txt"]).catch(
+        (e: unknown) => e,
+      );
+      expect((batch as ServerError).code).toBe(2568);
+    });
+
+    it("refuses a rename without the power with 2568", async () => {
+      const error = await renameS3File(client, locked, "/a.txt", "/b.txt").catch((e: unknown) => e);
+      expect((error as ServerError).code).toBe(2568);
+      const batch = await renameS3Files(client, locked, [
+        { oldPath: "/a.txt", newPath: "/b.txt" },
+      ]).catch((e: unknown) => e);
+      expect((batch as ServerError).code).toBe(2568);
     });
 
     // ServerQuery has no presigned URLs to hand out.
@@ -315,6 +513,86 @@ describe.skipIf(!S3_ADDR)("S3 file transfer — live", () => {
     });
   });
 });
+
+describe.skipIf(!UNCHECKED_ADDR)(
+  "S3 renames on a storage that takes the server's copy — live",
+  () => {
+    let client: Client;
+    let cid: ChannelID;
+    const dir = `/ts-js-${RUN}`;
+
+    beforeAll(async () => {
+      trustLabs();
+      client = await connect(
+        UNCHECKED_ADDR!,
+        process.env["TEAMSPEAK_S3_UNCHECKED_SERVER_PASSWORD"] ?? "",
+        `ts-js-s3u-${RUN}`,
+      );
+      cid = client.channelID;
+    });
+
+    afterAll(async () => {
+      for (const path of await paths(client, cid).catch(() => [])) {
+        if (path.startsWith(`${dir}/`)) await deleteS3File(client, cid, path).catch(() => {});
+      }
+      await client?.disconnect();
+    });
+
+    it("moves a file, which the list shows at once", async () => {
+      await uploadS3File(client, cid, `${dir}/a.txt`, Buffer.from("content of a"));
+      await renameS3File(client, cid, `${dir}/a.txt`, `${dir}/sub/renamed.txt`);
+      const listed = await paths(client, cid);
+      expect(listed).toContain(`${dir}/sub/renamed.txt`);
+      expect(listed).not.toContain(`${dir}/a.txt`);
+      expect(
+        Buffer.from(await downloadS3File(client, cid, `${dir}/sub/renamed.txt`)).toString(),
+      ).toBe("content of a");
+    });
+
+    it("replaces a file at the new path", async () => {
+      await uploadS3File(client, cid, `${dir}/from.txt`, Buffer.from("from"));
+      await uploadS3File(client, cid, `${dir}/to.txt`, Buffer.from("to"));
+      await renameS3File(client, cid, `${dir}/from.txt`, `${dir}/to.txt`);
+      expect(Buffer.from(await downloadS3File(client, cid, `${dir}/to.txt`)).toString()).toBe(
+        "from",
+      );
+    });
+
+    it("reports a rename of a file that is not there, or onto itself", async () => {
+      await expect(
+        renameS3File(client, cid, `${dir}/missing.txt`, `${dir}/x.txt`),
+      ).rejects.toBeInstanceOf(S3TransferError);
+      await uploadS3File(client, cid, `${dir}/self.txt`, Buffer.from("self"));
+      await expect(
+        renameS3File(client, cid, `${dir}/self.txt`, `${dir}/self.txt`),
+      ).rejects.toBeInstanceOf(S3TransferError);
+    });
+
+    // One answer for the batch, the last rename's.
+    it("answers a batch for its last rename alone", async () => {
+      await uploadS3File(client, cid, `${dir}/b1.txt`, Buffer.from("b1"));
+      await renameS3Files(client, cid, [
+        { oldPath: `${dir}/nothing.txt`, newPath: `${dir}/n1.txt` },
+        { oldPath: `${dir}/b1.txt`, newPath: `${dir}/batch/b1.txt` },
+      ]);
+      expect(await paths(client, cid)).toContain(`${dir}/batch/b1.txt`);
+
+      await uploadS3File(client, cid, `${dir}/b2.txt`, Buffer.from("b2"));
+      const error = await renameS3Files(client, cid, [
+        { oldPath: `${dir}/b2.txt`, newPath: `${dir}/batch/b2.txt` },
+        { oldPath: `${dir}/nothing.txt`, newPath: `${dir}/n2.txt` },
+      ]).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(S3TransferError);
+      // The earlier rename was done all the same; the list catches up a moment later.
+      let listed: string[] = [];
+      for (let attempt = 0; attempt < 20 && !listed.includes(`${dir}/batch/b2.txt`); attempt++) {
+        await sleep(250);
+        listed = await paths(client, cid);
+      }
+      expect(listed).toContain(`${dir}/batch/b2.txt`);
+    });
+  },
+);
 
 describe.skipIf(!ADDR)("S3 file transfer on a server without it — live", () => {
   let client: Client;
