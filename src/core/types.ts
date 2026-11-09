@@ -238,3 +238,26 @@ export function serverFamilyForVersion(version: string): ServerFamily {
   if (major >= 6) return ServerFamily.TS6;
   return ServerFamily.Unknown;
 }
+
+/** The values of the table below, before freezing. */
+const serverExtensionValues = {
+  /** Named by every TeamSpeak 6 server measured. Nothing in the SDK depends on it. */
+  FileTime: "FILETIME",
+  /** Peer to peer streams (screen share), which `@honeybbq/teamspeak/stream` needs. */
+  StreamP2P: "STREAM_P2P",
+  /** S3 file transfer, which the client's `uploadS3File` and the other S3 functions need. */
+  S3: "s3",
+} as const;
+/**
+ * The extensions a server names in `virtualserver_capability_extensions`
+ * (`serverCapabilities.extensions`), as TeamSpeak 6 6.0.0-beta13.1 names them.
+ * The names are compared as sent, so case matters. A TeamSpeak 3 server names
+ * none.
+ */
+export const ServerExtension: typeof serverExtensionValues =
+  /* @__PURE__ */ Object.freeze(serverExtensionValues);
+/**
+ * One of {@link ServerExtension}. A server may name others, and the table may
+ * gain members in a minor release.
+ */
+export type ServerExtension = (typeof ServerExtension)[keyof typeof ServerExtension];

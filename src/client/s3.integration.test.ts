@@ -32,6 +32,7 @@ import {
   listFiles,
   listServerGroups,
   permissionByName,
+  ServerExtension,
 } from "@honeybbq/teamspeak";
 import type { ChannelID } from "@honeybbq/teamspeak";
 import { Client } from "./client.js";
@@ -168,7 +169,7 @@ describe.skipIf(!S3_ADDR)("S3 file transfer — live", () => {
   });
 
   it("is named among the server's extensions", () => {
-    expect(client.serverCapabilities.extensions).toContain("s3");
+    expect(client.serverCapabilities.extensions).toContain(ServerExtension.S3);
   });
 
   it("uploads, lists, downloads and deletes a file", async () => {
@@ -610,7 +611,7 @@ describe.skipIf(!ADDR)("S3 file transfer on a server without it — live", () =>
   });
 
   it("is refused before anything is sent", async () => {
-    expect(client.serverCapabilities.extensions).not.toContain("s3");
+    expect(client.serverCapabilities.extensions).not.toContain(ServerExtension.S3);
     const error = await listS3Files(client, client.channelID).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(S3UnsupportedError);
     expect((error as S3UnsupportedError).family).toBe(client.serverCapabilities.family);

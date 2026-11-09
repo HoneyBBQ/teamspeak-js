@@ -446,11 +446,12 @@ a `FileTransferError` too; bytes past the announced size are never written.
 
 A TeamSpeak 6 server started with S3 file transfer keeps channel files in an
 S3-compatible bucket and says so: `client.serverCapabilities.extensions`
-includes `"s3"`. The client asks the server for a presigned URL over the voice
+includes `ServerExtension.S3` (`"s3"`). The client asks the server for a presigned URL over the voice
 connection and moves the bytes with an HTTPS request to the storage, not through
 the file transfer port. The functions are in `@honeybbq/teamspeak/client`:
 
 ```typescript
+import { ServerExtension } from "@honeybbq/teamspeak";
 import {
   deleteS3File,
   downloadS3File,
@@ -458,7 +459,7 @@ import {
   uploadS3File,
 } from "@honeybbq/teamspeak/client";
 
-if (client.serverCapabilities.extensions.includes("s3")) {
+if (client.serverCapabilities.extensions.includes(ServerExtension.S3)) {
   await uploadS3File(client, cid, "/docs/notes.txt", data);
   const files = await listS3Files(client, cid); // [{ path: "/docs/notes.txt", size: 12n, modifiedAt }]
   const bytes = await downloadS3File(client, cid, "/docs/notes.txt");

@@ -14,6 +14,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   GroupType,
   HostMessageMode,
+  ServerExtension,
   addBan,
   addPrivilegeKey,
   createChannel,
@@ -121,9 +122,14 @@ describe.skipIf(SKIP)("Audit corrections — live", () => {
     const { family, extensions } = voice.serverCapabilities;
     console.log("extensions:", extensions);
     expect(Object.isFrozen(extensions)).toBe(true);
-    // TeamSpeak 3 names none; TeamSpeak 6 names peer to peer streams.
+    // TeamSpeak 3 names none; TeamSpeak 6 names FILETIME and peer to peer
+    // streams, and s3 only when started with S3 file transfer.
     if (family === "ts3") expect(extensions).toEqual([]);
-    else expect(extensions).toContain("STREAM_P2P");
+    else
+      expect(extensions).toEqual(
+        expect.arrayContaining([ServerExtension.FileTime, ServerExtension.StreamP2P]),
+      );
+    for (const name of extensions) expect(Object.values(ServerExtension)).toContain(name);
   });
 
   it.skipIf(FAMILY !== "ts6")(

@@ -44,8 +44,9 @@ export interface ServerCapabilities {
   /**
    * The optional protocol features the server says it supports
    * (`virtualserver_capability_extensions`), in the server's order and each
-   * once, such as `["FILETIME", "STREAM_P2P"]`; test one with `includes`.
-   * Empty when it names none, as a TeamSpeak 3 server does. Frozen.
+   * once, such as `["FILETIME", "STREAM_P2P"]`; test one with `includes`, as
+   * `extensions.includes(ServerExtension.S3)`. Empty when it names none, as a
+   * TeamSpeak 3 server does. Frozen.
    *
    * It is what the server claims, read as sent. A raw command is never refused
    * because a name is missing from it; the features built on one (streams on

@@ -216,7 +216,15 @@ Read from `initserver` during the handshake, so it costs no extra round trip.
 The uid hash matters because TS3 hashes a client's public key with SHA-1 and TS6
 with SHA-256 — a client that assumes either one computes an identifier the other
 server never sends. `extensions` lists the optional protocol features the server
-says it supports; a TeamSpeak 3 server names none.
+says it supports; a TeamSpeak 3 server names none. `ServerExtension` names the
+ones known, as TeamSpeak 6 sends them:
+
+```typescript
+import { ServerExtension } from "@honeybbq/teamspeak";
+
+caps.extensions.includes(ServerExtension.S3); // S3 file transfer
+caps.extensions.includes(ServerExtension.StreamP2P); // screen share
+```
 
 It holds only what lasts the connection. The server's name, icon and banner can
 be edited while a client is connected, so they are read from the view, which
