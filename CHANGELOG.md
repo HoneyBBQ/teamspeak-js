@@ -4,6 +4,14 @@ Until 1.0.0-beta.4 this package was published as `@honeybbq/teamspeak-core`, and
 `@honeybbq/teamspeak-client` was a second package. The sections below, down to
 the last version heading, are the core's history; the client's is at the bottom.
 
+## 1.0.0-beta.30
+
+### Minor Changes
+
+- [#201](https://github.com/HoneyBBQ/teamspeak-js/pull/201) [`411d97a`](https://github.com/HoneyBBQ/teamspeak-js/commit/411d97a374c95d24c646ec039bd0db79ab863837) - The rest of TeamSpeak 6 S3 file transfer. `deleteS3File` takes several paths and deletes them in one `s3ft_deletefiles`; `renameS3File` and `renameS3Files` rename or move files within a channel (`s3ft_renamefile`, `s3ft_renamefiles`, with the type `S3FileRename`); `uploadS3Avatar`, `downloadS3Avatar`, `removeS3Avatar`, `uploadS3Icon`, `downloadS3Icon` and `deleteS3Icon` (options `S3AvatarOptions`) do avatars and icons in channel 0's S3 file area, an avatar under `avatarFileName(uid)`. `CommandName` and `NotificationName` name the three commands and `notify_s3ft_rename`. Measured on TeamSpeak 6 6.0.0-beta13.1, whose rename copies the file with an `x-amz-copy-source` header it does not sign: a storage that checks request signatures refuses it (RustFS, versitygw, SeaweedFS and CloudServer did), and the rename then rejects with an `S3TransferError` and leaves the file. A batch rename is answered for its last rename alone. `scripts/s3-lab.sh` gains `S3_LAB_STORAGE=s3mock`, a storage that checks no signatures, and the TS6 CI leg runs the rename tests against it.
+
+- [#203](https://github.com/HoneyBBQ/teamspeak-js/pull/203) [`c09160d`](https://github.com/HoneyBBQ/teamspeak-js/commit/c09160de18abb91cf009b21863ff52a6bb1f5ab3) - `ServerExtension` names the extensions a server lists in `virtualserver_capability_extensions` (`serverCapabilities.extensions`), as TeamSpeak 6 6.0.0-beta13.1 sends them: `FileTime` (`"FILETIME"`), `StreamP2P` (`"STREAM_P2P"`, which streams need) and `S3` (`"s3"`, which S3 file transfer needs). Test one with `extensions.includes(ServerExtension.S3)`.
+
 ## 1.0.0-beta.29
 
 ### Minor Changes
