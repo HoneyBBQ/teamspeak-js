@@ -230,7 +230,7 @@ export function defaultShouldRetry(error: Error | undefined): boolean;
 export function deleteS3File(client: Client, channelID: ChannelID, paths: string | readonly string[], options?: S3FileOptions): Promise<void>;
 
 // @public
-export function deleteS3Icon(client: Client, id: IconID, options?: S3AvatarOptions): Promise<void>;
+export function deleteS3Icon(client: Client, id: IconID, options?: CommandOptions): Promise<void>;
 
 // @public
 export function dialFileTransfer(host: string, port: number, key: string, options?: FileTransferOptions): Promise<Duplex>;
@@ -606,7 +606,7 @@ export class RemovedError extends TeamspeakError {
 }
 
 // @public
-export function removeS3Avatar(client: Client, options?: S3AvatarOptions): Promise<void>;
+export function removeS3Avatar(client: Client, options?: CommandOptions): Promise<void>;
 
 // @public
 export function renameS3File(client: Client, channelID: ChannelID, oldPath: string, newPath: string, options?: S3FileOptions): Promise<void>;

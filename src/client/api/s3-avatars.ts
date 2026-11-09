@@ -88,7 +88,7 @@ export function downloadS3Avatar(
  * was. A client may delete its own avatar only: another's is refused with 2568.
  * Resolves whether or not there was an avatar, as the storage's delete does.
  */
-export async function removeS3Avatar(client: Client, options: S3AvatarOptions = {}): Promise<void> {
+export async function removeS3Avatar(client: Client, options: CommandOptions = {}): Promise<void> {
   await deleteS3File(client, CHANNEL_ZERO, `/${avatarFileName(client.uid)}`, options);
   await updateClient(client, { avatar: "" }, options);
 }
@@ -131,7 +131,7 @@ export function downloadS3Icon(
 export async function deleteS3Icon(
   client: Client,
   id: IconID,
-  options: S3AvatarOptions = {},
+  options: CommandOptions = {},
 ): Promise<void> {
   await deleteS3File(client, CHANNEL_ZERO, iconFileName(id), options);
 }
