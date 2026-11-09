@@ -32,15 +32,12 @@
 import { Readable, Transform, Writable, pipeline } from "node:stream";
 import { pipeline as pipelineAsync } from "node:stream/promises";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
-import { NoDataError } from "@honeybbq/teamspeak";
+import { NoDataError, ServerExtension } from "@honeybbq/teamspeak";
 import type { ChannelID, CommandOptions, CommandRequest } from "@honeybbq/teamspeak";
 import type { Client } from "../client.js";
 import { FileTransferError, S3TransferError, S3UnsupportedError } from "../errors.js";
 import { exactSize, intoStream } from "../transfer.js";
 import { parseFileList } from "./s3-list.js";
-
-/** The extension a server names when it does S3 file transfer. */
-const S3_EXTENSION = "s3";
 
 /** The channel password an S3 file command needs, and the command's own options. */
 export interface S3FileOptions extends CommandOptions {
@@ -115,7 +112,7 @@ export interface S3DownloadDataOptions extends S3TransferOptions {
 /** Refuse before sending unless the server names the S3 extension. */
 function assertS3(client: Client): void {
   const { family, version, extensions } = client.serverCapabilities;
-  if (!extensions.includes(S3_EXTENSION)) {
+  if (!extensions.includes(ServerExtension.S3)) {
     throw new S3UnsupportedError(family, version, extensions);
   }
 }

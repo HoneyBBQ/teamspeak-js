@@ -3,6 +3,7 @@ import {
   getClientUIDInfoByID,
   NotConnectedError,
   ServerError,
+  ServerExtension,
   TeamspeakError,
 } from "@honeybbq/teamspeak";
 import type {
@@ -48,7 +49,6 @@ import {
   reasonOf,
   signalRequest,
   sourceToWire,
-  STREAM_P2P,
   stopRequest,
   streamInfoFrom,
 } from "./wire.js";
@@ -205,7 +205,7 @@ export class Streams {
    * `extensions` name `"STREAM_P2P"`.
    */
   get supported(): boolean {
-    return this.#client.serverCapabilities.extensions.includes(STREAM_P2P);
+    return this.#client.serverCapabilities.extensions.includes(ServerExtension.StreamP2P);
   }
 
   /** The streams known now, in the order they became known. */
@@ -468,7 +468,7 @@ export class Streams {
   #assertUsable(): void {
     if (this.#disposed) throw new TeamspeakError("these Streams were disposed");
     const { family, version, extensions } = this.#client.serverCapabilities;
-    if (!extensions.includes(STREAM_P2P)) {
+    if (!extensions.includes(ServerExtension.StreamP2P)) {
       throw new StreamsUnsupportedError(family, version, extensions);
     }
   }

@@ -57,6 +57,7 @@
     "fileTransferStageValues",
     "queryEventCategoryValues",
     "queryEventNameValues",
+    "serverExtensionValues",
     "serverFamilyValues",
     "uidAlgorithmValues",
     "viewStatusValues",

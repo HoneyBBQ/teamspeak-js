@@ -3156,6 +3156,21 @@ export interface ServerEventMap {
     textMessage: TextMessageEvent;
 }
 
+// Warning: (ae-forgotten-export) The symbol "serverExtensionValues" needs to be exported by the entry point index.d.ts
+//
+// @public
+export const ServerExtension: typeof serverExtensionValues;
+
+// @public
+export type ServerExtension = (typeof ServerExtension)[keyof typeof ServerExtension];
+
+// @public
+const serverExtensionValues: {
+    readonly FileTime: "FILETIME";
+    readonly StreamP2P: "STREAM_P2P";
+    readonly S3: "s3";
+};
+
 // Warning: (ae-forgotten-export) The symbol "serverFamilyValues" needs to be exported by the entry point index.d.ts
 //
 // @public

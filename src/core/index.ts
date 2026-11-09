@@ -98,6 +98,7 @@ export {
   noopLogger,
   consoleLogger,
   ClientStatus,
+  ServerExtension,
   ServerFamily,
   serverFamilyForVersion,
 } from "./types.js";
