@@ -227,7 +227,10 @@ export interface DatagramSocket {
 export function defaultShouldRetry(error: Error | undefined): boolean;
 
 // @public
-export function deleteS3File(client: Client, channelID: ChannelID, path: string, options?: S3FileOptions): Promise<void>;
+export function deleteS3File(client: Client, channelID: ChannelID, paths: string | readonly string[], options?: S3FileOptions): Promise<void>;
+
+// @public
+export function deleteS3Icon(client: Client, id: IconID, options?: S3AvatarOptions): Promise<void>;
 
 // @public
 export function dialFileTransfer(host: string, port: number, key: string, options?: FileTransferOptions): Promise<Duplex>;
@@ -267,6 +270,9 @@ export interface DownloadFileOptions extends FileDownloadOptions, FileTransferOp
 export function downloadIcon(client: Client, id: IconID, options?: AvatarTransferOptions): Promise<Uint8Array | undefined>;
 
 // @public
+export function downloadS3Avatar(client: Client, uid: UID | string, options?: S3AvatarOptions): Promise<Uint8Array | undefined>;
+
+// @public
 export function downloadS3File(client: Client, channelID: ChannelID, path: string, options: DownloadS3FileOptions & {
     readonly dest: Writable;
 }): Promise<void>;
@@ -282,6 +288,9 @@ export interface DownloadS3FileOptions extends S3FileOptions, S3DownloadDataOpti
     readonly dest?: Writable | undefined;
     readonly maxSize?: number | undefined;
 }
+
+// @public
+export function downloadS3Icon(client: Client, id: IconID, options?: S3AvatarOptions): Promise<Uint8Array | undefined>;
 
 // @public
 export interface EventIterator<T> extends AsyncIterableIterator<T> {
@@ -597,6 +606,15 @@ export class RemovedError extends TeamspeakError {
 }
 
 // @public
+export function removeS3Avatar(client: Client, options?: S3AvatarOptions): Promise<void>;
+
+// @public
+export function renameS3File(client: Client, channelID: ChannelID, oldPath: string, newPath: string, options?: S3FileOptions): Promise<void>;
+
+// @public
+export function renameS3Files(client: Client, channelID: ChannelID, renames: readonly S3FileRename[], options?: S3FileOptions): Promise<void>;
+
+// @public
 export interface ResolvedAddr {
     readonly addr: string;
     readonly expiry?: Date | undefined;
@@ -659,6 +677,10 @@ export interface RoundTripEstimate {
 }
 
 // @public
+export interface S3AvatarOptions extends CommandOptions, S3TransferOptions {
+}
+
+// @public
 export interface S3DownloadDataOptions extends S3TransferOptions {
     readonly seekPosition?: bigint | undefined;
 }
@@ -680,6 +702,12 @@ export interface S3FileEntry {
 // @public
 export interface S3FileOptions extends CommandOptions {
     readonly password?: string | undefined;
+}
+
+// @public
+export interface S3FileRename {
+    readonly newPath: string;
+    readonly oldPath: string;
 }
 
 // @public
@@ -854,6 +882,9 @@ export interface UploadFileOptions extends FileUploadOptions, FileTransferOption
 export function uploadIcon(client: Client, data: Uint8Array, options?: AvatarTransferOptions): Promise<IconID>;
 
 // @public
+export function uploadS3Avatar(client: Client, data: Uint8Array, options?: S3AvatarOptions): Promise<string>;
+
+// @public
 export function uploadS3File(client: Client, channelID: ChannelID, path: string, data: Uint8Array | Blob | Readable, options?: UploadS3FileOptions): Promise<void>;
 
 // @public
@@ -863,6 +894,9 @@ export function uploadS3FileData(info: S3FileUploadInfo, data: Uint8Array | Blob
 export interface UploadS3FileOptions extends S3FileOptions, S3TransferOptions {
     readonly size?: bigint | number | undefined;
 }
+
+// @public
+export function uploadS3Icon(client: Client, data: Uint8Array, options?: S3AvatarOptions): Promise<IconID>;
 
 // @public
 export function verifyChannelPassword(client: Client, cid: ChannelID, password: string, options?: CommandOptions): Promise<boolean>;
