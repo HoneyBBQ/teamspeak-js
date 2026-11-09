@@ -167,8 +167,15 @@ export const RESPONSES: Readonly<Record<string, ResponseSpec>> = {
   // The answer carries `success`; no `error` follows it, but a refusal (2568
   // for a client without delete power) is an `error` and no answer.
   s3ft_deletefile: s3("notify_s3ft_delete", true),
+  // One answer for the whole batch, with no `error` after it.
+  s3ft_deletefiles: s3("notify_s3ft_delete", true),
   // The file list, as one base64 JSON field, sent ahead of the `error`.
   s3ft_list_files: s3("notify_s3ft_file_list"),
+  // The answer carries `success`, and no `error` follows it; a refusal (2568
+  // for a client without rename power) is an `error` and no answer.
+  s3ft_renamefile: s3("notify_s3ft_rename", true),
+  // One answer for the whole batch, whose `success` is the last rename's.
+  s3ft_renamefiles: s3("notify_s3ft_rename", true),
   // The answer carries `success`, and no `error` follows it.
   s3ft_upload_done_notification: s3("notify_s3ft_upload_done", true),
   privilegekeylist: inline("notifytokenlist"),
