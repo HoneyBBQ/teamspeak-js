@@ -13,6 +13,8 @@ import {
   initS3FileDownload,
   initS3FileUpload,
   listS3Files,
+  renameS3File,
+  renameS3Files,
   uploadS3File,
   uploadS3FileData,
 } from "./s3.js";
@@ -235,6 +237,139 @@ describe("deleteS3File", () => {
   it("reports a server that could not reach its storage", async () => {
     const { client } = s3Server([{ success: "0", return_code: "4" }]);
     await expect(deleteS3File(client, CID, "/a.txt")).rejects.toBeInstanceOf(S3TransferError);
+  });
+
+  // Measured: each file row of the batch carries its own chid; a row without
+  // one is read as channel 0.
+  it("deletes several files in one command, each on a row with its channel", async () => {
+    const { client, sent } = s3Server([{ success: "1", return_code: "4" }]);
+    await deleteS3File(client, CID, ["/a.txt", "dir/b.txt"], { password: "pw" });
+    expect(sent).toEqual([
+      {
+        command: "s3ft_deletefiles",
+        params: [
+          ["chid", CID],
+          ["chpw", "pw"],
+        ],
+        rows: [
+          [],
+          [
+            ["chid", CID],
+            ["key", "/a.txt"],
+          ],
+          [
+            ["chid", CID],
+            ["key", "/dir/b.txt"],
+          ],
+        ],
+        passwords: ["chpw"],
+      },
+    ]);
+  });
+
+  it("deletes a list of one with the single command, and sends nothing for none", async () => {
+    const { client, sent } = s3Server([{ success: "1", return_code: "4" }]);
+    await deleteS3File(client, CID, []);
+    await deleteS3File(client, CID, ["/a.txt"]);
+    expect(sent.map((r) => r.command)).toEqual(["s3ft_deletefile"]);
+  });
+
+  it("reports a batch the server could not delete", async () => {
+    const { client } = s3Server([{ success: "0", return_code: "4" }]);
+    const error = await deleteS3File(client, CID, ["/a", "/b"]).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(S3TransferError);
+    expect((error as Error).message).toBe(
+      "the server could not delete the 2 files from its storage",
+    );
+  });
+
+  it("checks every path before sending", async () => {
+    const { client, sent } = s3Server();
+    await expect(deleteS3File(client, CID, ["/a", "/b/../c"])).rejects.toBeInstanceOf(TypeError);
+    expect(sent).toEqual([]);
+  });
+});
+
+describe("renameS3File", () => {
+  it("names the old and the new path", async () => {
+    const { client, sent } = s3Server([{ success: "1", return_code: "6" }]);
+    await renameS3File(client, CID, "a.txt", "/dir/b.txt", { password: "pw" });
+    expect(sent).toEqual([
+      {
+        command: "s3ft_renamefile",
+        params: [
+          ["chid", CID],
+          ["chpw", "pw"],
+          ["key_old", "/a.txt"],
+          ["key_new", "/dir/b.txt"],
+        ],
+        passwords: ["chpw"],
+      },
+    ]);
+  });
+
+  it("reports a rename the server did not do", async () => {
+    const { client } = s3Server([{ success: "0", return_code: "6" }]);
+    const error = await renameS3File(client, CID, "/a", "/b").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(S3TransferError);
+    expect((error as Error).message).toBe("the server did not rename /a to /b");
+  });
+
+  it("is refused before sending without the extension", async () => {
+    const { client, sent } = server("FILETIME");
+    await expect(renameS3File(client, CID, "/a", "/b")).rejects.toBeInstanceOf(S3UnsupportedError);
+    expect(sent).toEqual([]);
+  });
+});
+
+describe("renameS3Files", () => {
+  it("renames several files in one command, each on a row with its channel", async () => {
+    const { client, sent } = s3Server([{ success: "1", return_code: "7" }]);
+    await renameS3Files(client, CID, [
+      { oldPath: "/a", newPath: "/x/a" },
+      { oldPath: "b", newPath: "/x/b" },
+    ]);
+    expect(sent).toEqual([
+      {
+        command: "s3ft_renamefiles",
+        params: [
+          ["chid", CID],
+          ["chpw", ""],
+        ],
+        rows: [
+          [],
+          [
+            ["chid", CID],
+            ["key_old", "/a"],
+            ["key_new", "/x/a"],
+          ],
+          [
+            ["chid", CID],
+            ["key_old", "/b"],
+            ["key_new", "/x/b"],
+          ],
+        ],
+        passwords: ["chpw"],
+      },
+    ]);
+  });
+
+  it("sends nothing for no renames", async () => {
+    const { client, sent } = s3Server();
+    await renameS3Files(client, CID, []);
+    expect(sent).toEqual([]);
+  });
+
+  // The answer is the last rename's alone.
+  it("reports a batch whose last rename was not done", async () => {
+    const { client } = s3Server([{ success: "0", return_code: "7" }]);
+    const error = await renameS3Files(client, CID, [
+      { oldPath: "/a", newPath: "/b" },
+      { oldPath: "/c", newPath: "/d" },
+    ]).catch((e: unknown) => e);
+    expect((error as Error).message).toBe(
+      "the server reports that the last rename of the batch, /c to /d, was not done",
+    );
   });
 });
 

@@ -123,10 +123,12 @@ const notificationNameValues = {
   PluginCmd: "notifyplugincmd",
   /** `notify_presigned_urls`: Reply to s3ft_getpresignedurl: one row per presigned URL, with the `key` it is for. The URL is a credential for the file until it expires. TeamSpeak 6 only. */
   PresignedURLs: "notify_presigned_urls",
-  /** `notify_s3ft_delete`: Reply to s3ft_deletefile: `success` is 1 when the server deleted the file from its storage, 0 when it could not. TeamSpeak 6 only. */
+  /** `notify_s3ft_delete`: Reply to s3ft_deletefile and s3ft_deletefiles: `success` is 1 when the server deleted the file from its storage, 0 when it could not. TeamSpeak 6 only. */
   S3FTDelete: "notify_s3ft_delete",
   /** `notify_s3ft_file_list`: Reply to s3ft_list_files: the channel's files, as base64 JSON in `b64_json`, empty when there are none. TeamSpeak 6 only. */
   S3FTFileList: "notify_s3ft_file_list",
+  /** `notify_s3ft_rename`: Reply to s3ft_renamefile and s3ft_renamefiles: `success` is 1 when the server renamed the file, for a batch the batch's last one, and 0 when it did not. TeamSpeak 6 only. */
+  S3FTRename: "notify_s3ft_rename",
   /** `notify_s3ft_upload_done`: Reply to s3ft_upload_done_notification: `success` is 1 when the server read the channel's file list from its storage again, 0 when it could not. TeamSpeak 6 only. */
   S3FTUploadDone: "notify_s3ft_upload_done",
   /** `notifyserverconnectioninfo`: Reply to serverrequestconnectioninfo: the virtual server's traffic and bandwidth statistics. */

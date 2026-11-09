@@ -61,4 +61,5 @@ with the same semantics, apart from what the languages make differ:
   `UploadS3File` takes bytes, and a stream goes through its three steps;
   `uploadS3File` here also takes a `Blob` or a `Readable` of a declared size.
   `downloadS3File` holds at most 256 MiB by default, as `downloadFile` does; Go
-  holds 64 MiB, as its `DownloadFile` does.
+  holds 64 MiB, as its `DownloadFile` does. `deleteS3File` takes one path or
+  several, where Go has `DeleteS3File` and `DeleteS3Files`.

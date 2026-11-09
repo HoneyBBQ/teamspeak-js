@@ -54,6 +54,7 @@ export * from "./api/voice.js";
 export * from "./api/avatars.js";
 export * from "./api/files.js";
 export * from "./api/s3.js";
+export * from "./api/s3-avatars.js";
 
 // File transfer data
 export {

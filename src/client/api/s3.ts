@@ -21,6 +21,9 @@
  * - The classic file commands (`ftinitupload`, `ftgetfilelist`, …) still work
  *   on such a server, and reach a separate store: a file uploaded one way is
  *   not listed the other.
+ * - A rename is a copy the server makes in the storage, and its copy request
+ *   leaves a header unsigned that a storage checking signatures refuses: see
+ *   {@link renameS3File}.
  *
  * Every function takes the channel password as `password`, in cleartext, and
  * sends it the way every file command does.
@@ -30,7 +33,7 @@ import { Readable, Transform, Writable, pipeline } from "node:stream";
 import { pipeline as pipelineAsync } from "node:stream/promises";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { NoDataError } from "@honeybbq/teamspeak";
-import type { ChannelID, CommandOptions } from "@honeybbq/teamspeak";
+import type { ChannelID, CommandOptions, CommandRequest } from "@honeybbq/teamspeak";
 import type { Client } from "../client.js";
 import { FileTransferError, S3TransferError, S3UnsupportedError } from "../errors.js";
 import { exactSize, intoStream } from "../transfer.js";
@@ -313,38 +316,170 @@ export async function listS3Files(
 }
 
 /**
- * Delete one file from a channel's S3 file area. The server deletes it from
- * the storage and from the file list it keeps.
+ * Delete files from a channel's S3 file area: one path, or several in one
+ * command (`s3ft_deletefiles`, each file on a row of its own). The server
+ * deletes them from the storage and from the file list it keeps; an empty list
+ * sends nothing.
  *
  * Deleting a file that is not there succeeds, as the storage's delete does. A
  * client without delete power is refused with 2568 (insufficient client
- * permissions). Rejects with an {@link S3TransferError} when the server reports
- * that its own request to the storage failed.
+ * permissions), and then nothing is deleted. Rejects with an
+ * {@link S3TransferError} when the server reports that its own request to the
+ * storage failed.
  */
 export async function deleteS3File(
   client: Client,
   channelID: ChannelID,
-  path: string,
+  paths: string | readonly string[],
   options: S3FileOptions = {},
 ): Promise<void> {
   assertS3(client);
-  const key = s3Path(path);
-  // One file per command: the server deletes the file on the first row and
-  // passes over any further row.
+  const keys = (typeof paths === "string" ? [paths] : paths).map(s3Path);
+  if (keys.length === 0) return;
+  // The single command deletes the file of its first row and passes over any
+  // further row; the batch reads the channel from each file's own row, the
+  // first row carrying the channel and its password only.
+  const command: CommandRequest =
+    keys.length === 1
+      ? {
+          command: "s3ft_deletefile",
+          params: [
+            ["chid", channelID],
+            ["chpw", options.password ?? ""],
+            ["key", keys[0]!],
+          ],
+          passwords: ["chpw"],
+        }
+      : {
+          command: "s3ft_deletefiles",
+          params: [
+            ["chid", channelID],
+            ["chpw", options.password ?? ""],
+          ],
+          rows: [
+            [],
+            ...keys.map(
+              (key) =>
+                [
+                  ["chid", channelID],
+                  ["key", key],
+                ] as const,
+            ),
+          ],
+          passwords: ["chpw"],
+        };
+  const rows = await client.send(command, commandOptions(options));
+  if (!succeeded(rows, command.command)) {
+    throw new S3TransferError(
+      keys.length === 1
+        ? `the server could not delete ${keys[0]!} from its storage`
+        : `the server could not delete the ${keys.length} files from its storage`,
+    );
+  }
+}
+
+/** One file of a {@link renameS3Files} batch: its path now, and the one it moves to. */
+export interface S3FileRename {
+  /** The file's path now, from the channel's root. */
+  readonly oldPath: string;
+  /** The path it moves to, in the same channel. */
+  readonly newPath: string;
+}
+
+/**
+ * Rename or move one file within a channel's S3 file area (`s3ft_renamefile`).
+ * The server copies the file in the storage to the new path, deletes the old
+ * one, and updates the file list it keeps. A file already at the new path is
+ * replaced. There is no move to another channel.
+ *
+ * A client without rename power is refused with 2568 (insufficient client
+ * permissions). Rejects with an {@link S3TransferError} when the server
+ * reports that it did not rename the file: there is none at the old path, the
+ * new path is the old one, or the storage refused the server's copy.
+ *
+ * Measured on TeamSpeak 6 6.0.0-beta13.1: the server's copy carries an
+ * `x-amz-copy-source` header it does not sign, which a storage that checks
+ * every request's signature refuses (RustFS, versitygw, SeaweedFS and
+ * CloudServer did, as S3's signing rules have it), so the rename fails there
+ * and the file stays where it was.
+ */
+export async function renameS3File(
+  client: Client,
+  channelID: ChannelID,
+  oldPath: string,
+  newPath: string,
+  options: S3FileOptions = {},
+): Promise<void> {
+  assertS3(client);
+  const from = s3Path(oldPath);
+  const to = s3Path(newPath);
   const rows = await client.send(
     {
-      command: "s3ft_deletefile",
+      command: "s3ft_renamefile",
       params: [
         ["chid", channelID],
         ["chpw", options.password ?? ""],
-        ["key", key],
+        ["key_old", from],
+        ["key_new", to],
       ],
       passwords: ["chpw"],
     },
     commandOptions(options),
   );
-  if (!succeeded(rows, "s3ft_deletefile")) {
-    throw new S3TransferError(`the server could not delete ${key} from its storage`);
+  if (!succeeded(rows, "s3ft_renamefile")) {
+    throw new S3TransferError(`the server did not rename ${from} to ${to}`);
+  }
+}
+
+/**
+ * Rename several files within a channel's S3 file area in one command
+ * (`s3ft_renamefiles`, each file on a row of its own). Each is renamed as by
+ * {@link renameS3File}; an empty list sends nothing.
+ *
+ * The server tries every rename, and answers once: whether the batch's last
+ * rename was done, and nothing about the others. So this rejects with an
+ * {@link S3TransferError} when the last one failed, whatever became of the
+ * rest, and resolves when it succeeded even if an earlier one failed. List the
+ * files, or rename them one at a time, to know each outcome. After a batch
+ * whose last rename failed, the list the server keeps shows the others a
+ * moment later rather than at once.
+ */
+export async function renameS3Files(
+  client: Client,
+  channelID: ChannelID,
+  renames: readonly S3FileRename[],
+  options: S3FileOptions = {},
+): Promise<void> {
+  assertS3(client);
+  const pairs = renames.map(({ oldPath, newPath }) => [s3Path(oldPath), s3Path(newPath)] as const);
+  if (pairs.length === 0) return;
+  const rows = await client.send(
+    {
+      command: "s3ft_renamefiles",
+      params: [
+        ["chid", channelID],
+        ["chpw", options.password ?? ""],
+      ],
+      rows: [
+        [],
+        ...pairs.map(
+          ([from, to]) =>
+            [
+              ["chid", channelID],
+              ["key_old", from],
+              ["key_new", to],
+            ] as const,
+        ),
+      ],
+      passwords: ["chpw"],
+    },
+    commandOptions(options),
+  );
+  if (!succeeded(rows, "s3ft_renamefiles")) {
+    const [from, to] = pairs[pairs.length - 1]!;
+    throw new S3TransferError(
+      `the server reports that the last rename of the batch, ${from} to ${to}, was not done`,
+    );
   }
 }
 

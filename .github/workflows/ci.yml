@@ -389,6 +389,13 @@ jobs:
         run: |
           echo "127.0.0.1 s3.localhost teamspeak.s3.localhost" | sudo tee -a /etc/hosts
           ./scripts/s3-lab.sh "$RUNNER_TEMP/s3-lab"
+          # A second one, with a storage that checks no signatures: TeamSpeak 6
+          # copies a file it renames with a request a storage that checks them
+          # refuses, so only here does a rename succeed.
+          S3_LAB_STORAGE=s3mock S3_LAB_PREFIX=ts-s3u \
+          S3_LAB_VOICE_PORT=9990 S3_LAB_QUERY_PORT=10083 \
+          S3_LAB_TRANSFER_PORT=30036 S3_LAB_STORAGE_PORT=8444 \
+            ./scripts/s3-lab.sh "$RUNNER_TEMP/s3-lab-unchecked"
       - name: Run integration tests
         env:
           # Where the fixture wrote its environment file.

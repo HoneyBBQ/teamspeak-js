@@ -86,6 +86,18 @@ describe("S3 file transfer", () => {
       key: "return_code",
       endsCommand: true,
     });
+    expect(responseSpec("s3ft_deletefiles")?.correlated).toEqual({
+      notifications: ["notify_s3ft_delete"],
+      key: "return_code",
+      endsCommand: true,
+    });
+    for (const command of ["s3ft_renamefile", "s3ft_renamefiles"]) {
+      expect(responseSpec(command)?.correlated).toEqual({
+        notifications: ["notify_s3ft_rename"],
+        key: "return_code",
+        endsCommand: true,
+      });
+    }
   });
 });
 

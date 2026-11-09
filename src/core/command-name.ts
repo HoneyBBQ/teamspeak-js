@@ -266,10 +266,16 @@ const commandNameValues = {
   RespondJoinStreamRequest: "respondjoinstreamrequest",
   /** `s3ft_deletefile`: Deletes one file from a channel's S3 file area, answered by `notify_s3ft_delete`. Voice protocol only, TeamSpeak 6 only; undocumented by TeamSpeak. */
   S3FTDeleteFile: "s3ft_deletefile",
+  /** `s3ft_deletefiles`: Deletes several files from channels' S3 file areas, one row per file with its own `chid`, answered by `notify_s3ft_delete`. Voice protocol only, TeamSpeak 6 only; undocumented by TeamSpeak. */
+  S3FTDeleteFiles: "s3ft_deletefiles",
   /** `s3ft_getpresignedurl`: Asks for presigned URLs to upload (`PUT`) or download (`GET`) files in a channel's S3 file area, answered by `notify_presigned_urls`. Voice protocol only, TeamSpeak 6 only; undocumented by TeamSpeak. */
   S3FTGetPresignedURL: "s3ft_getpresignedurl",
   /** `s3ft_list_files`: Lists the files in a channel's S3 file area, answered by `notify_s3ft_file_list`. Voice protocol only, TeamSpeak 6 only; undocumented by TeamSpeak. */
   S3FTListFiles: "s3ft_list_files",
+  /** `s3ft_renamefile`: Renames one file in a channel's S3 file area (`key_old` to `key_new`), answered by `notify_s3ft_rename`; TeamSpeak 6 6.0.0-beta13.1 copies the file with a request a storage that checks signatures refuses. Voice protocol only, TeamSpeak 6 only; undocumented by TeamSpeak. */
+  S3FTRenameFile: "s3ft_renamefile",
+  /** `s3ft_renamefiles`: Renames several files, one row per file with its own `chid`, answered by one `notify_s3ft_rename`. Voice protocol only, TeamSpeak 6 only; undocumented by TeamSpeak. */
+  S3FTRenameFiles: "s3ft_renamefiles",
   /** `s3ft_upload_done_notification`: Tells the server an upload to a channel's S3 file area is done, so it reads the channel's file list from the storage again; answered by `notify_s3ft_upload_done`. Voice protocol only, TeamSpeak 6 only; undocumented by TeamSpeak. */
   S3FTUploadDoneNotification: "s3ft_upload_done_notification",
   /** `sendtextmessage`: Sends a text message to a specified target. */

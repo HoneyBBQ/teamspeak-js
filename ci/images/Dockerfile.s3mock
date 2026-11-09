@@ -1,0 +1,4 @@
+# A storage that checks no request signatures, for the live tests of an S3
+# rename that succeeds: scripts/s3-lab.sh starts it with S3_LAB_STORAGE=s3mock.
+# Dependabot reads this file and moves the tag and digest together.
+FROM adobe/s3mock:5.2.0@sha256:7a37f0d796e81a28b970c892dcae532797014616b3312b467af8f0274ebf0c26
