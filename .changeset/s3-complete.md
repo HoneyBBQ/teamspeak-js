@@ -1,0 +1,5 @@
+---
+"@honeybbq/teamspeak": minor
+---
+
+The rest of TeamSpeak 6 S3 file transfer. `deleteS3File` takes several paths and deletes them in one `s3ft_deletefiles`; `renameS3File` and `renameS3Files` rename or move files within a channel (`s3ft_renamefile`, `s3ft_renamefiles`, with the type `S3FileRename`); `uploadS3Avatar`, `downloadS3Avatar`, `removeS3Avatar`, `uploadS3Icon`, `downloadS3Icon` and `deleteS3Icon` (options `S3AvatarOptions`) do avatars and icons in channel 0's S3 file area, an avatar under `avatarFileName(uid)`. `CommandName` and `NotificationName` name the three commands and `notify_s3ft_rename`. Measured on TeamSpeak 6 6.0.0-beta13.1, whose rename copies the file with an `x-amz-copy-source` header it does not sign: a storage that checks request signatures refuses it (RustFS, versitygw, SeaweedFS and CloudServer did), and the rename then rejects with an `S3TransferError` and leaves the file. A batch rename is answered for its last rename alone. `scripts/s3-lab.sh` gains `S3_LAB_STORAGE=s3mock`, a storage that checks no signatures, and the TS6 CI leg runs the rename tests against it.

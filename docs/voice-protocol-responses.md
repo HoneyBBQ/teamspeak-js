@@ -91,9 +91,9 @@ id over the voice protocol; ServerQuery reports one.
 ## TeamSpeak 6 S3 file transfer
 
 A TeamSpeak 6 server with S3 file transfer on (its extensions name `s3`) takes
-four more commands over the voice protocol. Each answer is a notification with
-an underscore in its name that echoes the command's own `return_code`, and two
-of them are the last line the command gets: no `error` follows. Measured on
+seven more commands over the voice protocol. Each answer is a notification with
+an underscore in its name that echoes the command's own `return_code`, and
+most are the last line the command gets: no `error` follows. Measured on
 TeamSpeak 6 6.0.0-beta13.1; TeamSpeak 3 has none of them, and answers each
 with an `error` that carries no `return_code`.
 
@@ -103,8 +103,14 @@ with an `error` that carries no `return_code`.
 | `s3ft_list_files`               | `notify_s3ft_file_list` (the list as base64 JSON), then `error`              |
 | `s3ft_upload_done_notification` | `notify_s3ft_upload_done` with `success`, and no `error`                     |
 | `s3ft_deletefile`               | `notify_s3ft_delete` with `success`, and no `error`; a refusal is an `error` |
+| `s3ft_deletefiles`              | one `notify_s3ft_delete` for the batch, and no `error`                       |
+| `s3ft_renamefile`               | `notify_s3ft_rename` with `success`, and no `error`                          |
+| `s3ft_renamefiles`              | one `notify_s3ft_rename`, the last rename's `success`, and no `error`        |
 
-A refusal of any of them is an `error` with the code and no answer.
+A refusal of any of them is an `error` with the code and no answer. The
+batches take the channel and its password on their first row and each file,
+with its own `chid`, on a row of its own; a rename's row names `key_old` and
+`key_new`.
 
 ## Measured
 

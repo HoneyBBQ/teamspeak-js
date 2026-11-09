@@ -507,11 +507,42 @@ authority, or watch them.
 | `initS3FileDownload(client, cid, path)`     | Sign a download                               |
 | `downloadS3FileData(info, dest, options?)`  | `GET` the file from the storage into a stream |
 | `listS3Files(client, cid)`                  | Every file in the channel's area              |
-| `deleteS3File(client, cid, path)`           | Delete one file                               |
+| `deleteS3File(client, cid, paths)`          | Delete one file, or several in one command    |
+| `renameS3File(client, cid, from, to)`       | Rename or move a file within the channel      |
+| `renameS3Files(client, cid, renames)`       | Rename several files in one command           |
+
+### Renaming
+
+The server renames a file by copying it in the storage and deleting the old
+one; a file already at the new path is replaced, and there is no move to
+another channel. On TeamSpeak 6 6.0.0-beta13.1 the server's copy request
+carries an `x-amz-copy-source` header it does not sign, and a storage that
+checks request signatures refuses it — measured with RustFS, versitygw,
+SeaweedFS and CloudServer, as S3's own rules have it. The rename then fails
+(`renameS3File` rejects with an `S3TransferError`) and the file stays where it
+was. On a storage that takes the copy, it works. A batch is answered once,
+for its last rename: `renameS3Files` resolves when that one was done and
+rejects when it was not, whatever became of the others.
+
+### Avatars and icons
+
+`uploadS3Avatar`, `downloadS3Avatar` and `removeS3Avatar`, and `uploadS3Icon`,
+`downloadS3Icon` and `deleteS3Icon`, are the classic avatar and icon helpers
+over S3: channel 0's S3 file area. An avatar is stored under
+`avatarFileName(uid)` — the server keeps an S3 file under the name it is given,
+where a classic upload is renamed for the uploader — and `uploadS3Avatar` sets
+`client_flag_avatar` to its MD5 as `uploadAvatar` does; `removeS3Avatar`
+deletes it and empties the flag. A download of one that is not there resolves
+to `undefined`. The limits are the classic ones (`i_client_max_avatar_filesize`;
+`b_icon_manage` and `i_max_icon_filesize` for icons), refused with 2049 when
+signing. S3 avatars and icons are a store apart from the classic ones, as files
+are.
+
+### Errors
 
 A refusal by the server is the `ServerError` it sends: 2049 (invalid file
-permissions) for an upload or download without the power, 2568 for a delete
-without it. A failed storage request, or a server that reports its own request
+permissions) for an upload or download without the power, 2568 for a delete or
+a rename without it. A failed storage request, or a server that reports its own request
 to the storage failed, is an `S3TransferError` (a `FileTransferError`) with the
 HTTP `status` and the storage's error `code` when there was an answer.
 
