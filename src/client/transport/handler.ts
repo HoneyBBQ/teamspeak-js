@@ -39,6 +39,15 @@ const TAG_SIZE = 8;
 const VOICE_HEADER_SIZE = 3;
 const WHISPER_HEADER_SIZE = 5;
 const GROUP_WHISPER_HEADER_SIZE = 13;
+/**
+ * The largest audio frame a voice packet carries: a packet is at most 500
+ * bytes, the tag, header and voice header take 16 of them. The server drops a
+ * larger voice packet without an error, and its listeners hear a gap. Measured
+ * on TeamSpeak 3 3.13.9 and TeamSpeak 6 6.0.0-beta13.1: a 484-byte frame is
+ * relayed, a 485-byte one is not. Whispers are not cut off this way: both
+ * servers relayed 600-byte whisper frames.
+ */
+const MAX_VOICE_DATA_SIZE = MAX_OUT_PACKET_SIZE - TAG_SIZE - HEADER_SIZE - VOICE_HEADER_SIZE;
 const RESEND_BASE_INTERVAL_MS = 500;
 const RESEND_LOOP_INTERVAL_MS = 100;
 /**
@@ -321,6 +330,11 @@ export class PacketHandler {
   }
 
   sendVoicePacket(data: Uint8Array, codec: number): void {
+    if (data.length > MAX_VOICE_DATA_SIZE) {
+      throw new RangeError(
+        `a voice frame is at most ${MAX_VOICE_DATA_SIZE} bytes, not ${data.length}: the server drops a larger one`,
+      );
+    }
     const pID = this.#packetCounter[PacketType.Voice]!;
     const pGen = this.#generationCounter[PacketType.Voice]!;
     this.#packetCounter[PacketType.Voice] = (pID + 1) & 0xffff;
