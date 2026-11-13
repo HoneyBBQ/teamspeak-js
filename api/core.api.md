@@ -689,6 +689,7 @@ export interface ClientKickOptions extends CommandOptions {
 
 // @public
 export interface ClientLeaveEvent {
+    readonly banDurationMs?: number | undefined;
     readonly clientID: ClientID;
     readonly fromChannelID?: ChannelID | undefined;
     readonly invokerID: ClientID;
@@ -1794,6 +1795,7 @@ export function kickClients(client: CommandExecutor, clientIDs: readonly ClientI
 
 // @public
 export interface KickedEvent {
+    readonly banDurationMs?: number | undefined;
     readonly invokerID: ClientID;
     readonly invokerName: string;
     readonly invokerUID: UID;

@@ -183,6 +183,63 @@ loop keeps trying rather than giving up on the first refusal. It stops once a
 `connect()` of your own has connected the client, and it does not retry an
 address that cannot be one (`InvalidAddressError`).
 
+`defaultShouldRetry` also treats both `RemovedError` for a kick or ban and
+`ErrorCode.ConnectFailedBanned` (`3329`) as permanent. On `3329`, the server
+states which kind of refusal it is in `extraMessage` (`extra_msg`):
+
+- temporary ban: `You are banned temporarily. Reason: "<reason>"\nTry again in HH:MM:SS`
+- permanent ban: `You are banned permanently. Reason: "<reason>"`
+- connection-flood IP block: `flood prevention, please try again later`
+
+Rapid retries keep a flood block in place, while a temporary ban's duration is
+already on `RemovedError.banDurationMs` (`0` for a permanent ban). A bot that
+rejoins after a temporary ban and backs off for minutes on flood prevention can
+combine `shouldRetry` with a scheduled rejoin on `disconnected`:
+
+```typescript
+import { ErrorCode, ServerError } from "@honeybbq/teamspeak";
+import { Client, RemovedError, defaultShouldRetry } from "@honeybbq/teamspeak/client";
+
+let rejoinTimer: ReturnType<typeof setTimeout> | undefined;
+
+const isFloodBlock = (err: unknown): boolean =>
+  err instanceof ServerError &&
+  err.code === ErrorCode.ConnectFailedBanned &&
+  err.extraMessage.startsWith("flood prevention");
+
+const client = new Client(identity, "ts.example.com", "Bot", {
+  reconnect: {
+    // A flood block only clears once attempts stay minutes apart.
+    backoff: { initialDelayMs: 5_000, maxDelayMs: 5 * 60_000, factor: 2 },
+    shouldRetry: (err) => isFloodBlock(err) || defaultShouldRetry(err),
+  },
+});
+
+client.on("disconnected", ({ error, willReconnect }) => {
+  if (willReconnect) return;
+
+  let delayMs: number | undefined;
+  if (
+    error instanceof RemovedError &&
+    error.banDurationMs !== undefined &&
+    error.banDurationMs > 0
+  ) {
+    // Temporary ban: rejoin after the duration the server sent (0 is permanent: never rejoin).
+    delayMs = error.banDurationMs + 1_000;
+  } else if (isFloodBlock(error)) {
+    // A manual connect() that hit a flood block: wait minutes before trying again.
+    delayMs = 5 * 60_000;
+  }
+
+  if (delayMs !== undefined) {
+    clearTimeout(rejoinTimer);
+    rejoinTimer = setTimeout(() => {
+      void client.connect().catch(() => {});
+    }, delayMs);
+  }
+});
+```
+
 ## Custom transports
 
 `fileTransferSocketFactory` and `socketFactory` are the only seams into the

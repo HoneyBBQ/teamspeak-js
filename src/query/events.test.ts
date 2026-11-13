@@ -268,6 +268,51 @@ describe("QueryClient events", () => {
       invokerUID: "uid2",
       invokerID: 2,
     });
+    expect(leaves[0]?.banDurationMs).toBeUndefined();
+  });
+
+  it("carries banDurationMs on clientLeave and kicked for temporary and permanent bans", async () => {
+    const transport = new FakeTransport();
+    transport.whoami = ["client_id=4 client_nickname=bot", "error id=0 msg=ok"];
+    transport.clientList = [
+      "clid=4 cid=1 client_nickname=bot client_unique_identifier=me client_type=1",
+      "error id=0 msg=ok",
+    ];
+    const client = clientOn(transport, { nickname: "bot" });
+    await client.connect();
+
+    const leaves: ClientLeaveEvent[] = [];
+    const kicks: KickedEvent[] = [];
+    client.on("clientLeave", (e) => leaves.push(e));
+    client.on("kicked", (e) => kicks.push(e));
+
+    transport.receive(
+      "notifyclientleftview clid=7 reasonid=6 bantime=15 reasonmsg=spam invokerid=2 invokername=Bob invokeruid=uid2",
+    );
+    transport.receive(
+      "notifyclientleftview clid=4 reasonid=6 bantime=0 reasonmsg=bye invokerid=2 invokername=Bob invokeruid=uid2",
+    );
+
+    expect(leaves[0]).toMatchObject({
+      clientID: 7,
+      reason: Reason.KickServerBan,
+      banDurationMs: 15_000,
+    });
+    expect(leaves[1]).toMatchObject({
+      clientID: 4,
+      reason: Reason.KickServerBan,
+      banDurationMs: 0,
+    });
+    expect(kicks).toEqual([
+      {
+        reason: Reason.KickServerBan,
+        reasonMessage: "bye",
+        invokerName: "Bob",
+        invokerUID: "uid2",
+        invokerID: 2,
+        banDurationMs: 0,
+      },
+    ]);
   });
 
   it("delivers a move of a client, with the move's own reason", async () => {

@@ -77,7 +77,9 @@ client.on("textMessage", (message) => console.log(message.message)); // the same
 in the order their events arrived, so a listener may call the client and await
 an answer. `disconnected` delivers a `DisconnectedEvent`: its `error` is
 `undefined` after `disconnect()` and the cause otherwise — a
-`ConnectionTimeoutError`, or a `RemovedError` for a kick, a ban or a server
+`ConnectionTimeoutError`, or a `RemovedError` for a kick, a ban (carrying
+`banDurationMs`, with `0` for a permanent ban, as on `KickedEvent` and
+`ClientLeaveEvent`) or a server
 stopping — and its `willReconnect` says whether the reconnect loop will try
 again. `connected` delivers a `ConnectedEvent`, whose `reconnected` is true for
 a session the reconnect loop made. `await using client = new Client(...)`
