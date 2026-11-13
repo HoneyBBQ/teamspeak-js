@@ -118,9 +118,9 @@
     "@microsoft/api-extractor": "7.60.1",
     "@types/node": "^26.6.6",
     "@types/ssh2": "^1.15.6",
-    "@vitest/coverage-v8": "5.0.5",
+    "@vitest/coverage-v8": "5.1.0",
     "fast-check": "^4.10.2",
-    "oxfmt": "^0.75.0",
+    "oxfmt": "^0.77.0",
     "oxlint": "^1.90.0",
     "oxlint-tsgolint": "^7.0.2005",
     "publint": "^0.3.25",
@@ -132,7 +132,7 @@
     "typescript-api": "npm:typescript@^6.0.3",
     "vite": "^8.3.5",
     "vitest": "^5.0.5",
-    "werift": "^0.25.2"
+    "werift": "^0.26.0"
   },
   "peerDependencies": {
     "ssh2": "^1.17.0"
