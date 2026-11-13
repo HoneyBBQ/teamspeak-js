@@ -1341,12 +1341,14 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * output hardware. Subscribing to a channel does not bring its voice.
    * Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6 6.0.0-beta13.1.
    *
-   * A frame is at most 484 bytes, and a larger one throws a RangeError: the
-   * server drops a voice packet over 500 bytes without an error. Opus in VBR
-   * mode at a high bitrate goes over it on dense music (at 128 kbit/s stereo,
-   * up to 16% of the frames of a track); a constant bitrate, or a lower one,
-   * keeps every frame under it. Measured on TeamSpeak 3 3.13.9 and
-   * TeamSpeak 6 6.0.0-beta13.1.
+   * A frame is at most {@link MAX_VOICE_FRAME_SIZE} (484) bytes, and a larger
+   * one throws a `RangeError` before taking a voice packet id: a voice packet
+   * is at most 500 bytes, and the server drops a larger one without an error,
+   * while whispers are not limited this way. Opus in VBR mode at a high
+   * bitrate can exceed it on dense passages; a constant bitrate, a lower
+   * bitrate, shorter frames, or libopus's `max_data_bytes = 484` keeps every
+   * frame under it. Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6
+   * 6.0.0-beta13.1.
    */
   sendVoice(data: Uint8Array, codec: Codec, options?: VoiceOptions): void {
     // Reserved: VoiceOptions has no fields to read yet.
