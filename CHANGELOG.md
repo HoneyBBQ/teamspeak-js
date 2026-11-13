@@ -4,6 +4,18 @@ Until 1.0.0-beta.4 this package was published as `@honeybbq/teamspeak-core`, and
 `@honeybbq/teamspeak-client` was a second package. The sections below, down to
 the last version heading, are the core's history; the client's is at the bottom.
 
+## 1.0.0-beta.31
+
+### Minor Changes
+
+- [#211](https://github.com/HoneyBBQ/teamspeak-js/pull/211) [`6dc6c1b`](https://github.com/HoneyBBQ/teamspeak-js/commit/6dc6c1bec45fdb6e3eda6cf212376421be5bfbfc) - `ClientLeaveEvent`, `KickedEvent`, and `RemovedError` now carry `banDurationMs` when a client is banned from the server (`bantime`, in milliseconds: `0` for a permanent ban, and `undefined` for a kick or any other leave). `RemovedError` accepts `banDurationMs` as an optional fourth constructor argument. `docs/configuration.md` adds a reconnection recipe showing how to schedule a rejoin after a temporary ban or back off on a connection-flood block. Reported by ulaski.
+
+- [#210](https://github.com/HoneyBBQ/teamspeak-js/pull/210) [`63aff57`](https://github.com/HoneyBBQ/teamspeak-js/commit/63aff576ceaddfa3e55ca5beb33d7e9297b9ad93) - `MAX_VOICE_FRAME_SIZE` (`484`) in `@honeybbq/teamspeak/client` names the largest audio frame `sendVoice` accepts: 500 bytes minus the 8-byte tag, 5-byte header and 3-byte voice header. A larger voice packet is dropped by the server without an error, while whispers are not limited this way. Found by ulaski.
+
+### Patch Changes
+
+- [#208](https://github.com/HoneyBBQ/teamspeak-js/pull/208) [`3ee8f52`](https://github.com/HoneyBBQ/teamspeak-js/commit/3ee8f52f28c00ec6ac765c29ff5152f2e856ca37) Thanks [@ulaski](https://github.com/ulaski)! - `sendVoice` throws a `RangeError` for a frame over 484 bytes (`MAX_VOICE_FRAME_SIZE`) instead of sending it. A voice packet is at most 500 bytes, and the server dropped a larger one without an error, so listeners heard a gap. Opus in VBR mode at a high bitrate can exceed the limit on dense passages; encode at a constant bitrate or a lower one, use shorter frames, or pass `max_data_bytes = 484` to libopus's `opus_encode` to keep every frame under it. Whispers are not affected.
+
 ## 1.0.0-beta.30
 
 ### Minor Changes

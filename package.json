@@ -1,6 +1,6 @@
 {
   "name": "@honeybbq/teamspeak",
-  "version": "1.0.0-beta.30",
+  "version": "1.0.0-beta.31",
   "description": "A complete TeamSpeak 3 and 6 client SDK for TypeScript: send and receive Opus voice and whispers, ServerQuery over TCP, SSH and WebQuery, TeamSpeak 6 screen share, file transfers, typed commands and events",
   "keywords": [
     "bot",
