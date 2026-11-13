@@ -200,8 +200,20 @@ client.sendVoice(new Uint8Array(0), Codec.OpusVoice); // the end of speech
   get a `voiceData` event with empty `data`. Send one when the speaker stops.
 - `sendVoice(data, codec, options?)` takes a `VoiceOptions`, which has no fields
   yet.
+- `sendVoice` throws a `RangeError` for a frame over `MAX_VOICE_FRAME_SIZE` (484
+  bytes), before taking a voice packet id, and sends nothing.
 - `sendVoice`, `sendWhisper` and `sendGroupWhisper` throw a `NotConnectedError`
   unless the client is connected, and send nothing.
+
+A voice packet is at most 500 bytes — an 8-byte tag, a 5-byte header and a
+3-byte voice header leave 484 bytes for the frame — and voice packets are never
+fragmented; the server drops a larger one without an error. Frame size averages
+about `bitrate × duration ÷ 8` (roughly 320 bytes at 128 kbit/s and 20 ms), and
+VBR spends more bytes on complex passages, peaking past 484 bytes on dense
+music. Stay under `MAX_VOICE_FRAME_SIZE` with CBR (or a peak at or below ~193
+kbit/s at 20 ms), 10 ms frames, or libopus's `opus_encode(..., max_data_bytes =
+484)`, which makes the encoder fit each frame itself. Whispers (`sendWhisper`,
+`sendGroupWhisper`) are not cut off this way.
 
 ### Whispers
 

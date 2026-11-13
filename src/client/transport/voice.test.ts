@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { EventEmitter } from "node:events";
 import type { Socket as UdpSocket } from "node:dgram";
 import { PacketHandler } from "./handler.js";
+import { MAX_VOICE_FRAME_SIZE } from "../index.js";
 import { Crypt } from "../crypto/crypt.js";
 import { generateIdentitySync } from "../crypto/identity.js";
 
@@ -34,6 +35,11 @@ const voiceID = (d: Uint8Array): number => {
 };
 
 describe("sendVoicePacket", () => {
+  it("exports MAX_VOICE_FRAME_SIZE as 500 minus tag, header and voice header", () => {
+    expect(MAX_VOICE_FRAME_SIZE).toBe(500 - TAG_SIZE - HEADER_SIZE - 3);
+    expect(MAX_VOICE_FRAME_SIZE).toBe(484);
+  });
+
   it("sends a 484-byte frame as a 500-byte datagram, the largest a packet may be", () => {
     const { handler, sent } = newHandler();
 

@@ -565,6 +565,9 @@ export function lookupTSDNS(server: string, host: string, options?: {
 export const MAX_SECURITY_LEVEL = 160;
 
 // @public
+export const MAX_VOICE_FRAME_SIZE = 484;
+
+// @public
 export function muteClients(client: Client, clientIDs: readonly ClientID[], options?: CommandOptions): Promise<void>;
 
 // @public

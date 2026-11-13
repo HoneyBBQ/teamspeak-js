@@ -14,6 +14,7 @@
  *   source /tmp/ts3-fixture.env && pnpm vitest run --project integration src/client/voice-relay.integration.test.ts
  */
 
+import { createSocket } from "node:dgram";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   Codec,
@@ -32,6 +33,9 @@ import type { ChannelID, ClientUpdateOptions } from "@honeybbq/teamspeak";
 import { Client } from "./client.js";
 import { generateIdentitySync } from "./crypto/identity.js";
 import { subscribeChannel, unsubscribeChannel } from "./api/voice.js";
+import { MAX_VOICE_FRAME_SIZE } from "./index.js";
+import { GroupWhisperScope, GroupWhisperType } from "./types.js";
+import type { ClientOptions, DatagramSocket } from "./types.js";
 import { QueryClient } from "../query/client.js";
 import type { QueryClientOptions } from "../query/options.js";
 
@@ -75,10 +79,11 @@ function adminOptions(): QueryClientOptions {
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-async function connectClient(nickname: string): Promise<Client> {
+async function connectClient(nickname: string, extra?: Partial<ClientOptions>): Promise<Client> {
   const client = new Client(generateIdentitySync(8), ADDR!, nickname, {
     serverPassword: SERVER_PASSWORD,
     defaultChannel: DEFAULT_CHANNEL,
+    ...extra,
   });
   for (let attempt = 1; ; attempt++) {
     try {
@@ -347,4 +352,134 @@ describe.skipIf(!ADDR)("what the server relays — live", () => {
     },
     30_000,
   );
+
+  it("relays 484-byte voice frames and 600-byte whispers, while the server drops a 485-byte voice frame", async () => {
+    async function heardOfLength(
+      size: number,
+      send: () => void,
+      whisper: boolean,
+      fromID = s.clientID,
+    ): Promise<number> {
+      let count = 0;
+      const stop = l.on("voiceData", (e) => {
+        if (e.clientID === fromID && e.whisper === whisper && e.data.length === size) count++;
+      });
+      try {
+        for (let i = 0; i < FRAMES; i++) {
+          send();
+          await sleep(20);
+        }
+        if (!whisper) s.sendVoice(new Uint8Array(0), Codec.OpusMusic);
+        await sleep(500);
+        return count;
+      } finally {
+        stop();
+      }
+    }
+
+    async function heardSomeOfLength(
+      size: number,
+      send: () => void,
+      whisper: boolean,
+    ): Promise<number> {
+      let count = 0;
+      for (let attempt = 1; attempt <= 3 && count === 0; attempt++) {
+        if (attempt > 1) await sleep(500);
+        count = await heardOfLength(size, send, whisper);
+      }
+      return count;
+    }
+
+    const maxFrame = new Uint8Array(MAX_VOICE_FRAME_SIZE).fill(0x5a);
+    expect(
+      await heardSomeOfLength(
+        MAX_VOICE_FRAME_SIZE,
+        () => s.sendVoice(maxFrame, Codec.OpusMusic),
+        false,
+      ),
+      "484-byte voice frame",
+    ).toBeGreaterThan(0);
+
+    expect(() => s.sendVoice(new Uint8Array(MAX_VOICE_FRAME_SIZE + 1), Codec.OpusMusic)).toThrow(
+      RangeError,
+    );
+
+    // Bypass the SDK's guard through socketFactory: append 1 byte to outgoing
+    // 500-byte Voice datagrams (type nibble 0, unencrypted under the fixed fake
+    // tag) so a valid 501-byte packet carrying a 485-byte frame reaches the server.
+    let padVoice = false;
+    let paddedSent = 0;
+    const padded = await connectClient(`ts-js-rlp-${RUN}`, {
+      socketFactory: (family) => {
+        const raw = createSocket(family === 6 ? "udp6" : "udp4");
+        const wrapped: DatagramSocket = {
+          connect: (port, address, cb) => raw.connect(port, address, cb),
+          send: (data, cb) => {
+            if (padVoice && data.length === 500 && (data[12]! & 0x0f) === 0) {
+              const bigger = new Uint8Array(501);
+              bigger.set(data);
+              bigger[500] = 0x5a;
+              paddedSent++;
+              raw.send(bigger, cb);
+              return;
+            }
+            raw.send(data, cb);
+          },
+          close: () => raw.close(),
+          on: raw.on.bind(raw),
+          once: raw.once.bind(raw),
+          off: raw.off.bind(raw),
+          address: () => raw.address(),
+        };
+        return wrapped;
+      },
+    });
+    try {
+      // Measure once, no retry: 0 frames is the expected server behaviour.
+      padVoice = true;
+      let droppedHeard = 0;
+      const stop = l.on("voiceData", (e) => {
+        if (e.clientID === padded.clientID && e.data.length > 0) droppedHeard++;
+      });
+      try {
+        for (let i = 0; i < FRAMES; i++) {
+          padded.sendVoice(maxFrame, Codec.OpusMusic);
+          await sleep(20);
+        }
+        padVoice = false;
+        padded.sendVoice(new Uint8Array(0), Codec.OpusMusic);
+        await sleep(500);
+      } finally {
+        padVoice = false;
+        stop();
+      }
+      expect(paddedSent, "501-byte voice datagrams sent").toBe(FRAMES);
+      expect(droppedHeard, "485-byte voice frame sent on the wire").toBe(0);
+    } finally {
+      await padded.disconnect().catch(() => {});
+    }
+
+    const bigWhisper = new Uint8Array(600).fill(0x5a);
+    expect(
+      await heardSomeOfLength(
+        600,
+        () => s.sendWhisper(bigWhisper, { clients: [l.clientID] }, Codec.OpusMusic),
+        true,
+      ),
+      "600-byte direct whisper",
+    ).toBeGreaterThan(0);
+    expect(
+      await heardSomeOfLength(
+        600,
+        () =>
+          s.sendGroupWhisper(
+            bigWhisper,
+            { type: GroupWhisperType.AllClients, scope: GroupWhisperScope.AllChannels },
+            Codec.OpusMusic,
+          ),
+        true,
+      ),
+      "600-byte group whisper",
+    ).toBeGreaterThan(0);
+  }, 60_000);
 });

@@ -114,3 +114,4 @@ export {
   MAX_SECURITY_LEVEL,
 } from "./crypto/index.js";
 export { UIDAlgorithm } from "./crypto/index.js";
+export { MAX_VOICE_FRAME_SIZE } from "./transport/handler.js";
