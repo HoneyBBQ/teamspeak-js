@@ -335,15 +335,25 @@ export class RemovedError extends TeamspeakError {
   readonly reasonMessage: string;
   /** Who removed the client, for a kick or a ban. */
   readonly invokerName: string;
+  /**
+   * How long the ban lasts, in milliseconds (`0` for a permanent ban), set
+   * for `Reason.KickServerBan` when the server sent `bantime`, and
+   * `undefined` otherwise.
+   */
+  readonly banDurationMs?: number | undefined;
 
-  constructor(reason: number, reasonMessage: string, invokerName: string) {
+  constructor(reason: number, reasonMessage: string, invokerName: string, banDurationMs?: number) {
     let message = `removed from the server: ${reasonName(reason)}`;
+    if (banDurationMs !== undefined) {
+      message += banDurationMs === 0 ? " permanently" : ` for ${banDurationMs / 1000} s`;
+    }
     if (invokerName) message += ` by ${invokerName}`;
     if (reasonMessage) message += `: ${reasonMessage}`;
     super(message);
     this.reason = reason;
     this.reasonMessage = reasonMessage;
     this.invokerName = invokerName;
+    if (banDurationMs !== undefined) this.banDurationMs = banDurationMs;
   }
 }
 

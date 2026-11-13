@@ -190,6 +190,11 @@ function handleClientLeftView(
   if (clid === 0) return { kind: "unknown" };
   const isSelf = clid === selfCLID;
   clients.delete(clid);
+  const rawBanTime = cmd.params["bantime"];
+  const banDurationMs =
+    rawBanTime !== undefined && /^\d+$/.test(rawBanTime)
+      ? parseInt10(rawBanTime) * 1000
+      : undefined;
   return {
     kind: "clientLeave",
     event: {
@@ -201,6 +206,7 @@ function handleClientLeftView(
       invokerID: asClientID(parseUint16(cmd.params["invokerid"] ?? "")),
       invokerName: cmd.params["invokername"] ?? "",
       invokerUID: asUID(cmd.params["invokeruid"] ?? ""),
+      ...(banDurationMs === undefined ? {} : { banDurationMs }),
     },
     isSelf,
   };

@@ -1933,7 +1933,12 @@ export class Client implements CommandExecutor, AsyncDisposable {
           this.#emit("kicked", kickedEvent(event));
         }
         this.#removedByServer(
-          new RemovedError(event.reason, event.reasonMessage, event.invokerName),
+          new RemovedError(
+            event.reason,
+            event.reasonMessage,
+            event.invokerName,
+            event.banDurationMs,
+          ),
         );
         break;
       }
@@ -2366,6 +2371,7 @@ function kickedEvent(event: {
   readonly invokerName: string;
   readonly invokerUID: UID;
   readonly invokerID: ClientID;
+  readonly banDurationMs?: number | undefined;
 }): KickedEvent {
   return {
     reason: event.reason,
@@ -2373,5 +2379,8 @@ function kickedEvent(event: {
     invokerName: event.invokerName,
     invokerUID: event.invokerUID,
     invokerID: event.invokerID,
+    ...(event.reason === Reason.KickServerBan && event.banDurationMs !== undefined
+      ? { banDurationMs: event.banDurationMs }
+      : {}),
   };
 }

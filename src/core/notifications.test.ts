@@ -31,6 +31,48 @@ describe("handleNotification", () => {
     });
   });
 
+  describe("notifyclientleftview", () => {
+    it("reads bantime in milliseconds, 0 for permanent, and omits it when absent", () => {
+      const temp = handleNotification(
+        { name: "notifyclientleftview", params: { clid: "7", reasonid: "6", bantime: "15" } },
+        1,
+        makeClients(),
+      );
+      expect(temp.kind).toBe("clientLeave");
+      if (temp.kind !== "clientLeave") return;
+      expect(temp.event.banDurationMs).toBe(15_000);
+
+      const perm = handleNotification(
+        { name: "notifyclientleftview", params: { clid: "7", reasonid: "6", bantime: "0" } },
+        1,
+        makeClients(),
+      );
+      expect(perm.kind).toBe("clientLeave");
+      if (perm.kind !== "clientLeave") return;
+      expect(Object.is(perm.event.banDurationMs, 0)).toBe(true);
+
+      const kick = handleNotification(
+        { name: "notifyclientleftview", params: { clid: "7", reasonid: "5" } },
+        1,
+        makeClients(),
+      );
+      expect(kick.kind).toBe("clientLeave");
+      if (kick.kind !== "clientLeave") return;
+      expect(kick.event.banDurationMs).toBeUndefined();
+      expect("banDurationMs" in kick.event).toBe(false);
+
+      const bad = handleNotification(
+        { name: "notifyclientleftview", params: { clid: "7", reasonid: "6", bantime: "-1" } },
+        1,
+        makeClients(),
+      );
+      expect(bad.kind).toBe("clientLeave");
+      if (bad.kind !== "clientLeave") return;
+      expect(bad.event.banDurationMs).toBeUndefined();
+      expect("banDurationMs" in bad.event).toBe(false);
+    });
+  });
+
   describe("notifyclientmoved", () => {
     it("carries the reason message, and an empty one without it", () => {
       const kick = {

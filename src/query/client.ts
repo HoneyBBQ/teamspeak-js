@@ -1531,6 +1531,7 @@ function kickedEvent(event: {
   readonly invokerName: string;
   readonly invokerUID: string;
   readonly invokerID: number;
+  readonly banDurationMs?: number | undefined;
 }): KickedEvent {
   return {
     reason: event.reason,
@@ -1538,6 +1539,9 @@ function kickedEvent(event: {
     invokerName: event.invokerName,
     invokerUID: event.invokerUID as KickedEvent["invokerUID"],
     invokerID: event.invokerID as KickedEvent["invokerID"],
+    ...(event.reason === Reason.KickServerBan && event.banDurationMs !== undefined
+      ? { banDurationMs: event.banDurationMs }
+      : {}),
   };
 }
 

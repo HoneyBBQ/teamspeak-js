@@ -597,7 +597,8 @@ export function removeAvatar(client: Client, options?: AvatarTransferOptions): P
 
 // @public
 export class RemovedError extends TeamspeakError {
-    constructor(reason: number, reasonMessage: string, invokerName: string);
+    constructor(reason: number, reasonMessage: string, invokerName: string, banDurationMs?: number);
+    readonly banDurationMs?: number | undefined;
     readonly invokerName: string;
     // (undocumented)
     static readonly kind: string;

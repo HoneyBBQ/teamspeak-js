@@ -464,9 +464,73 @@ describe("being removed by the server", () => {
         invokerName: "Admin",
       }),
     ]);
+    expect(kicked[0]?.banDurationMs).toBeUndefined();
     expect(disconnected[0]).toBeInstanceOf(RemovedError);
+    expect((disconnected[0] as RemovedError).banDurationMs).toBeUndefined();
     expect(client.status).toBe(ClientStatus.Disconnected);
     expect(defaultShouldRetry(disconnected[0])).toBe(false);
+  });
+
+  it("reports banDurationMs on kicked and RemovedError for a temporary ban, before notification", async () => {
+    const client = await connected();
+    const order: string[] = [];
+    const kicked: KickedEvent[] = [];
+    const disconnected: Array<Error | undefined> = [];
+    client.on("kicked", (e) => {
+      order.push("kicked");
+      kicked.push(e);
+    });
+    client.on("disconnected", (e) => {
+      order.push("disconnected");
+      disconnected.push(e.error);
+    });
+    client.on("notification", () => {
+      order.push("notification");
+    });
+
+    clientInternals(client).handler.onPacket?.(
+      commandPacket(
+        "notifyclientleftview clid=5 reasonid=6 bantime=15 reasonmsg=spam invokerid=1 invokername=Admin",
+      ),
+    );
+    await settle();
+
+    expect(order).toEqual(["kicked", "disconnected", "notification"]);
+    expect(kicked).toEqual([
+      expect.objectContaining({
+        reason: Reason.KickServerBan,
+        reasonMessage: "spam",
+        invokerName: "Admin",
+        banDurationMs: 15_000,
+      }),
+    ]);
+    const err = disconnected[0] as RemovedError;
+    expect(err).toBeInstanceOf(RemovedError);
+    expect(err.banDurationMs).toBe(15_000);
+    expect(err.message).toContain("for 15 s");
+    expect(defaultShouldRetry(err)).toBe(false);
+  });
+
+  it("reports banDurationMs as 0 on kicked and RemovedError for a permanent ban", async () => {
+    const client = await connected();
+    const kicked: KickedEvent[] = [];
+    const disconnected: Array<Error | undefined> = [];
+    client.on("kicked", (e) => kicked.push(e));
+    client.on("disconnected", (e) => disconnected.push(e.error));
+
+    clientInternals(client).handler.onPacket?.(
+      commandPacket(
+        "notifyclientleftview clid=5 reasonid=6 bantime=0 reasonmsg=bye invokerid=1 invokername=Admin",
+      ),
+    );
+    await settle();
+
+    expect(kicked[0]?.banDurationMs).toBe(0);
+    const err = disconnected[0] as RemovedError;
+    expect(err).toBeInstanceOf(RemovedError);
+    expect(err.banDurationMs).toBe(0);
+    expect(err.message).toContain("permanently");
+    expect(defaultShouldRetry(err)).toBe(false);
   });
 
   it("retries a server that stopped, which is not a kick", async () => {

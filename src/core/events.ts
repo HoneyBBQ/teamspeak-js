@@ -98,6 +98,14 @@ export interface ClientLeaveEvent {
   /** The kicker; 0 unless kicked or banned. */
   readonly invokerID: ClientID;
   /**
+   * How long the ban lasts, in milliseconds (`bantime`, which the server sends
+   * in seconds): `0` for a permanent ban, and `undefined` when the
+   * notification carries no `bantime` (every leave other than a ban,
+   * `Reason.KickServerBan`). Measured on TeamSpeak 3 3.13.8 and TeamSpeak 6
+   * 6.0.0-beta13.1.
+   */
+  readonly banDurationMs?: number | undefined;
+  /**
    * The client's record as the voice client held it just before it left, so a
    * listener can name who left. Absent when the client never announced it, and
    * always absent on a ServerQuery client, which keeps no such record.
@@ -107,7 +115,7 @@ export interface ClientLeaveEvent {
   readonly previous?: ClientEntry | undefined;
 }
 
-/** This client being kicked from its channel or the server. */
+/** This client being kicked from its channel or the server, or banned from the server. */
 export interface KickedEvent {
   /** The reason the invoker gave. */
   readonly reasonMessage: string;
@@ -119,6 +127,12 @@ export interface KickedEvent {
   readonly invokerUID: UID;
   /** The kicker. */
   readonly invokerID: ClientID;
+  /**
+   * How long the ban lasts, in milliseconds (`0` for a permanent ban), set
+   * for `Reason.KickServerBan` when the server sent `bantime`, and
+   * `undefined` for a channel or server kick.
+   */
+  readonly banDurationMs?: number | undefined;
 }
 
 /**
