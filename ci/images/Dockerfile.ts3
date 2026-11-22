@@ -1,4 +1,4 @@
 # The TeamSpeak 3 server the integration job runs against. Dependabot reads
 # this file and moves the tag and digest together; scripts/ci-image.sh hands
 # the reference to the workflow.
-FROM teamspeak:3.13.8@sha256:e11b8a7504ac8c1eac21e0365a71c67c2a2247c419e8fe7631ad3178187fe95c
+FROM teamspeak:3.13.9@sha256:88335936d0969ffb7182c292f72319167db3722770a8db0c175b4e6fb8bc03ad
